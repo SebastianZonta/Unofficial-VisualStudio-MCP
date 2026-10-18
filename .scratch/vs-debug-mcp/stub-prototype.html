@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<!-- PROTOTYPE — throwaway, wipe me. Simulates the decided 10-tool MCP surface against a fake C# session. -->
+<html><head><meta charset="utf-8"><title>PROTOTYPE: VS-debug MCP tool shape</title>
+<style>body{font-family:monospace;max-width:900px;margin:20px}button{margin:2px}pre{background:#eee;padding:8px;white-space:pre-wrap}.tabs button{font-weight:bold}#state{border:2px solid #000;padding:8px}</style>
+</head><body>
+<h1>PROTOTYPE (throwaway): VS-debug MCP tool shape</h1>
+<p>Fake session only. Every result carries <b>mode</b> + <b>lastHit</b>. Defaults: timeoutMs=5000, maxFrames=20, maxVariables=50.</p>
+<div class="tabs">
+<button onclick="showTab(0)">1 Happy path</button>
+<button onclick="showTab(1)">2 Unbound breakpoint</button>
+<button onclick="showTab(2)">3 Not-in-break-mode</button>
+<button onclick="showTab(3)">4 Timeout</button>
+<button onclick="showTab(4)">Free play</button>
+</div>
+<div id="guide"></div>
+<h2>State (surfaced after every action)</h2>
+<div id="state"></div>
+<h2>Tools (the 10)</h2>
+<div id="tools"></div>
+<h2>Last result</h2>
+<pre id="out">—</pre>
+<script>
+// ---- fake debugger ----
+let S = null;
+function freshSession(){ return {sessionId:"sess-demo", mode:"design", lastHit:null,
+  breakpoints:[], frames:[], evalCount:0}; }
+const GUIDES = [
+ "Happy path: attach → set_breakpoint(Program.cs:42) → resume → step(over) → read_stack → read_variables(frame 0) → evaluate(\"order.Total\").",
+ "Unbound: set_breakpoint on an unloaded module returns bound:false + warning immediately (no blocking). Re-list to see it bind.",
+ "Not-in-break-mode: while mode=run, read_stack / evaluate return not-in-break-mode error, never a COM dump.",
+ "Timeout: step with timeoutMs=1 forces a timeout status (first-class data). Real default is 5000."
+];
+let tab = 0;
+function showTab(i){ tab=i; document.getElementById('guide').innerHTML = "<p><b>Walkthrough "+(i+1)+":</b> "+GUIDES[i]+"</p>"; }
+function result(payload){ // every result carries mode + lastHit
+  const r = Object.assign({mode: S?S.mode:"no-session", lastHit: S?S.lastHit:null}, payload);
+  document.getElementById('out').textContent = JSON.stringify(r, null, 1);
+  renderState();
+}
+function err(code, fix){ result({ok:false, error:code, remediation:fix}); }
+function renderState(){
+  document.getElementById('state').textContent = S ? JSON.stringify({session:S.sessionId, mode:S.mode, lastHit:S.lastHit,
+    breakpoints:S.breakpoints, frames:S.frames.map(f=>f.function+":"+f.line)}, null, 1) : "(no session — call attach)";
+}
+function needSession(){ if(!S){ err("no-session","call attach first"); return true; } return false; }
+function needBreak(){ if(S.mode!=="break"){ err("not-in-break-mode","resume then wait for break; only inspect in break mode"); return true; } return false; }
+const TOOLS = [
+ ["attach", ()=>{ S=freshSession(); result({ok:true, sessionId:S.sessionId, note:"bound newest VS2026; F5 available"}); }],
+ ["set_breakpoint", ()=>{ if(needSession())return; const unbound = S.breakpoints.length===0 && confirm("Simulate unloaded module? OK=unbound, Cancel=bound");
+   const bp={id:"bp"+(S.breakpoints.length+1), file:"Program.cs", line:42, enabled:true, bound:!unbound, warning:unbound?"symbols not loaded yet":undefined};
+   S.breakpoints.push(bp); result({ok:true, breakpoint:bp}); }],
+ ["remove_breakpoint", ()=>{ if(needSession())return; const id=prompt("breakpoint id?","bp1"); S.breakpoints=S.breakpoints.filter(b=>b.id!==id); result({ok:true, removed:id}); }],
+ ["list_breakpoints", ()=>{ if(needSession())return; result({ok:true, breakpoints:S.breakpoints}); }],
+ ["pause", ()=>{ if(needSession())return; S.mode="break"; S.lastHit="bp1 Program.cs:42"; result({ok:true}); }],
+ ["resume", ()=>{ if(needSession())return; S.mode="run"; result({ok:true, note:"runs until breakpoint or timeoutMs"}); setTimeout(()=>{ if(S&&S.mode==="run"){S.mode="break";S.lastHit="bp1 Program.cs:42"; renderState();} },1500); }],
+ ["step", ()=>{ if(needSession())return; const dir=prompt("direction? over|into|out","over"); const t=parseInt(prompt("timeoutMs?","5000"));
+   if(t<=10){ result({ok:false, status:"timeout", note:"step exceeded timeoutMs"}); return; }
+   if(S.mode!=="break"){ err("not-in-break-mode","pause first"); return; }
+   S.lastHit=null; S.frames=[{id:"f0",function:"Order.Total()",module:"Shop.dll",file:"Order.cs",line:17}]; result({ok:true, direction:dir}); }],
+ ["read_stack", ()=>{ if(needSession())return; if(needBreak())return;
+   S.frames=[{id:"f0",function:"Order.Total()",module:"Shop.dll",file:"Order.cs",line:17},{id:"f1",function:"Program.Main()",module:"Shop.dll",file:"Program.cs",line:42}];
+   result({ok:true, frames:S.frames.slice(0,20)}); }],
+ ["read_variables", ()=>{ if(needSession())return; if(needBreak())return; const path=prompt("expand path? (empty=top)","");
+   if(path){ result({ok:true, path:path, children:[{name:path+".Tax",type:"decimal",value:"3.20",expandable:false}]}); return; }
+   result({ok:true, frame:"f0", variables:[{name:"items",type:"List<Item>",value:"Count = 1,247 [truncated]",expandable:true,path:"items"},{name:"total",type:"decimal",value:"41.80",expandable:false}]}); }],
+ ["evaluate", ()=>{ if(needSession())return; if(needBreak())return; const e=prompt("expression? (read-only)","order.Total");
+   S.evalCount++; result({ok:true, expression:e, value:"41.80 [truncated]", type:"decimal", expandable:false, note:"read-only; assign/execute deferred"}); }],
+];
+const td = document.getElementById('tools');
+TOOLS.forEach(([n,fn])=>{ const b=document.createElement('button'); b.textContent=n; b.onclick=fn; td.appendChild(b); });
+showTab(4); renderState();
+</script></body></html>
