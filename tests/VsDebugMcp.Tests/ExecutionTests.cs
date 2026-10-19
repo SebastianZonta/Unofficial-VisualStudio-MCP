@@ -81,6 +81,22 @@ public sealed class ExecutionTests
     }
 
     [Fact]
+    public async Task Resume_timeout_is_data_not_a_hang()
+    {
+        var (bridge, sessionId) = await AttachedAsync();
+        bridge.ForceTimeout = true;
+
+        var resumed = await ExecutionTools.ResumeAsync(bridge, sessionId, 5000, CancellationToken.None);
+
+        Assert.Equal("timeout", resumed.Status);
+        Assert.Equal("design", resumed.Mode); // mode unchanged, dispatcher still usable
+
+        bridge.ForceTimeout = false;
+        var retried = await ExecutionTools.ResumeAsync(bridge, sessionId, 5000, CancellationToken.None);
+        Assert.Equal("ok", retried.Status); // dispatcher was never wedged
+    }
+
+    [Fact]
     public async Task Step_rejects_bad_direction_without_touching_bridge()
     {
         var (bridge, sessionId) = await BrokenAsync();
