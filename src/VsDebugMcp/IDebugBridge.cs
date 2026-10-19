@@ -4,6 +4,7 @@ namespace VsDebugMcp;
 public interface IDebugBridge
 {
     Task<AttachResult> AttachAsync(string? instanceOverride, CancellationToken ct);
+    Task<ListInstancesResult> ListInstancesAsync(CancellationToken ct);
     Task RequireSessionAsync(string sessionId, CancellationToken ct);
     Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct);
     Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct);

@@ -546,6 +546,59 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         catch (COMException) { return null; }
     }
 
+    public async Task<ListInstancesResult> ListInstancesAsync(CancellationToken ct)
+    {
+        List<string> names;
+        try
+        {
+            names = await _dispatcher.InvokeAsync(EnumRotDteNames, 10_000, ct);
+        }
+        catch (TimeoutException)
+        {
+            throw new DebugDomainException(
+                "timeout", "listing VS instances exceeded its budget", "dismiss any modal dialog in VS and retry");
+        }
+        catch (COMException ex)
+        {
+            throw ComErrorMapper.ToDomain(ex);
+        }
+        var items = new List<VsInstanceInfo>();
+        var ordered = VsDiscovery.OrderForListing(names);
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
+        for (var i = 0; i < ordered.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            if (DateTime.UtcNow >= deadline)
+            {
+                foreach (var remaining in ordered.Skip(i))
+                    items.Add(UnreachableInstance(remaining, "timeout: overall list budget exceeded; retry with fewer instances"));
+                break;
+            }
+            var name = ordered[i];
+            try
+            {
+                items.Add(await _dispatcher.InvokeAsync(() => SnapshotInstance(name), 5_000, ct));
+            }
+            catch (TimeoutException)
+            {
+                items.Add(UnreachableInstance(name, "timeout: VS instance busy or modal dialog open"));
+            }
+            catch (COMException ex)
+            {
+                items.Add(UnreachableInstance(name, ComErrorMapper.ToDomain(ex).Message));
+            }
+            catch (DebugDomainException ex)
+            {
+                items.Add(UnreachableInstance(name, $"{ex.Code}: {ex.Message}"));
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                items.Add(UnreachableInstance(name, $"automation-failed: {ex.Message}"));
+            }
+        }
+        return new ListInstancesResult(items);
+    }
+
     private static DTE BindRunningInstance(string? instanceOverride)
     {
         IRunningObjectTable? rot = null;
@@ -592,6 +645,153 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             if (ctx is not null) Marshal.ReleaseComObject(ctx);
             if (rot is not null) Marshal.ReleaseComObject(rot);
         }
+    }
+
+    private static List<string> EnumRotDteNames()
+    {
+        IRunningObjectTable? rot = null;
+        IEnumMoniker? enumMoniker = null;
+        IBindCtx? ctx = null;
+        try
+        {
+            NativeMethods.GetRunningObjectTable(0, out rot);
+            NativeMethods.CreateBindCtx(0, out ctx);
+            rot!.EnumRunning(out enumMoniker);
+            var monikers = new IMoniker[1];
+            var names = new List<string>();
+            while (enumMoniker!.Next(1, monikers, nint.Zero) == 0)
+            {
+                try
+                {
+                    monikers[0].GetDisplayName(ctx, null, out var name);
+                    if (VsDiscovery.IsDteEntry(name))
+                        names.Add(name);
+                }
+                catch (COMException) { /* skip unreadable entries */ }
+            }
+            return names;
+        }
+        catch (COMException ex)
+        {
+            throw ComErrorMapper.ToDomain(ex);
+        }
+        finally
+        {
+            if (enumMoniker is not null) Marshal.ReleaseComObject(enumMoniker);
+            if (ctx is not null) Marshal.ReleaseComObject(ctx);
+            if (rot is not null) Marshal.ReleaseComObject(rot);
+        }
+    }
+
+    private static VsInstanceInfo UnreachableInstance(string displayName, string error)
+        => new(displayName, VsDiscovery.TryParsePid(displayName),
+            VsDiscovery.VersionTextOf(displayName), "", "", [], false, error);
+
+    private static VsInstanceInfo SnapshotInstance(string displayName)
+    {
+        var pid = VsDiscovery.TryParsePid(displayName);
+        var version = VsDiscovery.VersionTextOf(displayName);
+        IRunningObjectTable? rot = null;
+        IEnumMoniker? enumMoniker = null;
+        IBindCtx? ctx = null;
+        DTE? dte = null;
+        try
+        {
+            NativeMethods.GetRunningObjectTable(0, out rot);
+            NativeMethods.CreateBindCtx(0, out ctx);
+            rot!.EnumRunning(out enumMoniker);
+            var monikers = new IMoniker[1];
+            IMoniker? match = null;
+            while (enumMoniker!.Next(1, monikers, nint.Zero) == 0)
+            {
+                try
+                {
+                    monikers[0].GetDisplayName(ctx, null, out var name);
+                    if (name == displayName) { match = monikers[0]; break; }
+                }
+                catch (COMException) { /* skip unreadable entries */ }
+            }
+            if (match is null)
+                return UnreachableInstance(displayName, "vs-not-running: instance left the ROT");
+            rot.GetObject(match, out var obj);
+            if (obj is not DTE found)
+                return UnreachableInstance(displayName, "automation-failed: ROT entry is not a VS automation object");
+            dte = found;
+            string solutionPath;
+            try { solutionPath = dte.Solution?.FullName ?? ""; }
+            catch (COMException) { return UnreachableInstance(displayName, "automation-failed: solution unreadable"); }
+            solutionPath ??= "";
+            string solutionName;
+            try { solutionName = solutionPath.Length == 0 ? "" : (Path.GetFileNameWithoutExtension(solutionPath) ?? ""); }
+            catch (Exception) { solutionName = ""; }
+            var projects = new List<string>();
+            try
+            {
+                var solutionProjects = dte.Solution?.Projects;
+                if (solutionProjects is not null)
+                    CollectProjects(solutionProjects, projects);
+            }
+            catch (COMException) { /* keep what we have; still reachable */ }
+            var capped = projects
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+                .Take(50).ToList();
+            return new VsInstanceInfo(displayName, pid, version, solutionName, solutionPath, capped, true, null);
+        }
+        catch (COMException ex)
+        {
+            var mapped = ComErrorMapper.ToDomain(ex);
+            return new VsInstanceInfo(displayName, pid, version, "", "", [], false, mapped.Message);
+        }
+        finally
+        {
+            if (dte is not null) { try { Marshal.ReleaseComObject(dte); } catch { /* best effort */ } }
+            if (enumMoniker is not null) Marshal.ReleaseComObject(enumMoniker);
+            if (ctx is not null) Marshal.ReleaseComObject(ctx);
+            if (rot is not null) Marshal.ReleaseComObject(rot);
+        }
+    }
+
+    private const string SolutionFolderKind = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}";
+
+    private static void CollectProjects(EnvDTE.Projects projects, List<string> projectNames)
+    {
+        foreach (Project project in projects)
+        {
+            try { CollectProject(project, projectNames); }
+            catch (Exception ex) when (ex is not OperationCanceledException) { /* skip one bad project, keep the rest */ }
+        }
+    }
+
+    private static void CollectProject(Project project, List<string> projectNames)
+    {
+        string kind;
+        try { kind = project.Kind ?? ""; }
+        catch (COMException) { return; }
+        if (kind.Equals(SolutionFolderKind, StringComparison.OrdinalIgnoreCase))
+        {
+            ProjectItems? items;
+            try { items = project.ProjectItems; }
+            catch (COMException) { return; }
+            if (items is null) return;
+            foreach (ProjectItem item in items)
+            {
+                try
+                {
+                    var sub = item.SubProject;
+                    if (sub is not null) CollectProject(sub, projectNames);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException) { /* skip one bad folder child */ }
+            }
+            return;
+        }
+        try
+        {
+            var name = project.Name;
+            if (!string.IsNullOrWhiteSpace(name)) projectNames.Add(name);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { /* skip unreadable name */ }
     }
 
     public void Dispose()

@@ -23,6 +23,8 @@ public sealed class FakeDebugBridge : IDebugBridge
     /// <summary>Fake for a parsed-but-not-evaluable expression. When true, evaluate returns invalid-expression.</summary>
     public bool ForceInvalidExpression { get; set; }
 
+    public List<VsInstanceInfo> Instances { get; } = new();
+
     private string _mode = "design";
     private string? _lastHit;
 
@@ -34,6 +36,12 @@ public sealed class FakeDebugBridge : IDebugBridge
         _mode = "design";
         _lastHit = null;
         return Task.FromResult(new AttachResult(_activeSessionId, _mode, _lastHit));
+    }
+
+    public Task<ListInstancesResult> ListInstancesAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(new ListInstancesResult(Instances.ToList()));
     }
 
     public Task RequireSessionAsync(string sessionId, CancellationToken ct)

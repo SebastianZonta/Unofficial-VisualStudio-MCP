@@ -15,6 +15,13 @@ public sealed class SessionTools
         CancellationToken cancellationToken)
         => bridge.AttachAsync(instanceOverride, cancellationToken);
 
+    [McpServerTool(Name = "list_instances")]
+    [Description("List running VS 2026 instances with solution and project names. Session-less and read-only; attach with the entry's display name.")]
+    public static Task<ListInstancesResult> ListInstancesAsync(
+        IDebugBridge bridge,
+        CancellationToken cancellationToken)
+        => ToolErrors.MapAsync(() => bridge.ListInstancesAsync(cancellationToken));
+
     [McpServerTool(Name = "attach_process")]
     [Description("Attach the debugger to a local process by ID. Requires explicit consent:true and same-user; solution launch via attach stays frictionless.")]
     public static Task<ExecutionResult> AttachProcessAsync(

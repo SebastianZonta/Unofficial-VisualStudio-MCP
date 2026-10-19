@@ -52,4 +52,32 @@ public sealed class VsDiscoveryTests
     {
         Assert.Null(VsDiscovery.SelectCandidate([], instanceOverride: null));
     }
+
+    [Fact]
+    public void Pid_parses_from_display_name_suffix()
+    {
+        Assert.Equal(222, VsDiscovery.TryParsePid("!VisualStudio.DTE.18.0:222"));
+        Assert.Equal(0, VsDiscovery.TryParsePid("!VisualStudio.DTE.18.0"));
+        Assert.Equal(0, VsDiscovery.TryParsePid("!Something.Else:abc"));
+    }
+
+    [Fact]
+    public void Version_text_parses_from_display_name()
+    {
+        Assert.Equal("18.0", VsDiscovery.VersionTextOf("!VisualStudio.DTE.18.0:222"));
+        Assert.Equal("17.0", VsDiscovery.VersionTextOf("!VisualStudio.DTE.17.0:111"));
+        Assert.Equal("", VsDiscovery.VersionTextOf("!Something.Else:333"));
+    }
+
+    [Fact]
+    public void Listing_orders_newest_first_and_ignores_non_dte()
+    {
+        var ordered = VsDiscovery.OrderForListing(RotNames);
+        Assert.Equal(
+        [
+            "!VisualStudio.DTE.18.0:222",
+            "!VisualStudio.DTE.18.0:444",
+            "!VisualStudio.DTE.17.0:111",
+        ], ordered);
+    }
 }
