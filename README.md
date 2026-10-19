@@ -61,9 +61,10 @@ dotnet test                                     # 63 tests, no VS required
 dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Debug -o src/VsDebugMcp/bin/Fixed
 ```
 
-Notes on the publish step: the `bin/Fixed` output is what a local opencode config
-typically points at. The file is locked while the MCP host runs, so stop the host
-(opencode restart) before republishing, then restart opencode to load the new binary.
+Notes on the publish step: the `bin/Fixed` output is an example of what an MCP
+client config can point at. The file is locked while the MCP host runs, so stop the
+host (restart the client) before republishing, then restart the client again to load
+the new binary.
 
 `--live-check <file> <line>` and `--live-check-full` run builder-only harnesses
 against the real VS and exit; without `--live`, the server starts on the fake bridge.
