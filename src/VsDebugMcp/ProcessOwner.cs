@@ -55,7 +55,7 @@ internal static class ProcessOwner
             }
             return null;
         }
-        catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException)
+        catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException or InvalidOperationException)
         {
             return null;
         }
@@ -78,7 +78,7 @@ internal static class ProcessOwner
                         owners[pid] = ReadOwner(mo);
                     }
                     catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException
-                        or FormatException or InvalidCastException or OverflowException)
+                        or InvalidOperationException or FormatException or InvalidCastException or OverflowException)
                     {
                         // One unreadable entry must not poison the whole snapshot.
                     }
