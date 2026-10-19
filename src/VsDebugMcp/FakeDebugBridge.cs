@@ -25,6 +25,9 @@ public sealed class FakeDebugBridge : IDebugBridge
 
     public List<VsInstanceInfo> Instances { get; } = new();
 
+    /// <summary>Known local target processes. Empty by default: every pid is unknown.</summary>
+    public List<TargetProcessInfo> Processes { get; } = new();
+
     private string _mode = "design";
     private string? _lastHit;
 
@@ -42,6 +45,13 @@ public sealed class FakeDebugBridge : IDebugBridge
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(new ListInstancesResult(Instances.ToList()));
+    }
+
+    public Task<ListProcessesResult> ListProcessesAsync(string? nameFilter, bool ownedOnly, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(new ListProcessesResult(
+            ProcessDiscovery.FilterAndOrder(Processes, nameFilter, ownedOnly)));
     }
 
     public Task RequireSessionAsync(string sessionId, CancellationToken ct)

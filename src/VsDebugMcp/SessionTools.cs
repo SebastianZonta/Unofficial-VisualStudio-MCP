@@ -22,6 +22,15 @@ public sealed class SessionTools
         CancellationToken cancellationToken)
         => ToolErrors.MapAsync(() => bridge.ListInstancesAsync(cancellationToken));
 
+    [McpServerTool(Name = "list_processes")]
+    [Description("List local target processes (program under test candidates). Session-less and read-only; attach with the entry's pid plus consent:true.")]
+    public static Task<ListProcessesResult> ListProcessesAsync(
+        IDebugBridge bridge,
+        [Description("Optional case-insensitive substring filter on process name.")] string? nameFilter = null,
+        [Description("When true (default), only processes owned by the bridge user are listed.")] bool ownedOnly = true,
+        CancellationToken cancellationToken = default)
+        => ToolErrors.MapAsync(() => bridge.ListProcessesAsync(nameFilter, ownedOnly, cancellationToken));
+
     [McpServerTool(Name = "attach_process")]
     [Description("Attach the debugger to a local process by ID. Requires explicit consent:true and same-user; solution launch via attach stays frictionless.")]
     public static Task<ExecutionResult> AttachProcessAsync(

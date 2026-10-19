@@ -599,6 +599,59 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         return new ListInstancesResult(items);
     }
 
+    public Task<ListProcessesResult> ListProcessesAsync(string? nameFilter, bool ownedOnly, CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        System.Diagnostics.Process[] all;
+        try
+        {
+            all = System.Diagnostics.Process.GetProcesses();
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+        {
+            throw new DebugDomainException(
+                "automation-failed", $"could not enumerate local processes: {ex.Message}",
+                "retry; if it persists, check the MCP host can read the process table");
+        }
+        var me = ProcessOwner.CurrentUserName();
+        var snapshot = new List<TargetProcessInfo>(all.Length);
+        foreach (var proc in all)
+        {
+            ct.ThrowIfCancellationRequested();
+            int pid;
+            string name;
+            try
+            {
+                pid = proc.Id;
+                name = proc.ProcessName;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                continue; // exited mid-scan; skip, keep the rest
+            }
+            finally
+            {
+                try { proc.Dispose(); } catch { /* best effort */ }
+            }
+            string? owner;
+            try
+            {
+                owner = ProcessOwner.OwnerOf(pid);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                continue; // unreadable entry; skip, keep the rest
+            }
+            // Unknown owner fails closed: not mine, hidden under the owned-only default,
+            // flagged with error text when the filter is off.
+            var mine = owner is not null && owner.Equals(me, StringComparison.OrdinalIgnoreCase);
+            snapshot.Add(new TargetProcessInfo(pid, name, owner ?? "", mine,
+                owner is null ? "owner unknown: WMI lookup failed; failing closed" : null));
+        }
+        return Task.FromResult(new ListProcessesResult(
+            ProcessDiscovery.FilterAndOrder(snapshot, nameFilter, ownedOnly)));
+    }
+
     private static DTE BindRunningInstance(string? instanceOverride)
     {
         IRunningObjectTable? rot = null;
