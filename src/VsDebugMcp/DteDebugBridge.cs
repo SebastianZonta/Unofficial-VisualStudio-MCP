@@ -1,18 +1,25 @@
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 using EnvDTE;
+using Microsoft.Extensions.Logging;
 
 namespace VsDebugMcp;
 
 /// <summary>Live bridge: EnvDTE automation against the ROT-discovered VS 2026 instance.
 /// Every COM call runs on the single <see cref="ComDispatcher"/> STA thread; live handles
 /// are snapshotted to plain DTOs inside the same call and never escape.</summary>
-internal sealed class DteDebugBridge : IDebugBridge, IDisposable
+internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 {
     private readonly ComDispatcher _dispatcher = new();
+    private readonly ILogger<DteDebugBridge>? _logger;
     private DTE? _dte;
     private string? _activeSessionId;
     private bool _disposed;
+
+    public DteDebugBridge(ILogger<DteDebugBridge>? logger = null)
+    {
+        _logger = logger;
+    }
 
     public async Task<AttachResult> AttachAsync(string? instanceOverride, CancellationToken ct)
     {
@@ -91,7 +98,7 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
     }
 
     public async Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct)
-        => await RunSnapshotAsync(sessionId, ct, debugger =>
+        => await RunSnapshotAsync(sessionId, debugger =>
         {
             debugger.Breakpoints.Add(
                 Function: "", File: file, Line: line, Column: 1,
@@ -104,10 +111,10 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             var info = SnapshotBreakpoint(added, debugger.Breakpoints.Count);
             // Automation cannot observe pending-vs-bound (Concord-only); a successful Add means VS accepted it.
             return new SetBreakpointResult(info with { Bound = true }, ModeOf(debugger), LastHitOf(debugger));
-        });
+        }, ct);
 
     public async Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct)
-        => await RunSnapshotAsync(sessionId, ct, debugger =>
+        => await RunSnapshotAsync(sessionId, debugger =>
         {
             var items = new List<BreakpointInfo>();
             var index = 0;
@@ -117,10 +124,10 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
                 items.Add(SnapshotBreakpoint(bp, index));
             }
             return new ListBreakpointsResult(items, ModeOf(debugger), LastHitOf(debugger));
-        });
+        }, ct);
 
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)
-        => await RunSnapshotAsync(sessionId, ct, debugger =>
+        => await RunSnapshotAsync(sessionId, debugger =>
         {
             var target = FindByToken(debugger, breakpointId);
             if (target is null)
@@ -129,23 +136,19 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             var id = TokenOf(target, debugger);
             target.Delete();
             return new RemoveBreakpointResult(id, ModeOf(debugger), LastHitOf(debugger));
-        });
+        }, ct);
 
     public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
         string currentMode;
         try
         {
-            currentMode = await SnapshotModeAsync(ct);
+            currentMode = await RequireModeAsync(sessionId,
+                new ExecutionResult("run", null, "timeout", "pause request timed out while reading debugger state; retry"), ct);
         }
-        catch (TimeoutException)
+        catch (ModeReadTimeoutException ex)
         {
-            return new ExecutionResult("run", null, "timeout", "pause request timed out while reading debugger state; retry");
-        }
-        catch (COMException ex)
-        {
-            throw ComErrorMapper.ToDomain(ex);
+            return ex.TimeoutResult;
         }
         if (currentMode != "run")
             throw new DebugDomainException(
@@ -181,19 +184,15 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
 
     public async Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
         string currentMode;
         try
         {
-            currentMode = await SnapshotModeAsync(ct);
+            currentMode = await RequireModeAsync(sessionId,
+                new ExecutionResult("unknown", null, "timeout", "resume request timed out while reading debugger state; mode unknown, retry"), ct);
         }
-        catch (TimeoutException)
+        catch (ModeReadTimeoutException ex)
         {
-            return new ExecutionResult("run", null, "timeout", "resume request timed out while reading debugger state; retry");
-        }
-        catch (COMException ex)
-        {
-            throw ComErrorMapper.ToDomain(ex);
+            return ex.TimeoutResult;
         }
         if (currentMode == "run")
             throw new DebugDomainException(
@@ -207,7 +206,16 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         }
         catch (TimeoutException)
         {
-            return new ExecutionResult("run", null, "timeout", "resume request timed out while issuing Go; retry");
+            // The Go issue may or may not have taken effect: re-snapshot instead of
+            // assuming. Running plus a free dispatcher is success, not a timeout.
+            var (issueMode, issueHit) = await TrySnapshotAsync(ct);
+            if (issueMode == "run")
+                return new ExecutionResult(issueMode, null, "ok", "resume issued; debuggee running, dispatcher is free");
+            var mode = issueMode ?? "unknown";
+            return new ExecutionResult(mode, issueMode == "break" ? issueHit : null, "timeout",
+                issueMode is null
+                    ? "resume request timed out while issuing Go; debugger state unreadable, retry"
+                    : $"resume request timed out while issuing Go; debugger mode is {mode}, retry");
         }
         catch (COMException ex)
         {
@@ -215,15 +223,29 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         }
 
         var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+        var seenRun = false;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             var remaining = deadline - DateTime.UtcNow;
             if (remaining <= TimeSpan.Zero)
-                return new ExecutionResult("run", null, "timeout", "resume exceeded timeoutMs; debuggee still running, dispatcher is free");
+            {
+                // Go was issued and the dispatcher is free: still-running is success.
+                // Re-snapshot so the reported mode is actual, never assumed.
+                var (finalMode, finalHit) = await TrySnapshotAsync(ct);
+                if (finalMode == "break")
+                    return new ExecutionResult(finalMode, finalHit, "ok", "hit breakpoint");
+                if (finalMode == "design")
+                    return new ExecutionResult(finalMode, null, "ok", "run ended back in design mode");
+                if (finalMode == "run" || seenRun)
+                    return new ExecutionResult("run", null, "ok", "resume issued; debuggee still running, dispatcher is free");
+                return new ExecutionResult("unknown", null, "timeout", "resume exceeded timeoutMs; debugger state unreadable, dispatcher is free, retry or pause");
+            }
             await Task.Delay(ClampDelay(remaining), ct);
             await RequireSessionAsync(sessionId, ct);
             var (mode, lastHit) = await TrySnapshotAsync(ct);
+            if (mode == "run")
+                seenRun = true;
             if (mode == "break")
                 return new ExecutionResult(mode, lastHit, "ok", "hit breakpoint");
             if (mode == "design")
@@ -233,19 +255,15 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
 
     public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
         string currentMode;
         try
         {
-            currentMode = await SnapshotModeAsync(ct);
+            currentMode = await RequireModeAsync(sessionId,
+                new ExecutionResult("unknown", null, "timeout", "step request timed out while reading debugger state; mode unknown, retry or pause"), ct);
         }
-        catch (TimeoutException)
+        catch (ModeReadTimeoutException ex)
         {
-            return new ExecutionResult("break", null, "timeout", "step request timed out while reading debugger state; mode unchanged, retry or pause");
-        }
-        catch (COMException ex)
-        {
-            throw ComErrorMapper.ToDomain(ex);
+            return ex.TimeoutResult;
         }
         if (currentMode != "break")
             throw new DebugDomainException(
@@ -271,7 +289,14 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         }
         catch (TimeoutException)
         {
-            return new ExecutionResult("break", null, "timeout", "step request timed out while issuing; mode unchanged, retry or pause");
+            // The step may or may not have been issued: re-snapshot the actual mode,
+            // never report the stale pre-step break.
+            var (issueMode, issueHit) = await TrySnapshotAsync(ct);
+            var mode = issueMode ?? "unknown";
+            return new ExecutionResult(mode, issueMode == "break" ? issueHit : null, "timeout",
+                issueMode is null
+                    ? "step request timed out while issuing; debugger state unreadable, retry or pause"
+                    : $"step request timed out while issuing; debugger mode is {mode}, retry or pause");
         }
         catch (COMException ex)
         {
@@ -284,7 +309,20 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             ct.ThrowIfCancellationRequested();
             var remaining = deadline - DateTime.UtcNow;
             if (remaining <= TimeSpan.Zero)
-                return new ExecutionResult("break", null, "timeout", "step exceeded timeoutMs; mode unchanged, retry or pause");
+            {
+                // Over budget with no terminal state observed: report the actual mode
+                // (the step usually resumed the debuggee), never the stale pre-step break.
+                var (finalMode, finalHit) = await TrySnapshotAsync(ct);
+                if (finalMode == "break")
+                    return new ExecutionResult(finalMode, finalHit, "ok", $"stepped {direction}");
+                if (finalMode == "design")
+                    return new ExecutionResult(finalMode, null, "ok", $"stepped {direction}; run ended back in design mode");
+                var actual = finalMode ?? "unknown";
+                return new ExecutionResult(actual, null, "timeout",
+                    finalMode is null
+                        ? "step exceeded timeoutMs; debugger state unreadable, retry or pause"
+                        : $"step exceeded timeoutMs; debugger mode is {actual}, retry or pause");
+            }
             await Task.Delay(ClampDelay(remaining), ct);
             await RequireSessionAsync(sessionId, ct);
             var (mode, _) = await TrySnapshotAsync(ct);
@@ -296,7 +334,7 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
     }
 
     public async Task<ReadStackResult> ReadStackAsync(string sessionId, int maxFrames, CancellationToken ct)
-        => await RunSnapshotAsync(sessionId, ct, debugger =>
+        => await RunSnapshotAsync(sessionId, debugger =>
         {
             RequireBreak(debugger);
             var frames = new List<StackFrameInfo>();
@@ -308,16 +346,17 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
                 frames.Add(new StackFrameInfo($"f{index++}", frame.FunctionName, frame.Module, null, null));
             }
             return new ReadStackResult(frames, ModeOf(debugger), LastHitOf(debugger));
-        });
+        }, ct);
 
     public async Task<ReadVariablesResult> ReadVariablesAsync(
         string sessionId, string frameId, string? path, int maxVariables, CancellationToken ct)
-        => await RunSnapshotAsync(sessionId, ct, debugger =>
+        => await RunSnapshotAsync(sessionId, debugger =>
         {
             RequireBreak(debugger);
             if (path is not null)
             {
-                var evaluated = debugger.GetExpression(path, true, 5000);
+                // Read-only evaluate: no auto-evaluate, so inspecting never runs user code as a side effect.
+                var evaluated = debugger.GetExpression(path, false, 5000);
                 if (!evaluated.IsValidValue)
                     throw new DebugDomainException(
                         "path-not-found", $"no expandable path {path}", "drill down only via expandable paths returned by read_variables");
@@ -342,23 +381,24 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
                 if (seen.Add(arg.Name)) vars.Add(SnapshotValue(arg, null));
             }
             return new ReadVariablesResult(frameId, null, vars, ModeOf(debugger), LastHitOf(debugger));
-        });
+        }, ct);
 
     public async Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct)
-        => await RunSnapshotAsync(sessionId, ct, debugger =>
+        => await RunSnapshotAsync(sessionId, debugger =>
         {
             RequireBreak(debugger);
-            var evaluated = debugger.GetExpression(expression, true, timeoutMs);
+            // Read-only evaluate: no auto-evaluate, so inspecting never runs user code as a side effect.
+            var evaluated = debugger.GetExpression(expression, false, timeoutMs);
             if (!evaluated.IsValidValue)
                 throw new DebugDomainException(
                     "invalid-expression", $"expression parsed but did not evaluate: {expression}",
                     "pass a read-only expression valid in the current frame");
             return SnapshotEvaluation(evaluated, expression, ModeOf(debugger), LastHitOf(debugger));
-        });
+        }, ct);
 
     // ---- helpers (all run on the dispatcher thread) ----
 
-    private async Task<T> RunSnapshotAsync<T>(string sessionId, CancellationToken ct, Func<Debugger, T> work)
+    private async Task<T> RunSnapshotAsync<T>(string sessionId, Func<Debugger, T> work, CancellationToken ct)
     {
         await RequireSessionAsync(sessionId, ct);
         try
@@ -428,6 +468,31 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         return await _dispatcher.InvokeAsync(() => ModeOf(DebuggerOf(_dte!)), 10_000, ct);
     }
 
+    /// <summary>Shared Pause/Resume/Step pre-flight: session check plus strict mode read.
+    /// A mode-read timeout throws <see cref="ModeReadTimeoutException"/> carrying the
+    /// op-specific timeout result, which the caller returns verbatim.</summary>
+    private async Task<string> RequireModeAsync(string sessionId, ExecutionResult timeoutResult, CancellationToken ct)
+    {
+        await RequireSessionAsync(sessionId, ct);
+        try
+        {
+            return await SnapshotModeAsync(ct);
+        }
+        catch (TimeoutException)
+        {
+            throw new ModeReadTimeoutException(timeoutResult);
+        }
+        catch (COMException ex)
+        {
+            throw ComErrorMapper.ToDomain(ex);
+        }
+    }
+
+    private sealed class ModeReadTimeoutException(ExecutionResult timeoutResult) : Exception
+    {
+        public ExecutionResult TimeoutResult { get; } = timeoutResult;
+    }
+
     /// <summary>Best-effort snapshot for polling: null mode means "keep waiting".</summary>
     private async Task<(string? Mode, string? LastHit)> TrySnapshotAsync(CancellationToken ct)
     {
@@ -441,6 +506,7 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         }
         catch (Exception ex) when (ex is TimeoutException or COMException or OperationCanceledException)
         {
+            TraceFallback(ex, "transient debugger snapshot failed; polling continues");
             return (null, null);
         }
     }
@@ -463,7 +529,7 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             index++;
             if (ReferenceEquals(bp, target)) return index;
         }
-        return index;
+        return -1;
     }
 
     private static Breakpoint? FindByToken(Debugger debugger, string token)
@@ -498,7 +564,7 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
 
     private const int MaxValueLength = 500;
 
-    private static ValueInfo SnapshotValue(Expression e, string? path)
+    private ValueInfo SnapshotValue(Expression e, string? path)
     {
         var raw = SafeGet(() => e.Value) ?? "(unavailable)";
         var truncated = raw.Length > MaxValueLength;
@@ -507,7 +573,7 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             truncated || HasMembers(e), path);
     }
 
-    private static EvaluateResult SnapshotEvaluation(Expression e, string expression, string mode, string? lastHit)
+    private EvaluateResult SnapshotEvaluation(Expression e, string expression, string mode, string? lastHit)
     {
         var raw = SafeGet(() => e.Value) ?? "(unavailable)";
         var truncated = raw.Length > MaxValueLength;
@@ -516,7 +582,7 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             SafeGet(() => e.Type) ?? "(unknown)", truncated || HasMembers(e), mode, lastHit);
     }
 
-    private static List<ValueInfo> SnapshotMembers(Expression parent, string path, int max)
+    private List<ValueInfo> SnapshotMembers(Expression parent, string path, int max)
     {
         var items = new List<ValueInfo>();
         try
@@ -540,10 +606,14 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         catch (COMException) { return false; }
     }
 
-    private static string? SafeGet(Func<string> read)
+    private string? SafeGet(Func<string> read)
     {
         try { return read(); }
-        catch (COMException) { return null; }
+        catch (COMException ex)
+        {
+            TraceFallback(ex, "expression property read failed; using fallback text");
+            return null;
+        }
     }
 
     public async Task<ListInstancesResult> ListInstancesAsync(CancellationToken ct)
@@ -614,6 +684,8 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
                 "retry; if it persists, check the MCP host can read the process table");
         }
         var me = ProcessOwner.CurrentUserName();
+        // One WMI query for all owners (2s cache) instead of one query per process.
+        var owners = ProcessOwner.SnapshotOwners();
         var snapshot = new List<TargetProcessInfo>(all.Length);
         foreach (var proc in all)
         {
@@ -633,15 +705,7 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             {
                 try { proc.Dispose(); } catch { /* best effort */ }
             }
-            string? owner;
-            try
-            {
-                owner = ProcessOwner.OwnerOf(pid);
-            }
-            catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
-            {
-                continue; // unreadable entry; skip, keep the rest
-            }
+            var owner = owners.TryGetValue(pid, out var o) ? o : null;
             // Unknown owner fails closed: not mine, hidden under the owned-only default,
             // flagged with error text when the filter is off.
             var mine = owner is not null && owner.Equals(me, StringComparison.OrdinalIgnoreCase);
@@ -654,39 +718,38 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
 
     private static DTE BindRunningInstance(string? instanceOverride)
     {
+        var picked = VsDiscovery.SelectCandidate(EnumRotNames(null), instanceOverride);
+        if (picked is null)
+            throw instanceOverride is null
+                ? new DebugDomainException("vs-not-running", "no running VS instance found in the ROT",
+                    "start Visual Studio 2026 and retry")
+                : new DebugDomainException("vs-not-running", $"no running VS instance matching {instanceOverride}",
+                    "check the instance override or start the matching VS and retry");
+        var obj = GetRotObject(picked);
+        if (obj is null)
+            throw new DebugDomainException("vs-not-running", $"VS instance {picked} left the ROT",
+                "start Visual Studio 2026 and retry");
+        if (obj is not DTE dte)
+            throw new DebugDomainException("automation-failed", $"ROT entry {picked} is not a VS automation object",
+                "restart VS and retry");
+        return dte;
+    }
+
+    private static List<string> EnumRotDteNames() => EnumRotNames(VsDiscovery.IsDteEntry);
+
+    /// <summary>Single ROT-enumeration seam: runs <paramref name="body"/> with the
+    /// table, bind context, and enumerator alive; releases all three on the way out.</summary>
+    private static T WithRot<T>(Func<IRunningObjectTable, IBindCtx, IEnumMoniker, T> body)
+    {
         IRunningObjectTable? rot = null;
         IEnumMoniker? enumMoniker = null;
         IBindCtx? ctx = null;
         try
         {
-            NativeMethods.GetRunningObjectTable(0, out rot);
-            NativeMethods.CreateBindCtx(0, out ctx);
+            Marshal.ThrowExceptionForHR(NativeMethods.GetRunningObjectTable(0, out rot));
+            Marshal.ThrowExceptionForHR(NativeMethods.CreateBindCtx(0, out ctx));
             rot!.EnumRunning(out enumMoniker);
-            var monikers = new IMoniker[1];
-            var names = new List<string>();
-            var byName = new Dictionary<string, IMoniker>(StringComparer.Ordinal);
-            while (enumMoniker!.Next(1, monikers, nint.Zero) == 0)
-            {
-                try
-                {
-                    monikers[0].GetDisplayName(ctx, null, out var name);
-                    names.Add(name);
-                    byName[name] = monikers[0];
-                }
-                catch (COMException) { /* skip unreadable entries */ }
-            }
-            var picked = VsDiscovery.SelectCandidate(names, instanceOverride);
-            if (picked is null)
-                throw instanceOverride is null
-                    ? new DebugDomainException("vs-not-running", "no running VS instance found in the ROT",
-                        "start Visual Studio 2026 and retry")
-                    : new DebugDomainException("vs-not-running", $"no running VS instance matching {instanceOverride}",
-                        "check the instance override or start the matching VS and retry");
-            rot.GetObject(byName[picked], out var obj);
-            if (obj is not DTE dte)
-                throw new DebugDomainException("automation-failed", $"ROT entry {picked} is not a VS automation object",
-                    "restart VS and retry");
-            return dte;
+            return body(rot, ctx!, enumMoniker!);
         }
         catch (COMException ex)
         {
@@ -700,75 +763,69 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         }
     }
 
-    private static List<string> EnumRotDteNames()
-    {
-        IRunningObjectTable? rot = null;
-        IEnumMoniker? enumMoniker = null;
-        IBindCtx? ctx = null;
-        try
+    /// <summary>Display names of every ROT entry passing <paramref name="accept"/>
+    /// (all entries when null). Each fetched moniker is released immediately;
+    /// only plain strings escape.</summary>
+    private static List<string> EnumRotNames(Func<string, bool>? accept) =>
+        WithRot((rot, ctx, enumMoniker) =>
         {
-            NativeMethods.GetRunningObjectTable(0, out rot);
-            NativeMethods.CreateBindCtx(0, out ctx);
-            rot!.EnumRunning(out enumMoniker);
-            var monikers = new IMoniker[1];
             var names = new List<string>();
-            while (enumMoniker!.Next(1, monikers, nint.Zero) == 0)
+            var monikers = new IMoniker[1];
+            while (enumMoniker.Next(1, monikers, nint.Zero) == 0)
             {
                 try
                 {
                     monikers[0].GetDisplayName(ctx, null, out var name);
-                    if (VsDiscovery.IsDteEntry(name))
+                    if (accept is null || accept(name))
                         names.Add(name);
                 }
                 catch (COMException) { /* skip unreadable entries */ }
+                finally
+                {
+                    Marshal.ReleaseComObject(monikers[0]);
+                }
             }
             return names;
-        }
-        catch (COMException ex)
+        });
+
+    /// <summary>Binds the ROT object for one display name (null when it left the ROT).
+    /// Non-matching monikers are released during the scan, the match right after GetObject.</summary>
+    private static object? GetRotObject(string displayName) =>
+        WithRot((rot, ctx, enumMoniker) =>
         {
-            throw ComErrorMapper.ToDomain(ex);
-        }
-        finally
-        {
-            if (enumMoniker is not null) Marshal.ReleaseComObject(enumMoniker);
-            if (ctx is not null) Marshal.ReleaseComObject(ctx);
-            if (rot is not null) Marshal.ReleaseComObject(rot);
-        }
-    }
+            var monikers = new IMoniker[1];
+            while (enumMoniker.Next(1, monikers, nint.Zero) == 0)
+            {
+                var moniker = monikers[0];
+                try
+                {
+                    moniker.GetDisplayName(ctx, null, out var name);
+                    if (name != displayName) continue;
+                    rot.GetObject(moniker, out var obj);
+                    return obj;
+                }
+                catch (COMException) { /* skip unreadable entries */ }
+                finally
+                {
+                    Marshal.ReleaseComObject(moniker);
+                }
+            }
+            return null;
+        });
 
     private static VsInstanceInfo UnreachableInstance(string displayName, string error)
         => new(displayName, VsDiscovery.TryParsePid(displayName),
             VsDiscovery.VersionTextOf(displayName), "", "", [], false, error);
 
-    private static VsInstanceInfo SnapshotInstance(string displayName)
+    private VsInstanceInfo SnapshotInstance(string displayName)
     {
         var pid = VsDiscovery.TryParsePid(displayName);
         var version = VsDiscovery.VersionTextOf(displayName);
-        IRunningObjectTable? rot = null;
-        IEnumMoniker? enumMoniker = null;
-        IBindCtx? ctx = null;
         DTE? dte = null;
         try
         {
-            NativeMethods.GetRunningObjectTable(0, out rot);
-            NativeMethods.CreateBindCtx(0, out ctx);
-            rot!.EnumRunning(out enumMoniker);
-            var monikers = new IMoniker[1];
-            IMoniker? match = null;
-            while (enumMoniker!.Next(1, monikers, nint.Zero) == 0)
-            {
-                try
-                {
-                    monikers[0].GetDisplayName(ctx, null, out var name);
-                    if (name == displayName) { match = monikers[0]; break; }
-                }
-                catch (COMException) { /* skip unreadable entries */ }
-            }
-            if (match is null)
+            if (GetRotObject(displayName) is not DTE found)
                 return UnreachableInstance(displayName, "vs-not-running: instance left the ROT");
-            rot.GetObject(match, out var obj);
-            if (obj is not DTE found)
-                return UnreachableInstance(displayName, "automation-failed: ROT entry is not a VS automation object");
             dte = found;
             string solutionPath;
             try { solutionPath = dte.Solution?.FullName ?? ""; }
@@ -797,36 +854,48 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             var mapped = ComErrorMapper.ToDomain(ex);
             return new VsInstanceInfo(displayName, pid, version, "", "", [], false, mapped.Message);
         }
+        catch (DebugDomainException ex)
+        {
+            return UnreachableInstance(displayName, $"{ex.Code}: {ex.Message}");
+        }
         finally
         {
             if (dte is not null) { try { Marshal.ReleaseComObject(dte); } catch { /* best effort */ } }
-            if (enumMoniker is not null) Marshal.ReleaseComObject(enumMoniker);
-            if (ctx is not null) Marshal.ReleaseComObject(ctx);
-            if (rot is not null) Marshal.ReleaseComObject(rot);
         }
     }
 
     private const string SolutionFolderKind = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}";
 
-    private static void CollectProjects(EnvDTE.Projects projects, List<string> projectNames)
+    private void CollectProjects(EnvDTE.Projects projects, List<string> projectNames)
     {
         foreach (Project project in projects)
         {
             try { CollectProject(project, projectNames); }
-            catch (Exception ex) when (ex is not OperationCanceledException) { /* skip one bad project, keep the rest */ }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                TraceFallback(ex, "skipping unreadable project during listing");
+            }
         }
     }
 
-    private static void CollectProject(Project project, List<string> projectNames)
+    private void CollectProject(Project project, List<string> projectNames)
     {
         string kind;
         try { kind = project.Kind ?? ""; }
-        catch (COMException) { return; }
+        catch (COMException ex)
+        {
+            TraceFallback(ex, "skipping project with unreadable kind");
+            return;
+        }
         if (kind.Equals(SolutionFolderKind, StringComparison.OrdinalIgnoreCase))
         {
             ProjectItems? items;
             try { items = project.ProjectItems; }
-            catch (COMException) { return; }
+            catch (COMException ex)
+            {
+                TraceFallback(ex, "skipping solution folder with unreadable items");
+                return;
+            }
             if (items is null) return;
             foreach (ProjectItem item in items)
             {
@@ -835,7 +904,10 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
                     var sub = item.SubProject;
                     if (sub is not null) CollectProject(sub, projectNames);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException) { /* skip one bad folder child */ }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    TraceFallback(ex, "skipping unreadable solution-folder child");
+                }
             }
             return;
         }
@@ -844,7 +916,10 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
             var name = project.Name;
             if (!string.IsNullOrWhiteSpace(name)) projectNames.Add(name);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException) { /* skip unreadable name */ }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            TraceFallback(ex, "skipping project with unreadable name");
+        }
     }
 
     public void Dispose()
@@ -858,6 +933,15 @@ internal sealed class DteDebugBridge : IDebugBridge, IDisposable
         }
         _dispatcher.Dispose();
     }
+
+    /// <summary>Trace log for every silent fallback (CA1848: LoggerMessage delegate, no formatting cost when disabled).</summary>
+    private void TraceFallback(Exception ex, string reason)
+    {
+        if (_logger is { } logger) LogSilentFallback(logger, ex, reason);
+    }
+
+    [LoggerMessage(Level = LogLevel.Trace, Message = "Silent fallback: {reason}")]
+    private static partial void LogSilentFallback(ILogger logger, Exception ex, string reason);
 
     private static class NativeMethods
     {

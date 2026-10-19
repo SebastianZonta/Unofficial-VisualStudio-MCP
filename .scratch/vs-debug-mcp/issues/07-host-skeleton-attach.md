@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** resolved
+Status: resolved
 
 - [x] Server starts over stdio with explicit per-group tool registration and all logging to standard error
 - [x] Attach returns an opaque session id; unknown session ids fail with a named no-session error

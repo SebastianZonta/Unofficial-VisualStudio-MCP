@@ -2,9 +2,13 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFramework>net10.0-windows</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <NuGetAudit>true</NuGetAudit>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,22 +24,30 @@
   </ItemGroup>
 
   <!-- Build-time only: embedded interop types, no runtime PIA dependency.
-       Runtime binds the DTE object from the ROT (never a hardcoded ProgID). -->
+       Runtime binds the DTE object from the ROT (never a hardcoded ProgID).
+       Prefer $(VSINSTALLDIR) (VS Developer prompt, or CI vswhere step that exports it);
+       fall back to the local Community install. Exists conditions keep this working
+       across VS editions (Enterprise/Professional/Community). -->
+  <PropertyGroup>
+    <VsPublicAssemblies Condition="Exists('$(VSINSTALLDIR)Common7\IDE\PublicAssemblies\EnvDTE.dll')">$(VSINSTALLDIR)Common7\IDE\PublicAssemblies\</VsPublicAssemblies>
+    <VsPublicAssemblies Condition="'$(VsPublicAssemblies)' == ''">C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\PublicAssemblies\</VsPublicAssemblies>
+  </PropertyGroup>
+
   <ItemGroup>
-    <Reference Include="EnvDTE">
-      <HintPath>C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\PublicAssemblies\EnvDTE.dll</HintPath>
+    <Reference Include="EnvDTE" Condition="Exists('$(VsPublicAssemblies)EnvDTE.dll')">
+      <HintPath>$(VsPublicAssemblies)EnvDTE.dll</HintPath>
     </Reference>
-    <Reference Include="EnvDTE80">
-      <HintPath>C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\PublicAssemblies\EnvDTE80.dll</HintPath>
+    <Reference Include="EnvDTE80" Condition="Exists('$(VsPublicAssemblies)EnvDTE80.dll')">
+      <HintPath>$(VsPublicAssemblies)EnvDTE80.dll</HintPath>
     </Reference>
-    <Reference Include="EnvDTE90">
-      <HintPath>C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\PublicAssemblies\EnvDTE90.dll</HintPath>
+    <Reference Include="EnvDTE90" Condition="Exists('$(VsPublicAssemblies)EnvDTE90.dll')">
+      <HintPath>$(VsPublicAssemblies)EnvDTE90.dll</HintPath>
     </Reference>
-    <Reference Include="EnvDTE100">
-      <HintPath>C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\PublicAssemblies\EnvDTE100.dll</HintPath>
+    <Reference Include="EnvDTE100" Condition="Exists('$(VsPublicAssemblies)EnvDTE100.dll')">
+      <HintPath>$(VsPublicAssemblies)EnvDTE100.dll</HintPath>
     </Reference>
-    <Reference Include="Microsoft.VisualStudio.Interop">
-      <HintPath>C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\PublicAssemblies\Microsoft.VisualStudio.Interop.dll</HintPath>
+    <Reference Include="Microsoft.VisualStudio.Interop" Condition="Exists('$(VsPublicAssemblies)Microsoft.VisualStudio.Interop.dll')">
+      <HintPath>$(VsPublicAssemblies)Microsoft.VisualStudio.Interop.dll</HintPath>
     </Reference>
   </ItemGroup>
 

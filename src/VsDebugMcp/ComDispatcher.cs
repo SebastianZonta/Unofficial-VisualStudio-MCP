@@ -5,7 +5,9 @@ namespace VsDebugMcp;
 /// <summary>One STA dispatcher thread serializing all EnvDTE COM calls. Parallel agent requests queue; never concurrent COM.</summary>
 internal sealed class ComDispatcher : IDisposable
 {
-    private readonly BlockingCollection<(Func<object?> Work, TaskCompletionSource<object?> Done)> _queue = new();
+    private const int BoundedCapacity = 100;
+    private readonly BlockingCollection<(Func<object?> Work, TaskCompletionSource<object?> Done)> _queue =
+        new(BoundedCapacity);
     private readonly Thread _thread;
     private bool _disposed;
 
@@ -19,7 +21,24 @@ internal sealed class ComDispatcher : IDisposable
     public async Task<T> InvokeAsync<T>(Func<T> work, CancellationToken ct)
     {
         var done = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
-        _queue.Add((() => work(), done));
+        bool enqueued;
+        try
+        {
+            enqueued = !_disposed && !_queue.IsAddingCompleted && _queue.TryAdd((() => work(), done));
+        }
+        catch (ObjectDisposedException)
+        {
+            enqueued = false;
+        }
+        if (!enqueued)
+        {
+            throw new DebugDomainException(
+                "vs-busy",
+                _disposed
+                    ? "debugger dispatcher is shutting down"
+                    : "debugger dispatcher queue is full (100 pending calls)",
+                "dismiss any modal dialog in VS and retry");
+        }
         using var reg = ct.Register(() => done.TrySetCanceled(ct));
         return (T)(await done.Task.ConfigureAwait(false))!;
     }
@@ -57,6 +76,9 @@ internal sealed class ComDispatcher : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        _queue.CompleteAdding();
+        try { _queue.CompleteAdding(); } catch { /* best effort */ }
+        // Never park process exit on a wedged STA thread: bounded join, then drop it (IsBackground).
+        _thread.Join(TimeSpan.FromSeconds(5));
+        _queue.Dispose();
     }
 }

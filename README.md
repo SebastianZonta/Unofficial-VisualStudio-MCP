@@ -57,7 +57,7 @@ registration, smoke test — lives in [INSTALL.md](INSTALL.md).
 
 ```powershell
 dotnet build                                    # Debug
-dotnet test                                     # 63 tests, no VS required
+dotnet test                                     # 101 tests, no VS required
 dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Debug -o src/VsDebugMcp/bin/Fixed
 ```
 

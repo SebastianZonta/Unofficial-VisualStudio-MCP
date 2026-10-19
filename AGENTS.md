@@ -11,3 +11,13 @@ Default five canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, 
 ### Domain docs
 
 Single-context layout (root `GLOSSARY.md` + `docs/adr/`). See `docs/agents/domain.md`.
+
+### Build & test
+
+```powershell
+dotnet build                                    # Debug
+dotnet test                                     # 101 tests, no VS required
+```
+
+Tool/parameter reference lives in `docs/TOOLS.md`; failure playbook in
+`docs/TROUBLESHOOTING.md`.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 (Host skeleton plus attach round-trip).
 
-**Status:** resolved
+Status: resolved
 
 - [x] Discovery enumerates the running-object table, binds newest VS 2026, honors an explicit override, and fails cleanly when absent
 - [x] All automation calls serialize through one dispatcher thread; live automation objects are snapshotted to plain data on every call and stale handles re-fetched after execution control

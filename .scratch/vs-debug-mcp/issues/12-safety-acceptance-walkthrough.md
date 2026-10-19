@@ -4,7 +4,7 @@
 
 **Blocked by:** 08 (Breakpoints end to end), 09 (Execution control end to end), 10 (Inspection end to end), 11 (Real COM/DTE bridge).
 
-**Status:** resolved
+Status: resolved
 
 - [x] Arbitrary process-id attach requires explicit consent plus same-user; solution launch stays frictionless
 - [x] Elevation mismatch and IDE-busy surface as named errors with remediation text

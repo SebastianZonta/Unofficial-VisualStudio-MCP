@@ -7,6 +7,7 @@ namespace VsDebugMcp;
 [McpServerToolType]
 public sealed class InspectionTools
 {
+    // TODO: add ILogger when tools become instance classes; static entry points keep no logger by design.
     [McpServerTool(Name = "read_stack")]
     [Description("Read the call stack of the active session, newest frame first. Requires break mode.")]
     public static Task<ReadStackResult> ReadStackAsync(
@@ -14,7 +15,11 @@ public sealed class InspectionTools
         [Description("Session id returned by attach.")] string sessionId,
         [Description("Maximum frames to return (default 20).")] int maxFrames = 20,
         CancellationToken cancellationToken = default)
-        => ToolErrors.MapAsync(() => bridge.ReadStackAsync(sessionId, maxFrames, cancellationToken));
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        ArgumentValidator.ValidateMaxFrames(maxFrames);
+        return ToolErrors.MapAsync(() => bridge.ReadStackAsync(sessionId, maxFrames, cancellationToken));
+    }
 
     [McpServerTool(Name = "read_variables")]
     [Description("Read a frame's locals and arguments in the active session; pass an expandable path to drill into nested members. Requires break mode.")]
@@ -25,7 +30,12 @@ public sealed class InspectionTools
         [Description("Expandable path from a previous read_variables result; omit for the frame's top level.")] string? path = null,
         [Description("Maximum variables to return (default 50).")] int maxVariables = 50,
         CancellationToken cancellationToken = default)
-        => ToolErrors.MapAsync(() => bridge.ReadVariablesAsync(sessionId, frameId, path, maxVariables, cancellationToken));
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        ArgumentValidator.ValidateFrameId(frameId);
+        ArgumentValidator.ValidateMaxVariables(maxVariables);
+        return ToolErrors.MapAsync(() => bridge.ReadVariablesAsync(sessionId, frameId, path, maxVariables, cancellationToken));
+    }
 
     [McpServerTool(Name = "evaluate")]
     [Description("Evaluate a read-only expression in the active session. Requires break mode. Assignment and statement execution are not supported.")]
@@ -36,10 +46,9 @@ public sealed class InspectionTools
         [Description("Budget in milliseconds for the evaluation (default 5000).")] int timeoutMs = 5000,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(expression))
-            throw new McpException("invalid-argument: expression must not be empty; remediation: pass a read-only expression");
-        if (expression.Contains(';'))
-            throw new McpException("invalid-argument: statements are not supported; remediation: pass a single read-only expression without ';'");
+        ArgumentValidator.ValidateSessionId(sessionId);
+        ArgumentValidator.ValidateExpression(expression);
+        ArgumentValidator.ValidateTimeoutMs(timeoutMs);
         return ToolErrors.MapAsync(() => bridge.EvaluateAsync(sessionId, expression, timeoutMs, cancellationToken));
     }
 }

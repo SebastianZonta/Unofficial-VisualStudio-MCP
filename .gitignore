@@ -4,3 +4,7 @@ standalone/
 .vs/
 *.user
 TestResults/
+publish/
+*.suo
+*.userosscache
+.DS_Store

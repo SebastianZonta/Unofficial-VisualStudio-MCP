@@ -81,6 +81,8 @@ public sealed class AttachProcessTests
     [Fact]
     public void Owner_lookup_resolves_the_current_process_to_the_current_user()
     {
+        if (!OperatingSystem.IsWindows())
+            throw Xunit.Sdk.SkipException.ForSkip("WMI owner lookup is Windows-only.");
         var me = ProcessOwner.CurrentUserName();
         Assert.False(string.IsNullOrWhiteSpace(me));
         Assert.Equal(me, ProcessOwner.OwnerOf(Environment.ProcessId));

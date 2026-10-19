@@ -5,10 +5,17 @@ or build from source.
 
 ## Option A — copy `standalone` (recommended)
 
+`standalone/` is a local publish artifact (gitignored — a fresh clone does
+not have it). Build it first:
+
+```powershell
+dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o standalone
+```
+
 Requirements on the target PC: 64-bit Windows, Visual Studio 2026 (running, same user as the
 MCP host). No .NET install needed — the runtime is bundled (~85 MB).
 
-1. Copy the entire `standalone` folder to the target, e.g. `C:\Tools\VsDebugMcp`.
+0. Publish (see above), then copy the entire `standalone` folder to the target, e.g. `C:\Tools\VsDebugMcp`.
    Never copy just `VsDebugMcp.dll` — it needs its sibling DLLs, `VsDebugMcp.deps.json`,
    and `VsDebugMcp.runtimeconfig.json` from the same folder.
 2. Smoke test: run `VsDebugMcp.exe --live-check` with no further args. It should print
@@ -34,7 +41,7 @@ different edition or install path. They are build-time only (embedded interop).
 
 ```powershell
 dotnet build                                    # Debug, for development
-dotnet test                                     # 45 tests, no VS required (fake bridge)
+dotnet test                                     # 101 tests, no VS required (fake bridge)
 dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o standalone
 ```
 

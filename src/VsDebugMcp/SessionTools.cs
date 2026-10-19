@@ -8,12 +8,13 @@ public sealed class SessionTools
 {
     [McpServerTool(Name = "attach")]
     [Description("Attach to the running VS 2026 instance and open a debug session. Returns a sessionId scoping all later calls.")]
+// TODO: add ILogger when tools become instance classes; static entry points keep no logger by design.
     public static Task<AttachResult> AttachAsync(
         IDebugBridge bridge,
         [Description("Optional explicit VS instance override. Omit to bind the newest running VS 2026.")]
         string? instanceOverride,
         CancellationToken cancellationToken)
-        => bridge.AttachAsync(instanceOverride, cancellationToken);
+        => ToolErrors.MapAsync(() => bridge.AttachAsync(instanceOverride, cancellationToken));
 
     [McpServerTool(Name = "list_instances")]
     [Description("List running VS 2026 instances with solution and project names. Session-less and read-only; attach with the entry's display name.")]
@@ -40,5 +41,10 @@ public sealed class SessionTools
         [Description("Explicit consent to attach to an arbitrary process. Must be true.")] bool consent = false,
         [Description("Budget in milliseconds for the attach (default 30000).")] int timeoutMs = 30000,
         CancellationToken cancellationToken = default)
-        => ToolErrors.MapAsync(() => bridge.AttachProcessAsync(sessionId, processId, consent, timeoutMs, cancellationToken));
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        ArgumentValidator.ValidateProcessId(processId);
+        ArgumentValidator.ValidateTimeoutMs(timeoutMs);
+        return ToolErrors.MapAsync(() => bridge.AttachProcessAsync(sessionId, processId, consent, timeoutMs, cancellationToken));
+    }
 }

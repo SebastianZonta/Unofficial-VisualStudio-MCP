@@ -14,7 +14,9 @@ internal static class ToolErrors
         }
         catch (DebugDomainException ex)
         {
-            throw new McpException(ex.Message, ex);
+            var mcp = new McpException(ex.Message, ex);
+            mcp.Data[ErrorCodes.DataKey] = ex.Code;
+            throw mcp;
         }
     }
 }

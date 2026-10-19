@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 (Host skeleton plus attach round-trip).
 
-**Status:** resolved
+Status: resolved
 
 - [x] Single step tool with over/into/out direction; pause and resume as separate tools
 - [x] Every result echoes debugger mode plus last-hit; waits honor the timeout parameter (default 5000 ms) and cancellation

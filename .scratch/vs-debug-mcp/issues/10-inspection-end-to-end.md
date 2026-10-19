@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 (Host skeleton plus attach round-trip).
 
-**Status:** resolved
+Status: resolved
 
 - [x] Stack reads capped at a small default frame count; variables read by frame id plus optional expandable path (locals, arguments, members unified)
 - [x] Values truncated with an expandable flag; drill-down by path, never full dumps

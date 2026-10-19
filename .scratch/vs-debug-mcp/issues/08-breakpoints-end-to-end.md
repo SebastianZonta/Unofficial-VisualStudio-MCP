@@ -4,7 +4,7 @@
 
 **Blocked by:** 07 (Host skeleton plus attach round-trip).
 
-**Status:** resolved
+Status: resolved
 
 - [x] Set returns id plus bound flag immediately with a warning when symbols are not loaded (never blocks)
 - [x] List reports bind states so the agent can poll to confirm arming before resuming
