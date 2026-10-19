@@ -6,7 +6,8 @@ Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, i
 > Visual Studio, EnvDTE, and .NET are trademarks of the Microsoft group of companies.
 > This server talks to a VS you already have running via its public COM automation
 > (`EnvDTE`) interface. It is a community integration, not a Microsoft product, and it
-> ships with no warranty. See [INSTALL.md](INSTALL.md) for setup.
+> ships with no warranty. Licensed under Apache 2.0 — see [LICENSE](LICENSE).
+See [INSTALL.md](INSTALL.md) for setup.
 
 ## What it does
 
