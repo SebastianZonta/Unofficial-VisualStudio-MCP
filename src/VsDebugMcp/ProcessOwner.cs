@@ -66,7 +66,9 @@ internal static class ProcessOwner
         var owners = new Dictionary<int, string?>();
         try
         {
-            using var searcher = new ManagementObjectSearcher("SELECT ProcessId FROM Win32_Process");
+            // NB: SELECT * (not ProcessId-only): property-only results cannot
+            // InvokeMethod("GetOwner") — every call throws InvalidOperationException.
+            using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_Process");
             using var results = searcher.Get();
             foreach (ManagementObject mo in results)
             {
