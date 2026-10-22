@@ -52,6 +52,18 @@ _Avoid_: owned, permission (when meaning these two gates)
 the only per-frame file/line source.
 _Avoid_: status, state (when meaning mode); hit (when meaning lastHit)
 
+**Condition / hit count / logpoint**:
+A breakpoint may carry a read-only `condition` (break only when true), a
+`hitCount` N with mode `exact` (Nth hit only) or `every` (every Nth hit;
+`HitCount` reports hits so far), or a `logMessage` template with
+`{expression}` holes. A logpoint never stops and never sets `lastHit`; its
+formatted output buffers in the session `Log`, read back via
+`list_breakpoints`. Conditions, hit counts, and their combination are native in
+VS (break-when-true plus equal/multiple, applied together); logpoints are
+emulated evaluate-then-decide with auto-continue, because native log output (VS
+Output window) is not automation-readable.
+_Avoid_: tracepoint (when meaning logpoint), watch (when meaning condition)
+
 **Truncation / expandable**:
 Values over 500 chars are cut with a `[truncated]` marker. `expandable`
 marks drillable values; its `path` feeds back into `read_variables`.

@@ -9,8 +9,17 @@ public sealed class FakeDebugBridge : IDebugBridge
         public string InstanceKey { get; set; } = "";
         public string Mode { get; set; } = "design";
         public string? LastHit { get; set; }
-        public Dictionary<string, (string File, int Line)> Breakpoints { get; } = new();
+        public Dictionary<string, FakeBreakpoint> Breakpoints { get; } = new();
+        public List<BreakpointLogEntry> Log { get; } = new();
         public bool Dead { get; set; }
+    }
+
+    private sealed record FakeBreakpoint(
+        string File, int Line, string? Condition, int? HitCountTarget, string? HitCountMode,
+        int HitCount, string? LogMessage)
+    {
+        public FakeBreakpoint WithHitCount(int hitCount) =>
+            this with { HitCount = hitCount };
     }
 
     private readonly Dictionary<string, FakeSession> _sessions = new();
@@ -101,11 +110,16 @@ public sealed class FakeDebugBridge : IDebugBridge
         return new DetachResult(sessionId);
     }
 
-    public async Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct)
+    public async Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct,
+        string? condition = null, int? hitCount = null, string? hitCountMode = null, string? logMessage = null)
     {
         var session = await RequireAsync(sessionId, ct);
+        var error = BreakpointOptions.Check(condition, hitCount, hitCountMode, logMessage);
+        if (error is not null)
+            throw new DebugDomainException(ErrorCodes.InvalidArgument, error.Value.Detail, error.Value.Remediation);
+        var (cond, count, mode, log) = BreakpointOptions.Normalize(condition, hitCount, hitCountMode, logMessage);
         var id = $"bp{++_breakpointCounter}";
-        session.Breakpoints[id] = (file, line);
+        session.Breakpoints[id] = new FakeBreakpoint(file, line, cond, count, mode, HitCount: 0, log);
         return new SetBreakpointResult(Render(id, session), session.Mode, session.LastHit);
     }
 
@@ -113,7 +127,7 @@ public sealed class FakeDebugBridge : IDebugBridge
     {
         var session = await RequireAsync(sessionId, ct);
         var items = session.Breakpoints.Keys.Select(bp => Render(bp, session)).ToList();
-        return new ListBreakpointsResult(items, session.Mode, session.LastHit);
+        return new ListBreakpointsResult(items, session.Mode, session.LastHit, session.Log.ToList());
     }
 
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)
@@ -147,12 +161,29 @@ public sealed class FakeDebugBridge : IDebugBridge
             return new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "resume exceeded timeoutMs; still waiting");
         session.Mode = "run";
         session.LastHit = null;
-        var hit = session.Breakpoints.Keys.Select(bp => Render(bp, session)).FirstOrDefault(b => b.Bound);
-        if (hit is not null)
+        // Evaluate-then-decide per hit, in creation order: the counter advances on
+        // every evaluation pass; a logpoint appends and never stops; a stopping
+        // breakpoint fires only when its hit-count mode and condition both agree.
+        if (SymbolsLoaded)
         {
-            session.Mode = "break";
-            session.LastHit = $"{hit.Id} {hit.File}:{hit.Line}";
-            return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"hit {hit.Id}");
+            foreach (var id in session.Breakpoints.Keys.OrderBy(BpIndex).ToList())
+            {
+                var bp = session.Breakpoints[id];
+                session.Breakpoints[id] = bp.WithHitCount(bp.HitCount + 1);
+                var updated = session.Breakpoints[id];
+                if (updated.LogMessage is not null)
+                {
+                    BreakpointOptions.AppendLog(session.Log, new BreakpointLogEntry(id,
+                        BreakpointOptions.FormatLogMessage(updated.LogMessage, _ => "41.80"), updated.HitCount));
+                    continue;
+                }
+                if (!HitCountGate(updated) || !ConditionGate(updated))
+                    continue;
+                var rendered = Render(id, session);
+                session.Mode = "break";
+                session.LastHit = $"{rendered.Id} {rendered.File}:{rendered.Line}";
+                return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"hit {rendered.Id}");
+            }
         }
         return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: "running; no bound breakpoints armed");
     }
@@ -172,10 +203,29 @@ public sealed class FakeDebugBridge : IDebugBridge
 
     private BreakpointInfo Render(string id, FakeSession session)
     {
-        var (file, line) = session.Breakpoints[id];
+        var bp = session.Breakpoints[id];
         return SymbolsLoaded
-            ? new BreakpointInfo(id, file, line, Bound: true, Warning: null)
-            : new BreakpointInfo(id, file, line, Bound: false, Warning: "symbols not loaded yet; poll listsession.Breakpoints until bound");
+            ? new BreakpointInfo(id, bp.File, bp.Line, Bound: true, Warning: null,
+                bp.Condition, bp.HitCountTarget, bp.HitCountMode, bp.HitCount, bp.LogMessage)
+            : new BreakpointInfo(id, bp.File, bp.Line, Bound: false, Warning: "symbols not loaded yet; poll listsession.Breakpoints until bound",
+                bp.Condition, bp.HitCountTarget, bp.HitCountMode, bp.HitCount, bp.LogMessage);
+    }
+
+    private static int BpIndex(string id) => int.TryParse(id.AsSpan(2), out var n) ? n : int.MaxValue;
+
+    private static bool HitCountGate(FakeBreakpoint bp) =>
+        bp.HitCountTarget is null || (bp.HitCountMode == HitCountModes.Every
+            ? bp.HitCount % bp.HitCountTarget.Value == 0
+            : bp.HitCount == bp.HitCountTarget.Value);
+
+    private static bool ConditionGate(FakeBreakpoint bp)
+    {
+        if (bp.Condition is null)
+            return true;
+        var cond = bp.Condition.Trim();
+        // Deterministic fake truthiness: only an explicit false/0 fails; the live
+        // bridge evaluates the real expression per hit instead.
+        return !cond.Equals("false", StringComparison.OrdinalIgnoreCase) && cond != "0";
     }
 
     private static void RequireBreak(FakeSession session)

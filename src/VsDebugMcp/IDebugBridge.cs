@@ -9,7 +9,8 @@ public interface IDebugBridge
     Task<DetachResult> DetachAsync(string sessionId, CancellationToken ct);
     Task<ListProcessesResult> ListProcessesAsync(string? nameFilter, bool ownedOnly, CancellationToken ct);
     Task RequireSessionAsync(string sessionId, CancellationToken ct);
-    Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct);
+    Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct,
+        string? condition = null, int? hitCount = null, string? hitCountMode = null, string? logMessage = null);
     Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct);
     Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct);
     Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct);

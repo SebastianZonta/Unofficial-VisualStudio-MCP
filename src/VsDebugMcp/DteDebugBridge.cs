@@ -24,6 +24,21 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         public string DisplayName { get; set; } = "";
         public int Pid { get; set; }
         public bool Dead { get; set; }
+        /// <summary>Breakpoints this session created: deleted on detach so no stale
+        /// conditional breakpoint surprises a later session. Touched on the dispatcher only.</summary>
+        public List<Breakpoint> OwnedBreakpoints { get; } = new();
+        /// <summary>Logpoints are emulated evaluate-then-decide (native log output lands in
+        /// the VS Output window, which automation cannot read), so the Resume loop needs
+        /// the template per file:line. Touched on the dispatcher only.</summary>
+        public List<LogpointSpec> Logpoints { get; } = new();
+        public List<BreakpointLogEntry> Log { get; } = new();
+    }
+
+    private sealed record LogpointSpec(string File, int Line, string LogMessage)
+    {
+        // File:line keying: two logpoints at the same location share the template match
+        // (first wins per hit); remove clears every spec at the removed location.
+        public string Key => $"{File}:{Line}";
     }
 
     public DteDebugBridge(ILogger<DteDebugBridge>? logger = null)
@@ -171,20 +186,28 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             _sessions.Remove(sessionId);
             entry = found;
         }
-        // Detach removes the record even for dead bindings; the release is best-effort.
+        // Detach removes the record even for dead bindings; breakpoint cleanup and
+        // the release are best-effort. Deleting this session's breakpoints first
+        // keeps stale conditional breakpoints out of later sessions on the same VS.
+        var owned = entry.OwnedBreakpoints.ToList();
         if (entry.Dte is { } dte)
         {
             try
             {
                 await _dispatcher.InvokeAsync(() =>
                 {
+                    foreach (var bp in owned)
+                    {
+                        try { bp.Delete(); } catch { /* best effort */ }
+                        try { Marshal.ReleaseComObject(bp); } catch { /* best effort */ }
+                    }
                     try { Marshal.ReleaseComObject(dte); } catch { /* best effort */ }
                     return true;
                 }, 10_000, ct);
             }
             catch (Exception ex) when (ex is TimeoutException or COMException or OperationCanceledException)
             {
-                // Session already forgotten; release was best-effort.
+                // Session already forgotten; cleanup was best-effort.
             }
         }
         return new DetachResult(sessionId);
@@ -239,33 +262,71 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
     }
 
-    public async Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct)
-        => await RunSnapshotAsync(sessionId, debugger =>
+    public async Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct,
+        string? condition = null, int? hitCount = null, string? hitCountMode = null, string? logMessage = null)
+    {
+        // Validation first: no debugger touched, nothing created on failure.
+        var error = BreakpointOptions.Check(condition, hitCount, hitCountMode, logMessage);
+        if (error is not null)
+            throw new DebugDomainException(ErrorCodes.InvalidArgument, error.Value.Detail, error.Value.Remediation);
+        var (cond, count, mode, log) = BreakpointOptions.Normalize(condition, hitCount, hitCountMode, logMessage);
+        // Conditions map natively (break-when-true); hit counts map natively
+        // (equal = exact Nth, multiple = every Nth). Logpoints stay stopping at
+        // the VS level and are emulated evaluate-then-decide by the Resume loop,
+        // because native log output (VS Output window) is not automation-readable.
+        var added = await RunSnapshotAsync(sessionId, debugger =>
         {
             debugger.Breakpoints.Add(
                 Function: "", File: file, Line: line, Column: 1,
-                Condition: "", ConditionType: dbgBreakpointConditionType.dbgBreakpointConditionTypeWhenTrue,
+                Condition: cond ?? "", ConditionType: dbgBreakpointConditionType.dbgBreakpointConditionTypeWhenTrue,
                 Language: "",
-                Data: "", DataCount: 0, Address: "", HitCount: 0,
-                HitCountType: dbgHitCountType.dbgHitCountTypeNone);
+                Data: "", DataCount: 0, Address: "", HitCount: count ?? 0,
+                HitCountType: count is null ? dbgHitCountType.dbgHitCountTypeNone
+                    : mode == HitCountModes.Every ? dbgHitCountType.dbgHitCountTypeMultiple
+                    : dbgHitCountType.dbgHitCountTypeEqual);
             // Add returns the collection; the just-added breakpoint is the last item.
-            var added = debugger.Breakpoints.Item(debugger.Breakpoints.Count);
-            var info = SnapshotBreakpoint(added, debugger.Breakpoints.Count);
+            var bp = debugger.Breakpoints.Item(debugger.Breakpoints.Count);
+            var info = SnapshotBreakpoint(bp, debugger.Breakpoints.Count);
             // Automation cannot observe pending-vs-bound (Concord-only); a successful Add means VS accepted it.
-            return new SetBreakpointResult(info with { Bound = true }, ModeOf(debugger), LastHitOf(debugger));
+            return (Breakpoint: bp, Info: info with { Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger));
         }, ct);
+        lock (_gate)
+        {
+            if (_sessions.TryGetValue(sessionId, out var entry) && !entry.Dead && entry.Dte is not null)
+            {
+                entry.OwnedBreakpoints.Add(added.Breakpoint);
+                if (log is not null)
+                    entry.Logpoints.Add(new LogpointSpec(file, line, log));
+            }
+        }
+        // Round-trip the logpoint template on set: the VS-side log action is not
+        // automation-readable, so the session spec is the source for LogMessage.
+        return new SetBreakpointResult(added.Info with { LogMessage = log }, added.Mode, added.LastHit);
+    }
 
     public async Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
         {
+            List<LogpointSpec> specs;
+            List<BreakpointLogEntry> log;
+            lock (_gate)
+            {
+                specs = _sessions.TryGetValue(sessionId, out var entry)
+                    ? entry.Logpoints.ToList() : new List<LogpointSpec>();
+                log = _sessions.TryGetValue(sessionId, out var found)
+                    ? found.Log.ToList() : new List<BreakpointLogEntry>();
+            }
             var items = new List<BreakpointInfo>();
             var index = 0;
             foreach (Breakpoint bp in debugger.Breakpoints)
             {
                 index++;
-                items.Add(SnapshotBreakpoint(bp, index));
+                var info = SnapshotBreakpoint(bp, index);
+                var spec = specs.FirstOrDefault(s =>
+                    s.File.Equals(info.File, StringComparison.OrdinalIgnoreCase) && s.Line == info.Line);
+                items.Add(spec is null ? info : info with { LogMessage = spec.LogMessage });
             }
-            return new ListBreakpointsResult(items, ModeOf(debugger), LastHitOf(debugger));
+            return new ListBreakpointsResult(items, ModeOf(debugger), LastHitOf(debugger), log);
         }, ct);
 
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)
@@ -276,7 +337,18 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 throw new DebugDomainException(
                     "breakpoint-not-found", $"no breakpoint {breakpointId}", "call list_breakpoints for valid ids");
             var id = TokenOf(target, debugger);
+            var file = target.File;
+            var line = target.FileLine;
             target.Delete();
+            lock (_gate)
+            {
+                if (_sessions.TryGetValue(sessionId, out var entry))
+                {
+                    entry.OwnedBreakpoints.RemoveAll(b => ReferenceEquals(b, target));
+                    entry.Logpoints.RemoveAll(s =>
+                        s.File.Equals(file, StringComparison.OrdinalIgnoreCase) && s.Line == line);
+                }
+            }
             return new RemoveBreakpointResult(id, ModeOf(debugger), LastHitOf(debugger));
         }, ct);
 
@@ -368,6 +440,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
         var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
         var seenRun = false;
+        var logged = 0;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -391,10 +464,95 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             if (mode == "run")
                 seenRun = true;
             if (mode == "break")
-                return new ExecutionResult(mode, lastHit, "ok", "hit breakpoint");
+            {
+                // Emulated logpoint: buffer the formatted template and keep going;
+                // a logpoint hit never surfaces as a stop.
+                if (await TryLogAndContinueAsync(sessionId, lastHit, timeoutMs, ct))
+                {
+                    logged++;
+                    continue;
+                }
+                return new ExecutionResult(mode, lastHit, "ok",
+                    logged > 0 ? $"hit breakpoint; logged {logged} logpoint hits" : "hit breakpoint");
+            }
             if (mode == "design")
                 return new ExecutionResult(mode, null, "ok", "run ended back in design mode");
         }
+    }
+
+    /// <summary>Emulated logpoint hit: formats the template against the live frame,
+    /// buffers it session-side, and resumes the debuggee. Returns false for stopping
+    /// hits (unknown location, evaluation unavailable), which surface normally.</summary>
+    private async Task<bool> TryLogAndContinueAsync(string sessionId, string? lastHit, int timeoutMs, CancellationToken ct)
+    {
+        if (lastHit is null)
+            return false;
+        LogpointSpec? spec;
+        lock (_gate)
+        {
+            spec = _sessions.TryGetValue(sessionId, out var entry)
+                ? entry.Logpoints.FirstOrDefault(s => s.Key.Equals(lastHit, StringComparison.OrdinalIgnoreCase))
+                : null;
+        }
+        if (spec is null)
+            return false;
+        var captured = spec;
+        (string Token, string Message, int Hits)? logged;
+        try
+        {
+            logged = await _dispatcher.InvokeAsync(() =>
+            {
+                var debugger = DebuggerOf(SessionDte(sessionId));
+                if (ModeOf(debugger) != "break")
+                    return ((string, string, int)?)null;
+                foreach (Breakpoint bp in debugger.Breakpoints)
+                {
+                    if ($"{bp.File}:{bp.FileLine}".Equals(lastHit, StringComparison.OrdinalIgnoreCase))
+                    {
+                        var message = BreakpointOptions.FormatLogMessage(captured.LogMessage, expr =>
+                        {
+                            try
+                            {
+                                var evaluated = debugger.GetExpression(expr, false, 5000);
+                                return evaluated.IsValidValue ? evaluated.Value ?? "(unavailable)" : "(unavailable)";
+                            }
+                            catch (COMException)
+                            {
+                                return "(unavailable)";
+                            }
+                        });
+                        return ((string, string, int)?)(TokenOf(bp, debugger), message, bp.CurrentHits);
+                    }
+                }
+                return ((string, string, int)?)null;
+            }, 10_000, ct);
+        }
+        catch (Exception ex) when (ex is TimeoutException or COMException or OperationCanceledException)
+        {
+            return false;
+        }
+        if (logged is null)
+            return false;
+        lock (_gate)
+        {
+            if (_sessions.TryGetValue(sessionId, out var entry))
+                BreakpointOptions.AppendLog(entry.Log,
+                    new BreakpointLogEntry(logged.Value.Token, logged.Value.Message, logged.Value.Hits));
+        }
+        var contDte = SessionDte(sessionId);
+        try
+        {
+            await _dispatcher.InvokeAsync(() => { DebuggerOf(contDte).Go(false); return true; }, IssueBudgetMs(timeoutMs), ct);
+        }
+        catch (COMException ex)
+        {
+            throw SessionComError(sessionId, contDte, ex);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        {
+            // The Go may still have taken effect; keep polling within the deadline.
+        }
+        return true;
     }
 
     public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)
@@ -709,8 +867,33 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     private static string TokenOf(Breakpoint target, Debugger debugger) => $"bp{IndexOf(debugger, target)}";
 
     private static BreakpointInfo SnapshotBreakpoint(Breakpoint bp, int index)
+    {
         // Bind state is eventual and invisible to automation: a successful Add means accepted.
-        => new($"bp{index}", bp.File, bp.FileLine, Bound: true, Warning: null);
+        // Option reads are best-effort; a transient COM failure falls back to the plain shape.
+        string? condition = null;
+        int? target = null;
+        string? mode = null;
+        var hits = 0;
+        try
+        {
+            condition = string.IsNullOrWhiteSpace(bp.Condition) ? null : bp.Condition;
+            if (bp.HitCountType != dbgHitCountType.dbgHitCountTypeNone)
+            {
+                target = bp.HitCountTarget;
+                mode = bp.HitCountType == dbgHitCountType.dbgHitCountTypeMultiple
+                    ? HitCountModes.Every : HitCountModes.Exact;
+            }
+            hits = bp.CurrentHits;
+        }
+        catch (COMException)
+        {
+            // Keep the plain shape; options stay null/zero rather than failing the list.
+        }
+        // LogMessage comes from the session's logpoint specs (see ListBreakpointsAsync);
+        // the VS-side log action is not automation-readable.
+        return new($"bp{index}", bp.File, bp.FileLine, Bound: true, Warning: null,
+            condition, target, mode, hits, LogMessage: null);
+    }
 
     private static StackFrame? FindFrame(Debugger debugger, string frameId)
     {

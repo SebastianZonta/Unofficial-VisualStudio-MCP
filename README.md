@@ -29,8 +29,8 @@ An agent workflow looks like this:
 | `list_instances` | Session-less list of VS instances: solution, projects, reachability. |
 | `list_processes` | Session-less list of local target processes: pid, name, owner, mine flag. |
 | `attach_process` | Attach the debugger to a pid. Needs `consent: true` and same-user. |
-| `set_breakpoint` | File/line breakpoint; returns bind state immediately. |
-| `list_breakpoints` | Breakpoints with bind states; poll until unbound flips to bound. |
+| `set_breakpoint` | File/line breakpoint, optional read-only `condition`, `hitCount` (`exact`/`every`), or `logMessage` logpoint; returns bind state immediately. |
+| `list_breakpoints` | Breakpoints with options, hit counts, and bind states; poll until unbound flips to bound. Carries the session logpoint `Log`. |
 | `remove_breakpoint` | Remove a breakpoint by id. |
 | `pause` | Pause a running debuggee. |
 | `resume` | Run until a breakpoint or the timeout. Over-budget waits return a timeout status, never a hang. |
@@ -94,3 +94,7 @@ to or disturbs anything.
   post-mortem of a dead process.
 - PIDs are recycled by the OS: list, then attach promptly.
 - All sessions share one dispatcher thread: one wedged VS stalls every session behind it.
+- Breakpoints live in the VS debugger, so sibling debug sessions on the same VS
+  instance enumerate the same breakpoints; per-session bookkeeping (logpoint
+  templates, session log) is MCP-side, and `detach` deletes the breakpoints the
+  session created.

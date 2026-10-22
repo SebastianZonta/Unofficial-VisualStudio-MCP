@@ -30,6 +30,13 @@ public static class ArgumentValidator
             throw new McpException($"{ErrorCodes.InvalidArgument}: breakpointId must not be empty; remediation: call list_breakpoints for valid ids");
     }
 
+    public static void ValidateBreakpointOptions(string? condition, int? hitCount, string? hitCountMode, string? logMessage)
+    {
+        var error = BreakpointOptions.Check(condition, hitCount, hitCountMode, logMessage);
+        if (error is not null)
+            throw new McpException($"{ErrorCodes.InvalidArgument}: {error.Value.Detail}; remediation: {error.Value.Remediation}");
+    }
+
     public static void ValidateFrameId(string frameId)
     {
         if (string.IsNullOrWhiteSpace(frameId))
@@ -81,23 +88,5 @@ public static class ArgumentValidator
             throw new McpException($"{ErrorCodes.InvalidArgument}: processId must be > 0; remediation: pass a local process ID from list_processes");
     }
 
-    private static bool ContainsAssignment(string expression)
-    {
-        for (var i = 0; i < expression.Length; i++)
-        {
-            if (expression[i] != '=')
-                continue;
-
-            var prev = i > 0 ? expression[i - 1] : '\0';
-            var next = i + 1 < expression.Length ? expression[i + 1] : '\0';
-            // Allow ==, !=, <=, >=, => comparisons/lambdas; anything else is assignment.
-
-            if (next == '=' || prev == '=' || prev == '!' || prev == '<' || prev == '>' || next == '>')
-                continue;
-
-            return true;
-        }
-
-        return false;
-    }
+    private static bool ContainsAssignment(string expression) => BreakpointOptions.ContainsAssignment(expression);
 }

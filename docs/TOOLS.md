@@ -10,7 +10,7 @@ session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 |---|---|---|
 | `attach` | `instanceOverride?` (omit = newest VS 2026) | Returns `sessionId`. One session per VS instance; re-attaching the same instance returns its live session. |
 | `list_sessions` | — | Session-less, read-only. Entry: `sessionId`, display name. Join with `list_instances` for solution details. |
-| `detach` | `sessionId` | Releases that session's VS binding (`DetachResult` echoes the id). Siblings unaffected; unknown id is `no-session`. |
+| `detach` | `sessionId` | Releases that session's VS binding (`DetachResult` echoes the id) and deletes the breakpoints the session created, so stale conditional breakpoints never surprise a later session. Siblings unaffected; unknown id is `no-session`. |
 | `list_instances` | — | Session-less, read-only. Entry: display name (use as `instanceOverride`), pid, version, solution name/path, project names (sorted, capped at 50), reachable flag, error text. |
 | `list_processes` | `nameFilter?` = null (case-insensitive substring), `ownedOnly` = true | Session-less, read-only. Entry: pid (use as `attach_process` arg), name, owner, mine flag, error text. Sorted by name, then pid. |
 | `attach_process` | `sessionId`, `processId`, `consent` = false (must pass `true`), `timeoutMs` = 30000 | Same-user gate + explicit consent. Solution processes attach frictionlessly. |
@@ -19,8 +19,8 @@ session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 
 | Tool | Params | Notes |
 |---|---|---|
-| `set_breakpoint` | `sessionId`, `file`, `line` (1-based) | Returns id + bind state immediately; unbound carries a warning, never an error. |
-| `list_breakpoints` | `sessionId` | Poll until unbound flips to bound. |
+| `set_breakpoint` | `sessionId`, `file`, `line` (1-based), `condition?`, `hitCount?`, `hitCountMode?` (`exact` default \| `every`), `logMessage?` | Returns id + bind state immediately; unbound carries a warning, never an error. `condition` is read-only (same rules as `evaluate`): break only when true. `hitCount` N breaks on the Nth hit (`exact`) or every Nth hit (`every`); `hitCountMode` alone is rejected. `logMessage` is a template with `{expression}` holes (each read-only): a logpoint never stops and never sets `lastHit`, and is incompatible with `condition`/`hitCount`. Bad options fail naming the input and create nothing. |
+| `list_breakpoints` | `sessionId` | Poll until unbound flips to bound. Entries show `condition`, hit-count setting, current `HitCount`, and bind state; `Log` carries the session's buffered logpoint entries (readable without changing mode). |
 | `remove_breakpoint` | `sessionId`, `breakpointId` | — |
 
 ## Execution (in `ExecutionTools`)
@@ -67,7 +67,7 @@ Failures are structured `code: detail; remediation: …`:
 | `not-in-break-mode` | inspect/step/evaluate outside break mode | resume to a breakpoint or pause first |
 | `not-running` | `pause` while not running | resume first, then pause while running |
 | `already-running` | `resume` while already running | pause first to inspect |
-| `invalid-argument` | empty file/breakpointId/expression, bad line, bad step direction, `;` in expression | follow the per-field guidance in the message |
+| `invalid-argument` | empty file/breakpointId/expression, bad line, bad step direction, `;` in expression, write-like/multiline `condition`, bad `hitCount`/`hitCountMode`, bad `logMessage` (empty, unbalanced braces, write-like hole, or combined with stopping options) | follow the per-field guidance in the message |
 | `invalid-expression` | expression parsed but did not evaluate | pass a read-only expression valid in the current frame |
 | `breakpoint-not-found` | unknown breakpoint id | call `list_breakpoints` for valid ids |
 | `frame-not-found` | unknown frame id | call `read_stack` for valid frame ids |
