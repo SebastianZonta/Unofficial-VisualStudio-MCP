@@ -7,6 +7,14 @@ internal static class ComErrorMapper
 {
     private const int RpcECallRejected = unchecked((int)0x80010001); // VS busy: modal dialog or blocked UI thread
     private const int EAccessDenied = unchecked((int)0x80070005); // integrity-level / elevation mismatch
+    private const int RpcEDisconnected = unchecked((int)0x80010108); // server object disconnected (bound VS exited)
+    private const int RpcSServerUnavailable = unchecked((int)0x800706BA); // RPC server unavailable (bound VS gone)
+    private const int RpcSUnknownIf = unchecked((int)0x800706B5); // endpoint gone with the server
+    private const int RpcEServerCallRetryLater = unchecked((int)0x8001010A); // server going away
+
+    /// <summary>True when the failure means the bound VS instance is gone (per-session death, not a busy server).</summary>
+    public static bool IsDisconnected(COMException ex) => ex.HResult is
+        RpcEDisconnected or RpcSServerUnavailable or RpcSUnknownIf or RpcEServerCallRetryLater;
 
     public static DebugDomainException ToDomain(COMException ex) => ex.HResult switch
     {

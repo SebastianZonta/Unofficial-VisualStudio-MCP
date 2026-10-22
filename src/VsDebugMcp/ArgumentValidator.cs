@@ -46,10 +46,13 @@ public static class ArgumentValidator
     {
         if (string.IsNullOrWhiteSpace(expression))
             throw new McpException($"{ErrorCodes.InvalidArgument}: expression must not be empty; remediation: pass a read-only expression");
+
         if (expression.Contains(';'))
             throw new McpException($"{ErrorCodes.InvalidArgument}: statements are not supported; remediation: pass a single read-only expression without ';'");
+
         if (expression.Contains('\r') || expression.Contains('\n'))
             throw new McpException($"{ErrorCodes.InvalidArgument}: statements are not supported; remediation: pass a single-line read-only expression");
+
         if (ContainsAssignment(expression))
             throw new McpException($"{ErrorCodes.InvalidArgument}: assignment is not supported; remediation: pass a read-only expression without '='");
     }
@@ -84,13 +87,17 @@ public static class ArgumentValidator
         {
             if (expression[i] != '=')
                 continue;
-            char prev = i > 0 ? expression[i - 1] : '\0';
-            char next = i + 1 < expression.Length ? expression[i + 1] : '\0';
+
+            var prev = i > 0 ? expression[i - 1] : '\0';
+            var next = i + 1 < expression.Length ? expression[i + 1] : '\0';
             // Allow ==, !=, <=, >=, => comparisons/lambdas; anything else is assignment.
+
             if (next == '=' || prev == '=' || prev == '!' || prev == '<' || prev == '>' || next == '>')
                 continue;
+
             return true;
         }
+
         return false;
     }
 }

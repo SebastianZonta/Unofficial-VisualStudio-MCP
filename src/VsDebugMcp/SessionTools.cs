@@ -23,6 +23,24 @@ public sealed class SessionTools
         CancellationToken cancellationToken)
         => ToolErrors.MapAsync(() => bridge.ListInstancesAsync(cancellationToken));
 
+    [McpServerTool(Name = "list_sessions")]
+    [Description("List live debug sessions (one per attached VS instance). Session-less and read-only; join with list_instances for solution details.")]
+    public static Task<ListSessionsResult> ListSessionsAsync(
+        IDebugBridge bridge,
+        CancellationToken cancellationToken)
+        => ToolErrors.MapAsync(() => bridge.ListSessionsAsync(cancellationToken));
+
+    [McpServerTool(Name = "detach")]
+    [Description("Release one debug session, freeing its VS binding. Other sessions are unaffected.")]
+    public static Task<DetachResult> DetachAsync(
+        IDebugBridge bridge,
+        [Description("Session id returned by attach.")] string sessionId,
+        CancellationToken cancellationToken)
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        return ToolErrors.MapAsync(() => bridge.DetachAsync(sessionId, cancellationToken));
+    }
+
     [McpServerTool(Name = "list_processes")]
     [Description("List local target processes (program under test candidates). Session-less and read-only; attach with the entry's pid plus consent:true.")]
     public static Task<ListProcessesResult> ListProcessesAsync(

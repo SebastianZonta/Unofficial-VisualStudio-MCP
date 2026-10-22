@@ -11,6 +11,15 @@ elevated or both not. Same Windows user is always required.
 Symptom: calls fail with `vs-busy` or time out while VS shows a dialog or is
 otherwise occupied. Fix: dismiss any modal dialog in VS and retry. `resume`
 and `step` return `status: timeout` instead of hanging — retry or `pause`.
+All sessions share one dispatcher thread, so one wedged VS stalls every
+session behind it; timeouts only cancel the waiter, never the queued call.
+
+## Dead VS instance (`vs-not-running`, per-session)
+
+Symptom: one session fails with `vs-not-running` while the others keep
+working. Cause: its bound VS exited. Fix: `detach` the dead session (or
+re-attach the same `instanceOverride` for a fresh binding); sibling sessions
+are unaffected and keep their ids.
 
 ## Build: EnvDTE `HintPath` misses
 

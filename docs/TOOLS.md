@@ -1,14 +1,16 @@
 # Tools reference
 
-13 tools over stdio. Session id comes from `attach`; `list_instances` and
-`list_processes` are session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
-when a call fails.
+15 tools over stdio. Session id comes from `attach` — one live session per VS
+instance. `list_instances`, `list_processes`, and `list_sessions` are
+session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 
 ## Session (in `SessionTools`)
 
 | Tool | Params (default) | Notes |
 |---|---|---|
-| `attach` | `instanceOverride?` (omit = newest VS 2026) | Returns `sessionId`. A new attach replaces the old binding. |
+| `attach` | `instanceOverride?` (omit = newest VS 2026) | Returns `sessionId`. One session per VS instance; re-attaching the same instance returns its live session. |
+| `list_sessions` | — | Session-less, read-only. Entry: `sessionId`, display name. Join with `list_instances` for solution details. |
+| `detach` | `sessionId` | Releases that session's VS binding (`DetachResult` echoes the id). Siblings unaffected; unknown id is `no-session`. |
 | `list_instances` | — | Session-less, read-only. Entry: display name (use as `instanceOverride`), pid, version, solution name/path, project names (sorted, capped at 50), reachable flag, error text. |
 | `list_processes` | `nameFilter?` = null (case-insensitive substring), `ownedOnly` = true | Session-less, read-only. Entry: pid (use as `attach_process` arg), name, owner, mine flag, error text. Sorted by name, then pid. |
 | `attach_process` | `sessionId`, `processId`, `consent` = false (must pass `true`), `timeoutMs` = 30000 | Same-user gate + explicit consent. Solution processes attach frictionlessly. |
@@ -54,8 +56,7 @@ Failures are structured `code: detail; remediation: …`:
 | Code | When | Remediation |
 |---|---|---|
 | `no-session` | unknown session id | call `attach` first |
-| `stale-session` | session replaced by a newer attach | use the latest sessionId |
-| `vs-not-running` | no ROT instance (or override matched none, or bound VS gone) | start VS 2026 / check override / re-attach |
+| `vs-not-running` | no ROT instance, or override matched none, or the bound VS exited | start VS 2026 / check override / re-attach. Per-session: only the dead session is affected; `detach` it or re-attach. |
 | `vs-busy` | VS rejected the call (RPC_E_CALL_REJECTED: modal dialog or blocked UI thread) | dismiss any modal dialog in VS and retry |
 | `elevation-mismatch` | access denied talking to VS (integrity-level mismatch) | run bridge at the same elevation as VS (both elevated or both not) |
 | `automation-failed` | other COM failure | dismiss dialogs and retry; restart VS if it persists |

@@ -1,10 +1,19 @@
 namespace VsDebugMcp;
 
-/// <summary>In-memory fake session backing the tickets. Single active session: a new attach replaces the old binding.</summary>
+/// <summary>In-memory fake sessions backing the tickets. One session per instance key:
+/// re-attaching the same key returns the live session, like the real bridge.</summary>
 public sealed class FakeDebugBridge : IDebugBridge
 {
-    private string? _activeSessionId;
-    private readonly Dictionary<string, (string File, int Line)> _breakpoints = new();
+    private sealed class FakeSession
+    {
+        public string InstanceKey { get; set; } = "";
+        public string Mode { get; set; } = "design";
+        public string? LastHit { get; set; }
+        public Dictionary<string, (string File, int Line)> Breakpoints { get; } = new();
+        public bool Dead { get; set; }
+    }
+
+    private readonly Dictionary<string, FakeSession> _sessions = new();
     private int _breakpointCounter;
 
     /// <summary>Known local processes and their owners (DOMAIN\user). Empty by default: every pid is unknown.</summary>
@@ -28,17 +37,18 @@ public sealed class FakeDebugBridge : IDebugBridge
     /// <summary>Known local target processes. Empty by default: every pid is unknown.</summary>
     public List<TargetProcessInfo> Processes { get; } = new();
 
-    private string _mode = "design";
-    private string? _lastHit;
-
     public Task<AttachResult> AttachAsync(string? instanceOverride, CancellationToken ct)
     {
-        _ = instanceOverride;
         ct.ThrowIfCancellationRequested();
-        _activeSessionId = Guid.NewGuid().ToString("N");
-        _mode = "design";
-        _lastHit = null;
-        return Task.FromResult(new AttachResult(_activeSessionId, _mode, _lastHit));
+        var key = instanceOverride ?? "default";
+        foreach (var kv in _sessions)
+        {
+            if (!kv.Value.Dead && kv.Value.InstanceKey == key)
+                return Task.FromResult(new AttachResult(kv.Key, kv.Value.Mode, kv.Value.LastHit));
+        }
+        var sessionId = Guid.NewGuid().ToString("N");
+        _sessions[sessionId] = new FakeSession { InstanceKey = key };
+        return Task.FromResult(new AttachResult(sessionId, "design", LastHit: null));
     }
 
     public Task<ListInstancesResult> ListInstancesAsync(CancellationToken ct)
@@ -54,101 +64,125 @@ public sealed class FakeDebugBridge : IDebugBridge
             ProcessDiscovery.FilterAndOrder(Processes, nameFilter, ownedOnly)));
     }
 
-    public Task RequireSessionAsync(string sessionId, CancellationToken ct)
+    public async Task RequireSessionAsync(string sessionId, CancellationToken ct)
+    {
+        _ = await RequireAsync(sessionId, ct);
+    }
+
+    private Task<FakeSession> RequireAsync(string sessionId, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        if (_activeSessionId is null || sessionId != _activeSessionId)
-        {
-            if (_activeSessionId is null)
-                throw new DebugDomainException("no-session", "no active session", "call attach first");
+        if (!_sessions.TryGetValue(sessionId, out var session))
+            throw new DebugDomainException("no-session", "no active session", "call attach first");
+        if (session.Dead)
             throw new DebugDomainException(
-                "stale-session", $"session {sessionId} was replaced by a newer attach", "use the latest sessionId");
-        }
-        return Task.CompletedTask;
+                "vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
+        return Task.FromResult(session);
+    }
+
+    /// <summary>Test hook: simulates the bound VS exiting mid-session.</summary>
+    public void SimulateVsExit(string sessionId)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+            session.Dead = true;
+    }
+
+    public Task<ListSessionsResult> ListSessionsAsync(CancellationToken ct)
+    {
+        ct.ThrowIfCancellationRequested();
+        return Task.FromResult(new ListSessionsResult(
+            _sessions.Select(kv => new SessionInfo(kv.Key, kv.Value.InstanceKey)).ToList()));
+    }
+
+    public async Task<DetachResult> DetachAsync(string sessionId, CancellationToken ct)
+    {
+        _ = await RequireAsync(sessionId, ct);
+        _sessions.Remove(sessionId);
+        return new DetachResult(sessionId);
     }
 
     public async Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
+        var session = await RequireAsync(sessionId, ct);
         var id = $"bp{++_breakpointCounter}";
-        _breakpoints[id] = (file, line);
-        return new SetBreakpointResult(Render(id), _mode, _lastHit);
+        session.Breakpoints[id] = (file, line);
+        return new SetBreakpointResult(Render(id, session), session.Mode, session.LastHit);
     }
 
     public async Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
-        var items = _breakpoints.Keys.Select(Render).ToList();
-        return new ListBreakpointsResult(items, _mode, _lastHit);
+        var session = await RequireAsync(sessionId, ct);
+        var items = session.Breakpoints.Keys.Select(bp => Render(bp, session)).ToList();
+        return new ListBreakpointsResult(items, session.Mode, session.LastHit);
     }
 
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
-        if (!_breakpoints.Remove(breakpointId))
+        var session = await RequireAsync(sessionId, ct);
+        if (!session.Breakpoints.Remove(breakpointId))
             throw new DebugDomainException(
-                "breakpoint-not-found", $"no breakpoint {breakpointId}", "call list_breakpoints for valid ids");
-        return new RemoveBreakpointResult(breakpointId, _mode, _lastHit);
+                "breakpoint-not-found", $"no breakpoint {breakpointId}", "call listsession.Breakpoints for valid ids");
+        return new RemoveBreakpointResult(breakpointId, session.Mode, session.LastHit);
     }
 
     public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
-        if (_mode != "run")
+        var session = await RequireAsync(sessionId, ct);
+        if (session.Mode != "run")
             throw new DebugDomainException(
-                "not-running", $"debuggee is {_mode}, nothing to pause", "resume first, then pause while running");
-        _mode = "break";
-        return new ExecutionResult(_mode, _lastHit, Status: "ok", Note: "paused on request");
+                "not-running", $"debuggee is {session.Mode}, nothing to pause", "resume first, then pause while running");
+        session.Mode = "break";
+        return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: "paused on request");
     }
 
     public async Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
+        var session = await RequireAsync(sessionId, ct);
         _ = timeoutMs;
         ct.ThrowIfCancellationRequested();
-        if (_mode == "run")
+        if (session.Mode == "run")
             throw new DebugDomainException(
                 "already-running", "debuggee is already running", "pause first to inspect");
         if (ForceTimeout)
-            return new ExecutionResult(_mode, _lastHit, Status: "timeout", Note: "resume exceeded timeoutMs; still waiting");
-        _mode = "run";
-        _lastHit = null;
-        var hit = _breakpoints.Keys.Select(Render).FirstOrDefault(b => b.Bound);
+            return new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "resume exceeded timeoutMs; still waiting");
+        session.Mode = "run";
+        session.LastHit = null;
+        var hit = session.Breakpoints.Keys.Select(bp => Render(bp, session)).FirstOrDefault(b => b.Bound);
         if (hit is not null)
         {
-            _mode = "break";
-            _lastHit = $"{hit.Id} {hit.File}:{hit.Line}";
-            return new ExecutionResult(_mode, _lastHit, Status: "ok", Note: $"hit {hit.Id}");
+            session.Mode = "break";
+            session.LastHit = $"{hit.Id} {hit.File}:{hit.Line}";
+            return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"hit {hit.Id}");
         }
-        return new ExecutionResult(_mode, _lastHit, Status: "ok", Note: "running; no bound breakpoints armed");
+        return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: "running; no bound breakpoints armed");
     }
 
     public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
+        var session = await RequireAsync(sessionId, ct);
         _ = timeoutMs;
         ct.ThrowIfCancellationRequested();
-        if (_mode != "break")
+        if (session.Mode != "break")
             throw new DebugDomainException(
-                "not-in-break-mode", $"debuggee is {_mode}", "resume to a breakpoint or pause first; only inspect and step in break mode");
+                "not-in-break-mode", $"debuggee is {session.Mode}", "resume to a breakpoint or pause first; only inspect and step in break mode");
         if (ForceTimeout)
-            return new ExecutionResult(_mode, _lastHit, Status: "timeout", Note: "step exceeded timeoutMs; mode unchanged, retry or pause");
-        return new ExecutionResult(_mode, LastHit: null, Status: "ok", Note: $"stepped {direction}");
+            return new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "step exceeded timeoutMs; mode unchanged, retry or pause");
+        return new ExecutionResult(session.Mode, LastHit: null, Status: "ok", Note: $"stepped {direction}");
     }
 
-    private BreakpointInfo Render(string id)
+    private BreakpointInfo Render(string id, FakeSession session)
     {
-        var (file, line) = _breakpoints[id];
+        var (file, line) = session.Breakpoints[id];
         return SymbolsLoaded
             ? new BreakpointInfo(id, file, line, Bound: true, Warning: null)
-            : new BreakpointInfo(id, file, line, Bound: false, Warning: "symbols not loaded yet; poll list_breakpoints until bound");
+            : new BreakpointInfo(id, file, line, Bound: false, Warning: "symbols not loaded yet; poll listsession.Breakpoints until bound");
     }
 
-    private void RequireBreak()
+    private static void RequireBreak(FakeSession session)
     {
-        if (_mode != "break")
+        if (session.Mode != "break")
             throw new DebugDomainException(
-                "not-in-break-mode", $"debuggee is {_mode}",
+                "not-in-break-mode", $"debuggee is {session.Mode}",
                 "resume to a breakpoint or pause first; only inspect and step in break mode");
     }
 
@@ -172,32 +206,32 @@ public sealed class FakeDebugBridge : IDebugBridge
 
     public async Task<ReadStackResult> ReadStackAsync(string sessionId, int maxFrames, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
-        RequireBreak();
-        return new ReadStackResult(CannedFrames().Take(maxFrames).ToList(), _mode, _lastHit);
+        var session = await RequireAsync(sessionId, ct);
+        RequireBreak(session);
+        return new ReadStackResult(CannedFrames().Take(maxFrames).ToList(), session.Mode, session.LastHit);
     }
 
     public async Task<ReadVariablesResult> ReadVariablesAsync(
         string sessionId, string frameId, string? path, int maxVariables, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
-        RequireBreak();
+        var session = await RequireAsync(sessionId, ct);
+        RequireBreak(session);
         if (CannedFrames().All(f => f.Id != frameId))
             throw new DebugDomainException(
                 "frame-not-found", $"no frame {frameId}", "call read_stack for valid frame ids");
         if (path is null)
-            return new ReadVariablesResult(frameId, Path: null, CannedTopLevel().Take(maxVariables).ToList(), _mode, _lastHit);
+            return new ReadVariablesResult(frameId, Path: null, CannedTopLevel().Take(maxVariables).ToList(), session.Mode, session.LastHit);
         if (path != "items")
             throw new DebugDomainException(
                 "path-not-found", $"no expandable path {path} on frame {frameId}",
                 "drill down only via expandable paths returned by read_variables");
-        return new ReadVariablesResult(frameId, path, CannedChildren().Take(maxVariables).ToList(), _mode, _lastHit);
+        return new ReadVariablesResult(frameId, path, CannedChildren().Take(maxVariables).ToList(), session.Mode, session.LastHit);
     }
 
     public async Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
-        RequireBreak();
+        var session = await RequireAsync(sessionId, ct);
+        RequireBreak(session);
         _ = timeoutMs;
         ct.ThrowIfCancellationRequested();
         if (ForceTimeout)
@@ -208,13 +242,13 @@ public sealed class FakeDebugBridge : IDebugBridge
                 "invalid-expression", $"expression parsed but did not evaluate: {expression}",
                 "pass a read-only expression valid in the current frame");
         // Read-only by construction: the fake holds no live handles and this path never mutates state.
-        return new EvaluateResult(expression, Value: "41.80", Type: "decimal", Expandable: false, _mode, _lastHit);
+        return new EvaluateResult(expression, Value: "41.80", Type: "decimal", Expandable: false, session.Mode, session.LastHit);
     }
 
     public async Task<ExecutionResult> AttachProcessAsync(
         string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct)
     {
-        await RequireSessionAsync(sessionId, ct);
+        var session = await RequireAsync(sessionId, ct);
         _ = timeoutMs;
         ct.ThrowIfCancellationRequested();
         if (!consent)
@@ -228,6 +262,6 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {CurrentUser}",
                 "only attach to your own processes");
-        return new ExecutionResult(_mode, _lastHit, Status: "ok", Note: $"attached to process {processId}");
+        return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"attached to process {processId}");
     }
 }

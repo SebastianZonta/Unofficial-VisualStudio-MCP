@@ -28,15 +28,14 @@ public sealed class AttachTests
     }
 
     [Fact]
-    public async Task Second_attach_replaces_first_binding_with_stale_session_error()
+    public async Task Reattach_to_same_instance_returns_existing_session()
     {
         var bridge = new FakeDebugBridge();
         var first = await SessionTools.AttachAsync(bridge, instanceOverride: null, CancellationToken.None);
-        await SessionTools.AttachAsync(bridge, instanceOverride: null, CancellationToken.None);
+        var second = await SessionTools.AttachAsync(bridge, instanceOverride: null, CancellationToken.None);
 
-        var ex = await Assert.ThrowsAsync<DebugDomainException>(() =>
-            bridge.RequireSessionAsync(first.SessionId, CancellationToken.None));
-
-        Assert.Contains("stale", ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(first.SessionId, second.SessionId);
+        // The existing session stays usable: attach replaced nothing.
+        await bridge.RequireSessionAsync(first.SessionId, CancellationToken.None);
     }
 }

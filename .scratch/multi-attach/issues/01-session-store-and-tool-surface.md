@@ -1,0 +1,15 @@
+Type: task
+Status: resolved
+Labels: wayfinder:task
+
+## Question
+
+Specify the multi-session store and tool surface this effort builds against: the `Dictionary<sessionId, binding>` replacing `_dte`/`_activeSessionId` in `DteDebugBridge.cs`, idempotent re-attach to the same ROT display name (return the existing `sessionId`, no duplicate binding), exact `list_sessions` / `detach` signatures (session-less inventory vs session-scoped release), the `IDebugBridge.cs` diff, and the error-catalog change (`stale-session` deleted; unknown id → `no-session`; dead VS → per-session `vs-not-running`, siblings unaffected).
+
+## Answer
+
+Contract for ticket 03, decided against `DteDebugBridge.cs:11-59`, `FakeDebugBridge.cs:3-68`, `IDebugBridge.cs`, and the `research/multi-dte-lifetime` findings (per-session `ReleaseComObject` is safe; liveness needs a probe COM call, not ROT-name presence; release must move inside a dispatcher work item; dead VS surfaces as `RPC_E_DISCONNECTED`/`SERVER_UNAVAILABLE`).
+
+Store (real bridge): `private readonly object _gate = new()` plus `Dictionary<string, SessionBinding>` with `private sealed record SessionBinding(DTE Dte, string DisplayName)`, replacing `_dte`/`_activeSessionId` (`DteDebugBridge.cs:15-16`). All dict access under `lock (_gate)`; DTE handles touched only on the `ComDispatcher` STA thread. `attach` flow: pick ROT name via `VsDiscovery.SelectCandidate` as today; under lock, if an entry already carries that display name, probe its DTE alive on the dispatcher (cheap read, e.g. `DTE.Name`) — alive returns the existing `sessionId` with a fresh mode/lastHit read, dead releases that one DTE inside the dispatcher and rebinds fresh. No entry binds fresh with a new Guid id. `RequireSessionAsync` checks dict membership only (missing → `no-session`); dead-VS detection stays in `ComErrorMapper` (map disconnected/server-unavailable to per-session `vs-not-running`, siblings unaffected). Fake mirrors with `sessionId → instanceKey` where key is `instanceOverride ?? "default"` (same idempotency, no COM).
+
+Surface: `IDebugBridge` gains `ListSessionsAsync(ct)` (session-less, pure dict inventory, no COM round-trip: `SessionInfo(SessionId, DisplayName)` — agents join with `list_instances` for solution/projects) and `DetachAsync(sessionId, ct)` (unknown id → `no-session`; releases that DTE on the dispatcher only, returns `DetachResult(SessionId)` echo). New records live in `InstanceModels.cs`. `SessionTools` gains `list_sessions` and `detach` (with `ValidateSessionId`); all existing signatures unchanged. Deleted: `ErrorCodes.StaleSession`, the `TOOLS.md` row, the `README.md` mention. ADR-0003 is superseded by a new ADR-0004 (ticket 04 writes it); old spec/issues stay as history. No compat shim — single-session clients keep working, minus `stale-session`. Ticket 03 rewrites `AttachTests.Second_attach_replaces_first_binding_with_stale_session_error` into re-attach-idempotency plus new tests (distinct overrides → distinct sessions, detach lifecycle, breakpoint/mode isolation, per-session VS-gone).

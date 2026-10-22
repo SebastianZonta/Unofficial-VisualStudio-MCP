@@ -1,6 +1,6 @@
 # ADR-0003: Single active session with stale-on-reattach
 
-Status: accepted
+Status: superseded by ADR-0008
 
 ## Context
 

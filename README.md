@@ -1,6 +1,6 @@
 # VsDebugMcp
 
-Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 13 tools over stdio.
+Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 15 tools over stdio.
 
 > **Unofficial project. Not affiliated with, sponsored, or endorsed by Microsoft.**
 > Visual Studio, EnvDTE, and .NET are trademarks of the Microsoft group of companies.
@@ -13,17 +13,19 @@ See [INSTALL.md](INSTALL.md) for setup.
 
 An agent workflow looks like this:
 
-1. `list_instances` — find the VS instance with your solution, matched by project name.
-2. `attach` — bind it (optional `instanceOverride` routes multi-instance setups).
+1. `list_instances` — find the VS instances with your solutions, matched by project name.
+2. `attach` — bind one (optional `instanceOverride` picks which; repeat for more instances, one session each; `list_sessions` inventories them, `detach` releases one).
 3. `list_processes` — find the program under test by name; no shell PID hunting.
 4. `attach_process` — aim the debugger at it (`consent: true`, same-user only).
 5. `set_breakpoint` → `resume` → `read_stack` / `read_variables` / `evaluate` → `resume`.
 
-## Tools (13)
+## Tools (15)
 
 | Tool | One line |
 |---|---|
-| `attach` | Bind the running VS 2026 instance; returns a session id. |
+| `attach` | Bind one running VS 2026 instance; returns a session id. Re-attaching the same instance returns its session. |
+| `list_sessions` | Session-less list of live debug sessions, one per attached VS instance. |
+| `detach` | Release one session; siblings are unaffected. |
 | `list_instances` | Session-less list of VS instances: solution, projects, reachability. |
 | `list_processes` | Session-less list of local target processes: pid, name, owner, mine flag. |
 | `attach_process` | Attach the debugger to a pid. Needs `consent: true` and same-user. |
@@ -38,7 +40,7 @@ An agent workflow looks like this:
 | `evaluate` | Read-only expression. No assignments, no statements. Requires break mode. |
 
 Failures are structured: `code: detail; remediation: …` (e.g. `consent-required`,
-`user-mismatch`, `process-not-found`, `no-session`, `stale-session`). See
+`user-mismatch`, `process-not-found`, `no-session`, `vs-not-running`). See
 [GLOSSARY.md](GLOSSARY.md) for the vocabulary these messages use
 (VS instance vs debug session vs target process vs instance override).
 
@@ -57,7 +59,7 @@ registration, smoke test — lives in [INSTALL.md](INSTALL.md).
 
 ```powershell
 dotnet build                                    # Debug
-dotnet test                                     # 101 tests, no VS required
+dotnet test                                     # no VS required
 dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Debug -o src/VsDebugMcp/bin/Fixed
 ```
 
@@ -91,3 +93,4 @@ to or disturbs anything.
 - If the debuggee exits, the session reports run-ended-back-in-design; there is no
   post-mortem of a dead process.
 - PIDs are recycled by the OS: list, then attach promptly.
+- All sessions share one dispatcher thread: one wedged VS stalls every session behind it.

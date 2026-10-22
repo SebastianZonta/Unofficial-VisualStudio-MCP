@@ -6,7 +6,6 @@ public static class ErrorCodes
 {
     public const string InvalidArgument = "invalid-argument";
     public const string NoSession = "no-session";
-    public const string StaleSession = "stale-session";
     public const string NotRunning = "not-running";
     public const string NotInBreakMode = "not-in-break-mode";
     public const string AlreadyRunning = "already-running";

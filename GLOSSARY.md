@@ -9,7 +9,8 @@ A single running Visual Studio process registered in the ROT.
 _Avoid_: session, process (when meaning VS itself)
 
 **Debug session**:
-An MCP-side handle binding one VS instance to subsequent tool calls.
+One of many live MCP-side handles; each binds exactly one VS instance to
+subsequent tool calls, isolated from sibling sessions. Released with `detach`.
 _Avoid_: connection, instance
 
 **Instance override**:
