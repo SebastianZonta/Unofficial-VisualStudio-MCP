@@ -34,6 +34,7 @@ dotnet test --filter "FullyQualifiedName~<TestClass>"  # single suite
 - Triage labels are the five canonical strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
 - Commits for spec work use conventional commits (`feat:`, `fix:`, `docs:`, …).
 - Tool/parameter reference: `docs/TOOLS.md`; failure playbook: `docs/TROUBLESHOOTING.md`.
-- E2E: after a feature, fan out `docs/agents/e2e.md` to a subagent (two-VS regression, perfection bar: every tool flawless on both instances).
+- E2E: after a feature, run the real-VS pass in `docs/agents/e2e.md`: fan out one subagent on Sonnet 5.5 (Agent tool, `model: "sonnet"`) against `Sandbox/`, which starts its own VS instances and never touches yours. Then the main agent runs phase H with the user. Bar: every case PASS.
+- `Sandbox/` is the E2E debug target: outside the solution, its own `Directory.Build.props` (no analyzers), breakpoint lines found by `// E2E:<NAME>` markers. When you change a scenario, update the e2e.md marker table too.
 - Publish the MCP before the E2E pass so it runs against the fresh binary (src/bin is locked while hosts run: stop the clients first).
 - After a feature, update this file if it changed agent-facing facts (build/architecture/gotchas/conventions) — one line, no restating docs.

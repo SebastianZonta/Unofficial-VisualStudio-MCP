@@ -1,0 +1,4 @@
+<Project>
+  <!-- Stops the repo-root props (TreatWarningsAsErrors, analysis) from reaching the
+       E2E debug target: it deliberately contains side-effecting getters and throws. -->
+</Project>

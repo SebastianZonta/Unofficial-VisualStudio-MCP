@@ -9,3 +9,4 @@ publish/
 *.userosscache
 .DS_Store
 .codegraph/
+.scratch/e2e-runs/
