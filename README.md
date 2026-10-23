@@ -1,6 +1,6 @@
 # VsDebugMcp
 
-Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 15 tools over stdio.
+Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 16 tools over stdio.
 
 > **Unofficial project. Not affiliated with, sponsored, or endorsed by Microsoft.**
 > Visual Studio, EnvDTE, and .NET are trademarks of the Microsoft group of companies.
@@ -16,10 +16,10 @@ An agent workflow looks like this:
 1. `list_instances` — find the VS instances with your solutions, matched by project name.
 2. `attach` — bind one (optional `instanceOverride` picks which; repeat for more instances, one session each; `list_sessions` inventories them, `detach` releases one).
 3. `list_processes` — find the program under test by name; no shell PID hunting.
-4. `attach_process` — aim the debugger at it (`consent: true`, same-user only).
+4. `attach_process` — aim the debugger at it (`consent: true`, same-user only). Or skip steps 3–4: `launch_process` starts the program with the debugger attached from birth, so startup breakpoints hit.
 5. `set_breakpoint` → `resume` → `read_stack` / `read_variables` / `evaluate` → `resume`.
 
-## Tools (15)
+## Tools (16)
 
 | Tool | One line |
 |---|---|
@@ -29,6 +29,7 @@ An agent workflow looks like this:
 | `list_instances` | Session-less list of VS instances: solution, projects, reachability. |
 | `list_processes` | Session-less list of local target processes: pid, name, owner, mine flag. |
 | `attach_process` | Attach the debugger to a pid. Needs `consent: true` and same-user. |
+| `launch_process` | Start a .NET target process (path, args, working dir, env) attached from birth; breakpoints set before launch hit at startup. |
 | `set_breakpoint` | File/line breakpoint, optional read-only `condition`, `hitCount` (`exact`/`every`), or `logMessage` logpoint; returns bind state immediately. |
 | `list_breakpoints` | Breakpoints with options, hit counts, and bind states; poll until unbound flips to bound. Carries the session logpoint `Log`. |
 | `remove_breakpoint` | Remove a breakpoint by id. |
@@ -40,7 +41,7 @@ An agent workflow looks like this:
 | `evaluate` | Read-only expression. No assignments, no statements. Requires break mode. |
 
 Failures are structured: `code: detail; remediation: …` (e.g. `consent-required`,
-`user-mismatch`, `process-not-found`, `no-session`, `vs-not-running`). See
+`user-mismatch`, `process-not-found`, `already-bound`, `no-session`, `vs-not-running`). See
 [GLOSSARY.md](GLOSSARY.md) for the vocabulary these messages use
 (VS instance vs debug session vs target process vs instance override).
 

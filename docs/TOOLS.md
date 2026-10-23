@@ -1,6 +1,6 @@
 # Tools reference
 
-15 tools over stdio. Session id comes from `attach` — one live session per VS
+16 tools over stdio. Session id comes from `attach` — one live session per VS
 instance. `list_instances`, `list_processes`, and `list_sessions` are
 session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 
@@ -14,6 +14,7 @@ session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 | `list_instances` | — | Session-less, read-only. Entry: display name (use as `instanceOverride`), pid, version, solution name/path, project names (sorted, capped at 50), reachable flag, error text. |
 | `list_processes` | `nameFilter?` = null (case-insensitive substring), `ownedOnly` = true | Session-less, read-only. Entry: pid (use as `attach_process` arg), name, owner, mine flag, error text. Sorted by name, then pid. |
 | `attach_process` | `sessionId`, `processId`, `consent` = false (must pass `true`), `timeoutMs` = 30000 | Same-user gate + explicit consent. Solution processes attach frictionlessly. |
+| `launch_process` | `sessionId`, `executablePath` (absolute, not `devenv`), `arguments?` (verbatim, no shell expansion), `workingDirectory?` (default: the executable's directory), `environment?` (merged over the inherited environment), `timeoutMs` = 10000 | Starts a .NET 5+ target process with the debugger attached from birth: breakpoints set before launch bind and hit at startup. Waits up to `timeoutMs` for a first break like `resume`, returning the new target PID plus `mode`/`lastHit`. No `consent` needed (the bridge creates the process as its own user). One target process per debug session: launching while one is bound is `already-bound`, never an implicit kill. |
 
 ## Breakpoints (in `BreakpointTools`)
 
@@ -64,10 +65,13 @@ Failures are structured `code: detail; remediation: …`:
 | `consent-required` | `attach_process` without `consent: true` | re-call with `consent: true` |
 | `user-mismatch` | target process owned by another user (or owner unknowable — fails closed) | only attach to your own processes |
 | `process-not-found` | no local process with that pid (exited or recycled) | re-list and retry promptly |
+| `executable-not-found` | `launch_process` path has no file | pass the full path to a built target executable |
+| `already-bound` | `launch_process` while the debug session already debugs a target process | detach or let the current run end, then launch |
+| `launch-failed` | the OS could not start the executable, or the VS instance could not see the started target process | check the executable is runnable by the bridge user; retry |
 | `not-in-break-mode` | inspect/step/evaluate outside break mode | resume to a breakpoint or pause first |
 | `not-running` | `pause` while not running | resume first, then pause while running |
 | `already-running` | `resume` while already running | pause first to inspect |
-| `invalid-argument` | empty file/breakpointId/expression, bad line, bad step direction, `;` in expression, write-like/multiline `condition`, bad `hitCount`/`hitCountMode`, bad `logMessage` (empty, unbalanced braces, write-like hole, or combined with stopping options) | follow the per-field guidance in the message |
+| `invalid-argument` | empty file/breakpointId/expression, bad line, bad step direction, `;` in expression, write-like/multiline `condition`, bad `hitCount`/`hitCountMode`, bad `logMessage` (empty, unbalanced braces, write-like hole, or combined with stopping options), relative, `devenv`, or non-.NET (no `.runtimeconfig.json` beside it) `executablePath`, missing `workingDirectory` | follow the per-field guidance in the message |
 | `invalid-expression` | expression parsed but did not evaluate | pass a read-only expression valid in the current frame |
 | `breakpoint-not-found` | unknown breakpoint id | call `list_breakpoints` for valid ids |
 | `frame-not-found` | unknown frame id | call `read_stack` for valid frame ids |

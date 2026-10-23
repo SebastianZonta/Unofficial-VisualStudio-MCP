@@ -65,4 +65,23 @@ public sealed class SessionTools
         ArgumentValidator.ValidateTimeoutMs(timeoutMs);
         return ToolErrors.MapAsync(() => bridge.AttachProcessAsync(sessionId, processId, consent, timeoutMs, cancellationToken));
     }
+
+    [McpServerTool(Name = "launch_process")]
+    [Description("Start a .NET target process with the debugger attached from birth, bound to this debug session. Breakpoints set before launch bind at startup. Waits up to timeoutMs for a first break.")]
+    public static Task<LaunchProcessResult> LaunchProcessAsync(
+        IDebugBridge bridge,
+        [Description("Session id returned by attach.")] string sessionId,
+        [Description("Absolute path to the target executable (not devenv).")] string executablePath,
+        [Description("Command-line arguments passed verbatim (no shell expansion).")] string? arguments = null,
+        [Description("Working directory. Defaults to the executable's directory.")] string? workingDirectory = null,
+        [Description("Extra environment variables merged over the inherited environment.")] Dictionary<string, string>? environment = null,
+        [Description("Budget in milliseconds for start plus the wait for a first break (default 10000).")] int timeoutMs = 10000,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        ArgumentValidator.ValidateExecutablePath(executablePath);
+        ArgumentValidator.ValidateTimeoutMs(timeoutMs);
+        return ToolErrors.MapAsync(() => bridge.LaunchProcessAsync(
+            sessionId, executablePath, arguments, workingDirectory, environment, timeoutMs, cancellationToken));
+    }
 }

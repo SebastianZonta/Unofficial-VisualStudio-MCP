@@ -18,6 +18,9 @@ public static class ErrorCodes
     public const string ConsentRequired = "consent-required";
     public const string ProcessNotFound = "process-not-found";
     public const string UserMismatch = "user-mismatch";
+    public const string ExecutableNotFound = "executable-not-found";
+    public const string AlreadyBound = "already-bound";
+    public const string LaunchFailed = "launch-failed";
 
     /// <summary>Key under which <see cref="DebugDomainException.Code"/> is preserved
     /// in <c>McpException.Data</c> by <see cref="ToolErrors"/>.</summary>

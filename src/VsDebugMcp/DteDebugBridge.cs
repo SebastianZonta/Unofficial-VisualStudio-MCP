@@ -262,6 +262,79 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
     }
 
+    // shortcut: CoreCLR engine only (.NET 5+ targets), add an engine parameter when native/.NET Framework launch is needed.
+    private const string CoreClrEngine = "{2E36F1D4-B23C-435D-AB41-18E608940038}";
+
+    public async Task<LaunchProcessResult> LaunchProcessAsync(string sessionId, string executablePath, string? arguments,
+        string? workingDirectory, IReadOnlyDictionary<string, string>? environment, int timeoutMs, CancellationToken ct)
+    {
+        await RequireSessionAsync(sessionId, ct);
+        var cwd = ProcessLaunch.CheckStart(executablePath, workingDirectory);
+        var envBlock = ProcessLaunch.BuildEnvironmentBlock(ProcessLaunch.InheritedEnvironment(), environment);
+        var dte = SessionDte(sessionId);
+        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+        // Set when the caller stops waiting: the STA work may still be running and must
+        // then end its target process, never leave it bound behind a reported failure.
+        var abandoned = 0;
+        int pid;
+        try
+        {
+            pid = await _dispatcher.InvokeAsync(() =>
+            {
+                var debugger = DebuggerOf(dte);
+                if (debugger.DebuggedProcesses.Count > 0)
+                    throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
+                // Attached from birth: start suspended, attach the managed engine, then let
+                // user code run, so breakpoints set before launch bind at startup. The bridge
+                // creates the process as its own user, so it is mine by construction.
+                using var started = ProcessLaunch.StartSuspended(executablePath, arguments, cwd, envBlock);
+                try
+                {
+                    EnvDTE80.Process2? target = null;
+                    foreach (EnvDTE80.Process2 candidate in debugger.LocalProcesses)
+                    {
+                        if (candidate.ProcessID == started.Pid) { target = candidate; break; }
+                    }
+                    if (target is null)
+                        throw new DebugDomainException(
+                            ErrorCodes.LaunchFailed, $"started target PID {started.Pid} is not visible to the VS instance",
+                            "retry the launch");
+                    target.Attach2(CoreClrEngine);
+                    if (Volatile.Read(ref abandoned) != 0)
+                        throw new OperationCanceledException("launch abandoned by the caller");
+                    started.Resume();
+                }
+                catch
+                {
+                    started.Kill();
+                    throw;
+                }
+                return started.Pid;
+            }, timeoutMs, ct);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException && Abandon(ref abandoned))
+        {
+            if (ex is OperationCanceledException)
+                throw;
+            throw new DebugDomainException(
+                ErrorCodes.Timeout, $"launching {executablePath} exceeded timeoutMs and was abandoned (an unfinished start is ended, never left bound)",
+                "dismiss any VS dialog, then retry with a larger timeoutMs");
+        }
+        catch (COMException ex)
+        {
+            throw SessionComError(sessionId, dte, ex);
+        }
+        // Same wait as resume: an entry-point hit (or logpoint) surfaces here, still-running is ok.
+        var run = await PollResumeAsync(sessionId, deadline, timeoutMs, 0, ct);
+        return new LaunchProcessResult(pid, run.Mode, run.LastHit, run.Status, $"launched target process {pid}; {run.Note}");
+    }
+
+    private static bool Abandon(ref int flag)
+    {
+        Volatile.Write(ref flag, 1);
+        return true;
+    }
+
     public async Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct,
         string? condition = null, int? hitCount = null, string? hitCountMode = null, string? logMessage = null)
     {

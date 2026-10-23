@@ -12,6 +12,8 @@ public sealed class FakeDebugBridge : IDebugBridge
         public Dictionary<string, FakeBreakpoint> Breakpoints { get; } = new();
         public List<BreakpointLogEntry> Log { get; } = new();
         public bool Dead { get; set; }
+        /// <summary>Target PID bound via attach_process or launch_process; null while unbound.</summary>
+        public int? TargetPid { get; set; }
     }
 
     private sealed record FakeBreakpoint(
@@ -24,6 +26,7 @@ public sealed class FakeDebugBridge : IDebugBridge
 
     private readonly Dictionary<string, FakeSession> _sessions = new();
     private int _breakpointCounter;
+    private int _pidCounter = 50_000;
 
     /// <summary>Known local processes and their owners (DOMAIN\user). Empty by default: every pid is unknown.</summary>
     public Dictionary<int, string> ProcessOwners { get; } = new();
@@ -312,6 +315,22 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {CurrentUser}",
                 "only attach to your own processes");
+        session.TargetPid = processId;
         return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"attached to process {processId}");
+    }
+
+    public async Task<LaunchProcessResult> LaunchProcessAsync(string sessionId, string executablePath, string? arguments,
+        string? workingDirectory, IReadOnlyDictionary<string, string>? environment, int timeoutMs, CancellationToken ct)
+    {
+        var session = await RequireAsync(sessionId, ct);
+        // Same order as the live bridge: start rules first, then the binding check.
+        _ = ProcessLaunch.CheckStart(executablePath, workingDirectory);
+        if (session.TargetPid is { } bound)
+            throw ProcessLaunch.AlreadyBound(bound);
+        var pid = ++_pidCounter;
+        session.TargetPid = pid;
+        // Attached from birth: the phantom run starts like a resume from design mode.
+        var run = await ResumeAsync(sessionId, timeoutMs, ct);
+        return new LaunchProcessResult(pid, run.Mode, run.LastHit, run.Status, $"launched target process {pid}; {run.Note}");
     }
 }

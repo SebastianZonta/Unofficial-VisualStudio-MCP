@@ -7,6 +7,9 @@ using VsDebugMcp;
 if (args.Contains("--live-check-full", StringComparer.Ordinal))
     return await LiveCheck.RunFullAsync(args);
 
+if (args.Contains("--live-check-launch", StringComparer.Ordinal))
+    return await LiveCheck.RunLaunchAsync(args);
+
 if (args.Contains("--live-check", StringComparer.Ordinal))
     return await LiveCheck.RunAsync(args);
 

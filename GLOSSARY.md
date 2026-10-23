@@ -26,8 +26,15 @@ A single `.csproj` loaded in a solution, unit matched by name for routing.
 _Avoid_: solution, program, service
 
 **Target process**:
-A local OS process the debugger binds to through attach, such as the API under test.
+A local OS process the debugger binds to through attach or launch, such as the API under test.
+A debug session owns at most one live target process.
 _Avoid_: VS instance, debug session
+
+**Launch / attached from birth**:
+`launch_process` starts a target process with the debugger bound before any
+user code runs (started suspended, attached, then resumed), so breakpoints set
+before launch hit at startup. Late attach is `attach_process` only.
+_Avoid_: run, start debugging (when meaning launch_process)
 
 **ROT**:
 The running-object table: the OS registry of live COM objects. VS instances
@@ -72,5 +79,6 @@ _Avoid_: clipping, collapsed
 **VS PID vs target PID**:
 The VS PID identifies the IDE process (`devenv`, from `list_instances`) and
 is never an attach target. The target PID identifies the program under test
-(from `list_processes`) and is the only valid `attach_process` argument.
+(from `list_processes`, or returned by `launch_process`) and is the only valid
+`attach_process` argument.
 _Avoid_: pid (unqualified — always say which)

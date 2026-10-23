@@ -4,8 +4,8 @@
 
 **Blocked by:** 01 (needs the seam contract to implement).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Breakpoints set before launch hit on startup; live verify covers args, working directory, and env passthrough.
-- [ ] Same-user gate applies; launching while bound is an explicit error (no implicit kill).
-- [ ] `TOOLS.md`, `GLOSSARY.md`, and `README.md` document the tool (no test counts in `README.md`).
+- [x] Breakpoints set before launch hit on startup; live verify covers args, working directory, and env passthrough.
+- [x] Same-user gate applies; launching while bound is an explicit error (no implicit kill).
+- [x] `TOOLS.md`, `GLOSSARY.md`, and `README.md` document the tool (no test counts in `README.md`).

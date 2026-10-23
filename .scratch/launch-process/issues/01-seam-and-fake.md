@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Missing executable and already-bound session fail with structured errors and no partial binding.
-- [ ] Launching a `devenv` path is refused (never attach to a VS PID).
-- [ ] Result shape matches `attach_process` (target PID plus mode/lastHit); `attach_process` semantics unchanged.
+- [x] Missing executable and already-bound session fail with structured errors and no partial binding.
+- [x] Launching a `devenv` path is refused (never attach to a VS PID).
+- [x] Result shape matches `attach_process` (target PID plus mode/lastHit); `attach_process` semantics unchanged.

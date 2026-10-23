@@ -88,5 +88,11 @@ public static class ArgumentValidator
             throw new McpException($"{ErrorCodes.InvalidArgument}: processId must be > 0; remediation: pass a local process ID from list_processes");
     }
 
+    public static void ValidateExecutablePath(string executablePath)
+    {
+        if (string.IsNullOrWhiteSpace(executablePath) || !Path.IsPathFullyQualified(executablePath))
+            throw new McpException($"{ErrorCodes.InvalidArgument}: executablePath must be an absolute path; remediation: pass the full path to the target executable");
+    }
+
     private static bool ContainsAssignment(string expression) => BreakpointOptions.ContainsAssignment(expression);
 }
