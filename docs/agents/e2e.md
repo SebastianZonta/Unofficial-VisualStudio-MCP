@@ -16,8 +16,12 @@ every tool flawless on both instances; a single tool failure fails the pass.
 
 ## Prerequisites
 
-- Two VS 2026 instances open, same Windows user and elevation, different
-  solutions (A = target solution, B = sibling). Dismiss all modal dialogs.
+- Two VS 2026 instances open, same Windows user and elevation, with two
+  distinct Solutions from two separate folders: A = DemoApi
+  (`http://localhost:5070`), B = copy DemoApi2 (`http://localhost:5071`).
+  One Solution per VS instance; never open the same folder/solution in
+  both instances (shared `file:line` causes breakpoint collision and
+  orphaned breakpoints). Dismiss all modal dialogs.
 - `dotnet build VsDebugMcp.slnx` green. Note the two display names from ROT;
   you need both exact strings.
 
@@ -46,6 +50,8 @@ Done when: two distinct session ids, re-attach is idempotent, `list_sessions` sh
 1. On A: `set_breakpoint(file, line)` → id returned; unbound is a warning, not an error.
 2. `list_breakpoints(A)` → contains the id; poll until `bound: true`.
 3. `list_breakpoints(B)` → empty (no leakage across sessions).
+   Distinct Solutions/target processes keep `file:line` distinct, so B stays
+   empty and no stray breakpoints survive the run.
 
 Done when: A bound, B empty.
 
