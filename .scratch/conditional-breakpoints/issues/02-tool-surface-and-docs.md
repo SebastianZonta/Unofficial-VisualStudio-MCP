@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (needs the seam contract to wire).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] `set_breakpoint` options round-trip through the tool boundary; invalid inputs fail naming the offending input.
 - [x] `list_breakpoints` entries show condition, hit-count setting, current count, and bound state deterministically.

@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (needs the seam contract to implement).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [ ] Conditional, hit-count, combined, and logpoint breakpoints verified live: stop/no-stop behavior correct, counts accurate, log output retrievable.
 - [x] Emulated combinations are documented; unloaded-symbol behavior pairs with `list_modules` diagnosis.

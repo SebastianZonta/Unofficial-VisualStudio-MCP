@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] Unconditional file/line breakpoints behave exactly as today (back-compat).
 - [x] Write-like conditions/messages are rejected at set time with nothing created; `list_breakpoints` shows options plus current hit counts.

@@ -1,6 +1,6 @@
 # Conditional Breakpoints, Hit Counts, and Logpoints
 
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 
