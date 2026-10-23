@@ -296,7 +296,9 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             {
                 entry.OwnedBreakpoints.Add(added.Breakpoint);
                 if (log is not null)
-                    entry.Logpoints.Add(new LogpointSpec(file, line, log));
+                    // Key on the VS snapshot path (full path), never the user-passed file:
+                    // the Resume loop matches specs against lastHit, which is full-path.
+                    entry.Logpoints.Add(new LogpointSpec(added.Info.File, added.Info.Line, log));
             }
         }
         // Round-trip the logpoint template on set: the VS-side log action is not
