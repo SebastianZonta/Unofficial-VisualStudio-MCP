@@ -9,7 +9,12 @@ public sealed class FakeDebugBridge : IDebugBridge
         public string InstanceKey { get; set; } = "";
         public string Mode { get; set; } = "design";
         public string? LastHit { get; set; }
+        /// <summary>Breakpoints this session created, keyed by stable id.</summary>
         public Dictionary<string, FakeBreakpoint> Breakpoints { get; } = new();
+        /// <summary>Per-session id counter: only goes up, so ids are never reused.</summary>
+        public int BreakpointCounter { get; set; }
+        /// <summary>Rest of the VS instance's breakpoint list: set by the user or another session.</summary>
+        public List<(string File, int Line)> ForeignBreakpoints { get; } = new();
         public List<BreakpointLogEntry> Log { get; } = new();
         public bool Dead { get; set; }
         /// <summary>Target PID bound via attach_process or launch_process; null while unbound.</summary>
@@ -25,7 +30,6 @@ public sealed class FakeDebugBridge : IDebugBridge
     }
 
     private readonly Dictionary<string, FakeSession> _sessions = new();
-    private int _breakpointCounter;
     private int _pidCounter = 50_000;
 
     /// <summary>Known local processes and their owners (DOMAIN\user). Empty by default: every pid is unknown.</summary>
@@ -121,7 +125,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         if (error is not null)
             throw new DebugDomainException(ErrorCodes.InvalidArgument, error.Value.Detail, error.Value.Remediation);
         var (cond, count, mode, log) = BreakpointOptions.Normalize(condition, hitCount, hitCountMode, logMessage);
-        var id = $"bp{++_breakpointCounter}";
+        var id = BreakpointOptions.OwnedId(++session.BreakpointCounter);
         session.Breakpoints[id] = new FakeBreakpoint(file, line, cond, count, mode, HitCount: 0, log);
         return new SetBreakpointResult(Render(id, session), session.Mode, session.LastHit);
     }
@@ -130,6 +134,8 @@ public sealed class FakeDebugBridge : IDebugBridge
     {
         var session = await RequireAsync(sessionId, ct);
         var items = session.Breakpoints.Keys.Select(bp => Render(bp, session)).ToList();
+        items.AddRange(session.ForeignBreakpoints.Select((bp, i) => new BreakpointInfo(
+            BreakpointOptions.ForeignId(i + 1), bp.File, bp.Line, Bound: true, Warning: BreakpointOptions.ForeignWarning)));
         return new ListBreakpointsResult(items, session.Mode, session.LastHit, session.Log.ToList());
     }
 
@@ -137,9 +143,16 @@ public sealed class FakeDebugBridge : IDebugBridge
     {
         var session = await RequireAsync(sessionId, ct);
         if (!session.Breakpoints.Remove(breakpointId))
-            throw new DebugDomainException(
-                "breakpoint-not-found", $"no breakpoint {breakpointId}", "call listsession.Breakpoints for valid ids");
+            throw BreakpointOptions.NotFound(breakpointId);
         return new RemoveBreakpointResult(breakpointId, session.Mode, session.LastHit);
+    }
+
+    /// <summary>Test hook: a breakpoint in the session's VS instance that this session did not
+    /// create (set by hand in VS, or by another debug session).</summary>
+    public void AddForeignBreakpoint(string sessionId, string file, int line)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+            session.ForeignBreakpoints.Add((file, line));
     }
 
     public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
@@ -210,7 +223,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         return SymbolsLoaded
             ? new BreakpointInfo(id, bp.File, bp.Line, Bound: true, Warning: null,
                 bp.Condition, bp.HitCountTarget, bp.HitCountMode, bp.HitCount, bp.LogMessage)
-            : new BreakpointInfo(id, bp.File, bp.Line, Bound: false, Warning: "symbols not loaded yet; poll listsession.Breakpoints until bound",
+            : new BreakpointInfo(id, bp.File, bp.Line, Bound: false, Warning: "symbols not loaded yet; poll list_breakpoints until bound",
                 bp.Condition, bp.HitCountTarget, bp.HitCountMode, bp.HitCount, bp.LogMessage);
     }
 
@@ -245,17 +258,31 @@ public sealed class FakeDebugBridge : IDebugBridge
         new StackFrameInfo("f1", "Program.Main()", "Shop.dll", "Program.cs", 42),
     ];
 
-    private static IReadOnlyList<ValueInfo> CannedTopLevel() =>
-    [
-        new ValueInfo("items", "List<Item>", "Count = 1,247 [truncated]", Expandable: true, Path: "items"),
-        new ValueInfo("total", "decimal", "41.80", Expandable: false, Path: null),
-    ];
+    // Per-frame canned variables: the same names carry different values in f0 and f1,
+    // so frame-true reads (and evaluate pinned to f0) are observable at the tool seam.
+    private static IReadOnlyList<ValueInfo> CannedTopLevel(string frameId) => frameId == "f0"
+        ?
+        [
+            new ValueInfo("items", "List<Item>", "Count = 1,247 [truncated]", Expandable: true, Path: "items"),
+            new ValueInfo("total", "decimal", "41.80", Expandable: false, Path: null),
+        ]
+        :
+        [
+            new ValueInfo("items", "List<Item>", "Count = 3", Expandable: true, Path: "items"),
+            new ValueInfo("total", "decimal", "99.00", Expandable: false, Path: null),
+        ];
 
-    private static IReadOnlyList<ValueInfo> CannedChildren() =>
-    [
-        new ValueInfo("items.Count", "int", "1247", Expandable: false, Path: null),
-        new ValueInfo("items[0]", "Item", "{Id=1, ...} [truncated]", Expandable: true, Path: "items[0]"),
-    ];
+    private static IReadOnlyList<ValueInfo> CannedChildren(string frameId) => frameId == "f0"
+        ?
+        [
+            new ValueInfo("items.Count", "int", "1247", Expandable: false, Path: null),
+            new ValueInfo("items[0]", "Item", "{Id=1, ...} [truncated]", Expandable: true, Path: "items[0]"),
+        ]
+        :
+        [
+            new ValueInfo("items.Count", "int", "3", Expandable: false, Path: null),
+            new ValueInfo("items[0]", "Item", "{Id=7, ...}", Expandable: true, Path: "items[0]"),
+        ];
 
     public async Task<ReadStackResult> ReadStackAsync(string sessionId, int maxFrames, CancellationToken ct)
     {
@@ -273,12 +300,12 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "frame-not-found", $"no frame {frameId}", "call read_stack for valid frame ids");
         if (path is null)
-            return new ReadVariablesResult(frameId, Path: null, CannedTopLevel().Take(maxVariables).ToList(), session.Mode, session.LastHit);
+            return new ReadVariablesResult(frameId, Path: null, CannedTopLevel(frameId).Take(maxVariables).ToList(), session.Mode, session.LastHit);
         if (path != "items")
             throw new DebugDomainException(
                 "path-not-found", $"no expandable path {path} on frame {frameId}",
                 "drill down only via expandable paths returned by read_variables");
-        return new ReadVariablesResult(frameId, path, CannedChildren().Take(maxVariables).ToList(), session.Mode, session.LastHit);
+        return new ReadVariablesResult(frameId, path, CannedChildren(frameId).Take(maxVariables).ToList(), session.Mode, session.LastHit);
     }
 
     public async Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct)
@@ -292,9 +319,13 @@ public sealed class FakeDebugBridge : IDebugBridge
                 "timeout", "evaluate exceeded timeoutMs", "retry with a larger timeoutMs or a simpler expression");
         if (ForceInvalidExpression)
             throw new DebugDomainException(
-                "invalid-expression", $"expression parsed but did not evaluate: {expression}",
-                "pass a read-only expression valid in the current frame");
+                "invalid-expression", $"expression did not evaluate without side effects: {expression}",
+                "pass a read-only expression valid in the top frame; prefer fields and property reads over method calls");
         // Read-only by construction: the fake holds no live handles and this path never mutates state.
+        // Evaluate always runs in the top frame (f0), whatever frame was inspected before.
+        var top = CannedTopLevel("f0").FirstOrDefault(v => v.Name == expression.Trim());
+        if (top is not null)
+            return new EvaluateResult(expression, top.Value, top.Type, top.Expandable, session.Mode, session.LastHit);
         return new EvaluateResult(expression, Value: "41.80", Type: "decimal", Expandable: false, session.Mode, session.LastHit);
     }
 

@@ -51,7 +51,8 @@ internal static class BreakpointOptions
         return (cond, hitCount, mode, logMessage);
     }
 
-    /// <summary>Same read-only rules as evaluate: no statements, single line, no assignment.
+    /// <summary>Same read-only rules as evaluate: no statements, single line, no assignment,
+    /// increment or decrement.
     /// Deeper parse errors (e.g. a truncated expression) surface from the debugger
     /// itself at set/evaluate time, where nothing is created on failure.</summary>
     public static (string Detail, string Remediation)? CheckExpression(string expression)
@@ -63,7 +64,7 @@ internal static class BreakpointOptions
         if (expression.Contains('\r') || expression.Contains('\n'))
             return ("must be single-line", "pass a single read-only expression");
         if (ContainsAssignment(expression))
-            return ("must be read-only (assignment is not supported)", "pass an expression without '='");
+            return ("must be read-only (assignment, ++ and -- are not supported)", "pass an expression without '=', '++' or '--'");
         return null;
     }
 
@@ -101,6 +102,26 @@ internal static class BreakpointOptions
         }
     }
 
+    private const string ForeignPrefix = "other";
+
+    /// <summary>Stable id for the Nth breakpoint a debug session created (N only goes up).</summary>
+    public static string OwnedId(int n) => $"bp{n}";
+
+    /// <summary>Id for a foreign breakpoint (one this debug session did not create): its
+    /// position in the VS instance's list, recomputed per listing and never stored or removable.</summary>
+    public static string ForeignId(int position) => $"{ForeignPrefix}{position}";
+
+    public const string ForeignWarning =
+        "not created by this debug session (set by the user or another debug session); list-only, remove it in VS";
+
+    public static DebugDomainException NotFound(string breakpointId) =>
+        breakpointId.StartsWith(ForeignPrefix, StringComparison.Ordinal)
+            ? new DebugDomainException(ErrorCodes.BreakpointNotFound,
+                $"breakpoint {breakpointId} was not created by this debug session",
+                "it belongs to the user or another debug session; remove it in VS, or pass an id set_breakpoint returned")
+            : new DebugDomainException(ErrorCodes.BreakpointNotFound, $"no breakpoint {breakpointId}",
+                "call list_breakpoints for valid ids");
+
     /// <summary>Session log buffer (capped): drops the oldest entry when full.</summary>
     public static void AppendLog(List<BreakpointLogEntry> log, BreakpointLogEntry item)
     {
@@ -132,12 +153,19 @@ internal static class BreakpointOptions
     // Single home for the read-only gate: ArgumentValidator delegates here.
     internal static bool ContainsAssignment(string expression)
     {
+        // Increment/decrement mutate as surely as '=': x++, ++x, x--, --x.
+        if (expression.Contains("++", StringComparison.Ordinal) || expression.Contains("--", StringComparison.Ordinal))
+            return true;
         for (var i = 0; i < expression.Length; i++)
         {
             if (expression[i] != '=')
                 continue;
             var prev = i > 0 ? expression[i - 1] : '\0';
+            var prevPrev = i > 1 ? expression[i - 2] : '\0';
             var next = i + 1 < expression.Length ? expression[i + 1] : '\0';
+            // Compound shift-assignment (<<=, >>=, >>>=) is not a <= / >= comparison.
+            if ((prev == '<' || prev == '>') && prevPrev == prev)
+                return true;
             // Allow ==, !=, <=, >=, => comparisons/lambdas; anything else is assignment.
             if (next == '=' || prev == '=' || prev == '!' || prev == '<' || prev == '>' || next == '>')
                 continue;

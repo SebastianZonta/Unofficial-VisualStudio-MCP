@@ -66,6 +66,63 @@ public sealed class BreakpointTests
     }
 
     [Fact]
+    public async Task Ids_stay_stable_across_removals()
+    {
+        var (bridge, sessionId) = await AttachedAsync();
+        var a = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "A.cs", 1, CancellationToken.None);
+        var b = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "B.cs", 2, CancellationToken.None);
+        var c = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "C.cs", 3, CancellationToken.None);
+
+        await BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, a.Breakpoint.Id, CancellationToken.None);
+        var removed = await BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, c.Breakpoint.Id, CancellationToken.None);
+        Assert.Equal(c.Breakpoint.Id, removed.RemovedId);
+
+        var list = await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None);
+        var left = Assert.Single(list.Breakpoints);
+        Assert.Equal(b.Breakpoint.Id, left.Id);
+        Assert.Equal("B.cs", left.File);
+    }
+
+    [Fact]
+    public async Task Removed_id_is_gone_for_good_and_never_reused()
+    {
+        var (bridge, sessionId) = await AttachedAsync();
+        var first = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "A.cs", 1, CancellationToken.None);
+        await BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, first.Breakpoint.Id, CancellationToken.None);
+
+        var again = await Assert.ThrowsAsync<McpException>(() =>
+            BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, first.Breakpoint.Id, CancellationToken.None));
+        Assert.Contains("breakpoint-not-found", again.Message);
+
+        var next = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "A.cs", 1, CancellationToken.None);
+        Assert.NotEqual(first.Breakpoint.Id, next.Breakpoint.Id);
+        var stale = await Assert.ThrowsAsync<McpException>(() =>
+            BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, first.Breakpoint.Id, CancellationToken.None));
+        Assert.Contains("breakpoint-not-found", stale.Message);
+    }
+
+    [Fact]
+    public async Task Breakpoint_set_outside_the_session_is_listed_but_not_removable()
+    {
+        var (bridge, sessionId) = await AttachedAsync();
+        var owned = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "Mine.cs", 5, CancellationToken.None);
+        bridge.AddForeignBreakpoint(sessionId, "Hand.cs", 9);
+
+        var list = await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None);
+        Assert.Equal(2, list.Breakpoints.Count);
+        Assert.Contains(list.Breakpoints, bp => bp.Id == owned.Breakpoint.Id);
+        var hand = Assert.Single(list.Breakpoints, bp => bp.File == "Hand.cs");
+        Assert.NotEqual(owned.Breakpoint.Id, hand.Id);
+        Assert.Contains("not created by this debug session", hand.Warning);
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, hand.Id, CancellationToken.None));
+        Assert.Contains("breakpoint-not-found", ex.Message);
+        Assert.Contains((await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None)).Breakpoints,
+            bp => bp.File == "Hand.cs");
+    }
+
+    [Fact]
     public async Task Unknown_session_fails_named_no_session()
     {
         var bridge = new FakeDebugBridge();

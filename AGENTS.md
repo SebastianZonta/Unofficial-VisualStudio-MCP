@@ -25,7 +25,7 @@ dotnet test --filter "FullyQualifiedName~<TestClass>"  # single suite
 - Republishing while the MCP host runs fails (exe locked): stop the client first, or publish to a fresh folder and repoint config. `standalone/` output is gitignored.
 - `list_instances` PIDs are `devenv` IDE processes — never pass one to `attach_process`. Match the target by name in `list_processes`, attach promptly (OS recycles PIDs), with `consent: true`.
 - `launch_process` starts suspended, `Attach2`s the CoreCLR engine, then resumes (default `Attach()` picks native and stops in the ntdll loader): .NET 5+ targets only. Verify live with `--live-check-launch <exe> <file> <line>`.
-- `evaluate` is read-only (no assignments/statements/`;`); inspection tools need break mode. Frames carry function + module only; `lastHit` (`file:line`) exists only for breakpoint hits. Values truncate at 500 chars — drill via expandable `path`.
+- `evaluate` is read-only (no assignments/`++`/`--`/statements/`;`; live evaluations get `, nse`, ADR-0010) and always runs in `f0`; inspection tools need break mode. Verify ids/`nse`/frames live with `--live-check-audit <exe> <file> <line>`. Frames carry function + module only; `lastHit` (`file:line`) exists only for breakpoint hits. Values truncate at 500 chars — drill via expandable `path`.
 
 ## Conventions
 

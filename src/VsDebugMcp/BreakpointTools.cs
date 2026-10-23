@@ -29,7 +29,7 @@ public sealed class BreakpointTools
     }
 
     [McpServerTool(Name = "list_breakpoints")]
-    [Description("List all breakpoints in the active session with bind states. Poll until unbound breakpoints flip to bound.")]
+    [Description("List all breakpoints in the active session with bind states. Poll until unbound breakpoints flip to bound. Breakpoints this session did not create show as list-only other<N> ids.")]
     public static Task<ListBreakpointsResult> ListBreakpointsAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,
@@ -40,7 +40,7 @@ public sealed class BreakpointTools
     }
 
     [McpServerTool(Name = "remove_breakpoint")]
-    [Description("Remove a breakpoint by id in the active session.")]
+    [Description("Remove a breakpoint this session created, by the stable id set_breakpoint returned.")]
     public static Task<RemoveBreakpointResult> RemoveBreakpointAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,

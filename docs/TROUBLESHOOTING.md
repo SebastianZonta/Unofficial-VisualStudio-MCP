@@ -12,7 +12,19 @@ Symptom: calls fail with `vs-busy` or time out while VS shows a dialog or is
 otherwise occupied. Fix: dismiss any modal dialog in VS and retry. `resume`
 and `step` return `status: timeout` instead of hanging — retry or `pause`.
 All sessions share one dispatcher thread, so one wedged VS stalls every
-session behind it; timeouts only cancel the waiter, never the queued call.
+session behind it. A call that times out (or is cancelled) while still
+queued is dropped, never run late: a reported `timeout` means no stale `Go`,
+step or launch fires once VS frees up. Work already running on VS is not
+interrupted.
+
+## Side-effect refusal (`invalid-expression`)
+
+Symptom: `evaluate` (or a drill-down `path`, or a logpoint hole showing
+`(unavailable)`) fails although the expression is valid C#. Cause: the live
+bridge evaluates in no-side-effects mode (`, nse`,
+[ADR-0010](adr/0010-no-side-effects-eval.md)); a method call or property
+getter VS judges side-effecting is refused instead of run. Fix: read fields
+or plain properties instead (`list.Count`, `s.Length`); there is no override.
 
 ## Dead VS instance (`vs-not-running`, per-session)
 

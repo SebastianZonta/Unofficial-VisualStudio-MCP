@@ -24,20 +24,26 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         public string DisplayName { get; set; } = "";
         public int Pid { get; set; }
         public bool Dead { get; set; }
-        /// <summary>Breakpoints this session created: deleted on detach so no stale
-        /// conditional breakpoint surprises a later session. Touched on the dispatcher only.</summary>
-        public List<Breakpoint> OwnedBreakpoints { get; } = new();
+        /// <summary>Breakpoints this session created, in creation order, under stable ids
+        /// (never positions, never reused). The single record for remove, list and detach
+        /// cleanup (deleted on detach so no stale conditional breakpoint surprises a later
+        /// session). Guarded by _gate; RCWs touched on the dispatcher only.</summary>
+        public List<OwnedBreakpoint> Owned { get; } = new();
+        /// <summary>Mints bp&lt;N&gt; ids; only goes up.</summary>
+        public int BreakpointCounter { get; set; }
         /// <summary>Logpoints are emulated evaluate-then-decide (native log output lands in
         /// the VS Output window, which automation cannot read), so the Resume loop needs
-        /// the template per file:line. Touched on the dispatcher only.</summary>
+        /// the template per breakpoint id. Guarded by _gate.</summary>
         public List<LogpointSpec> Logpoints { get; } = new();
         public List<BreakpointLogEntry> Log { get; } = new();
     }
 
-    private sealed record LogpointSpec(string File, int Line, string LogMessage)
+    private sealed record OwnedBreakpoint(string Id, Breakpoint Breakpoint);
+
+    private sealed record LogpointSpec(string Id, string File, int Line, string LogMessage)
     {
-        // File:line keying: two logpoints at the same location share the template match
-        // (first wins per hit); remove clears every spec at the removed location.
+        // A hit is still recognised by file:line against lastHit: two logpoints at the
+        // same location share the template match (first wins per hit).
         public string Key => $"{File}:{Line}";
     }
 
@@ -189,7 +195,9 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         // Detach removes the record even for dead bindings; breakpoint cleanup and
         // the release are best-effort. Deleting this session's breakpoints first
         // keeps stale conditional breakpoints out of later sessions on the same VS.
-        var owned = entry.OwnedBreakpoints.ToList();
+        List<Breakpoint> owned;
+        lock (_gate)
+            owned = entry.Owned.Select(o => o.Breakpoint).ToList();
         if (entry.Dte is { } dte)
         {
             try
@@ -349,7 +357,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         // because native log output (VS Output window) is not automation-readable.
         var added = await RunSnapshotAsync(sessionId, debugger =>
         {
-            debugger.Breakpoints.Add(
+            var created = debugger.Breakpoints.Add(
                 Function: "", File: file, Line: line, Column: 1,
                 Condition: cond ?? "", ConditionType: dbgBreakpointConditionType.dbgBreakpointConditionTypeWhenTrue,
                 Language: "",
@@ -357,75 +365,173 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 HitCountType: count is null ? dbgHitCountType.dbgHitCountTypeNone
                     : mode == HitCountModes.Every ? dbgHitCountType.dbgHitCountTypeMultiple
                     : dbgHitCountType.dbgHitCountTypeEqual);
-            // Add returns the collection; the just-added breakpoint is the last item.
-            var bp = debugger.Breakpoints.Item(debugger.Breakpoints.Count);
-            var info = SnapshotBreakpoint(bp, debugger.Breakpoints.Count);
+            // Own exactly what Add created (its returned collection), never "the last item
+            // of the global list", which could be a breakpoint the user set.
+            var bp = created is { Count: > 0 } ? created.Item(1) : debugger.Breakpoints.Item(debugger.Breakpoints.Count);
+            // The id is minted below, once the breakpoint is known to exist.
+            var info = SnapshotBreakpoint(bp, id: "");
             // Automation cannot observe pending-vs-bound (Concord-only); a successful Add means VS accepted it.
             return (Breakpoint: bp, Info: info with { Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger));
         }, ct);
+        var id = "";
         lock (_gate)
         {
             if (_sessions.TryGetValue(sessionId, out var entry) && !entry.Dead && entry.Dte is not null)
             {
-                entry.OwnedBreakpoints.Add(added.Breakpoint);
+                id = BreakpointOptions.OwnedId(++entry.BreakpointCounter);
+                entry.Owned.Add(new OwnedBreakpoint(id, added.Breakpoint));
                 if (log is not null)
                     // Key on the VS snapshot path (full path), never the user-passed file:
                     // the Resume loop matches specs against lastHit, which is full-path.
-                    entry.Logpoints.Add(new LogpointSpec(added.Info.File, added.Info.Line, log));
+                    entry.Logpoints.Add(new LogpointSpec(id, added.Info.File, added.Info.Line, log));
             }
+        }
+        if (id.Length == 0)
+        {
+            // Detached or dead mid-call: nobody could ever remove this breakpoint (it would
+            // list as other<N>), so delete it best-effort, then report no-session / vs-not-running.
+            try
+            {
+                await _dispatcher.InvokeAsync(() =>
+                {
+                    try { added.Breakpoint.Delete(); } catch { /* best effort */ }
+                    try { Marshal.ReleaseComObject(added.Breakpoint); } catch { /* best effort */ }
+                    return true;
+                }, 10_000, ct);
+            }
+            catch (Exception ex) when (ex is TimeoutException or OperationCanceledException) { /* best effort */ }
+            _ = SessionDte(sessionId);
         }
         // Round-trip the logpoint template on set: the VS-side log action is not
         // automation-readable, so the session spec is the source for LogMessage.
-        return new SetBreakpointResult(added.Info with { LogMessage = log }, added.Mode, added.LastHit);
+        return new SetBreakpointResult(added.Info with { Id = id, LogMessage = log }, added.Mode, added.LastHit);
     }
 
     public async Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
         {
+            List<OwnedBreakpoint> owned;
             List<LogpointSpec> specs;
             List<BreakpointLogEntry> log;
             lock (_gate)
             {
-                specs = _sessions.TryGetValue(sessionId, out var entry)
-                    ? entry.Logpoints.ToList() : new List<LogpointSpec>();
-                log = _sessions.TryGetValue(sessionId, out var found)
-                    ? found.Log.ToList() : new List<BreakpointLogEntry>();
+                _sessions.TryGetValue(sessionId, out var entry);
+                owned = entry?.Owned.ToList() ?? new List<OwnedBreakpoint>();
+                specs = entry?.Logpoints.ToList() ?? new List<LogpointSpec>();
+                log = entry?.Log.ToList() ?? new List<BreakpointLogEntry>();
             }
+            // Owned breakpoints under their stable ids (creation order), then every other
+            // breakpoint in the VS instance under a positional, list-only id.
             var items = new List<BreakpointInfo>();
-            var index = 0;
+            var gone = new List<OwnedBreakpoint>();
+            var live = new List<Breakpoint>();
             foreach (Breakpoint bp in debugger.Breakpoints)
+                live.Add(bp);
+            foreach (var o in owned)
             {
-                index++;
-                var info = SnapshotBreakpoint(bp, index);
-                var spec = specs.FirstOrDefault(s =>
-                    s.File.Equals(info.File, StringComparison.OrdinalIgnoreCase) && s.Line == info.Line);
+                if (!StillExists(o.Breakpoint))
+                {
+                    // Deleted by hand in VS: the id is dead, never re-pointed.
+                    gone.Add(o);
+                    continue;
+                }
+                var spec = specs.FirstOrDefault(s => s.Id == o.Id);
+                var info = SnapshotBreakpoint(o.Breakpoint, o.Id);
                 items.Add(spec is null ? info : info with { LogMessage = spec.LogMessage });
             }
+            for (var i = 0; i < live.Count; i++)
+            {
+                if (owned.Any(o => SameBreakpoint(live[i], o.Breakpoint)))
+                    continue;
+                items.Add(SnapshotBreakpoint(live[i], BreakpointOptions.ForeignId(i + 1))
+                    with { Warning = BreakpointOptions.ForeignWarning });
+            }
+            if (gone.Count > 0)
+                Forget(sessionId, gone.Select(g => g.Id));
             return new ListBreakpointsResult(items, ModeOf(debugger), LastHitOf(debugger), log);
         }, ct);
 
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
         {
-            var target = FindByToken(debugger, breakpointId);
-            if (target is null)
-                throw new DebugDomainException(
-                    "breakpoint-not-found", $"no breakpoint {breakpointId}", "call list_breakpoints for valid ids");
-            var id = TokenOf(target, debugger);
-            var file = target.File;
-            var line = target.FileLine;
-            target.Delete();
+            // Only ids this session minted resolve: a stale, positional or foreign id never
+            // reaches a breakpoint the user (or another session) set.
+            OwnedBreakpoint? target;
             lock (_gate)
+                target = _sessions.TryGetValue(sessionId, out var entry)
+                    ? entry.Owned.FirstOrDefault(o => o.Id == breakpointId) : null;
+            if (target is null)
+                throw BreakpointOptions.NotFound(breakpointId);
+            try
             {
-                if (_sessions.TryGetValue(sessionId, out var entry))
-                {
-                    entry.OwnedBreakpoints.RemoveAll(b => ReferenceEquals(b, target));
-                    entry.Logpoints.RemoveAll(s =>
-                        s.File.Equals(file, StringComparison.OrdinalIgnoreCase) && s.Line == line);
-                }
+                target.Breakpoint.Delete();
             }
-            return new RemoveBreakpointResult(id, ModeOf(debugger), LastHitOf(debugger));
+            catch (COMException)
+            {
+                // Already deleted by hand in VS (a deleted object can report a disconnect
+                // HResult): gone either way. A dead VS still surfaces via ModeOf below.
+            }
+            Forget(sessionId, [breakpointId]);
+            try { Marshal.ReleaseComObject(target.Breakpoint); } catch { /* best effort */ }
+            return new RemoveBreakpointResult(breakpointId, ModeOf(debugger), LastHitOf(debugger));
         }, ct);
+
+    /// <summary>Drops owned ids (and their logpoint specs) from the session record.</summary>
+    private void Forget(string sessionId, IEnumerable<string> ids)
+    {
+        var dead = ids.ToHashSet(StringComparer.Ordinal);
+        lock (_gate)
+        {
+            if (!_sessions.TryGetValue(sessionId, out var entry))
+                return;
+            entry.Owned.RemoveAll(o => dead.Contains(o.Id));
+            entry.Logpoints.RemoveAll(s => dead.Contains(s.Id));
+        }
+    }
+
+    private static bool StillExists(Breakpoint bp)
+    {
+        try
+        {
+            _ = bp.File;
+            return true;
+        }
+        // Any failure on our own handle means the breakpoint is gone (a deleted object can
+        // report a disconnect HResult); a dead VS still surfaces via the caller's ModeOf read.
+        catch (COMException)
+        {
+            return false;
+        }
+        catch (InvalidComObjectException)
+        {
+            return false;
+        }
+    }
+
+    /// <summary>COM identity: the same breakpoint object may surface through a fresh RCW
+    /// on each enumeration, so compare IUnknown pointers, not references.</summary>
+    private static bool SameBreakpoint(Breakpoint a, Breakpoint b)
+    {
+        if (ReferenceEquals(a, b))
+            return true;
+        var ua = nint.Zero;
+        var ub = nint.Zero;
+        try
+        {
+            ua = Marshal.GetIUnknownForObject(a);
+            ub = Marshal.GetIUnknownForObject(b);
+            return ua == ub;
+        }
+        catch (Exception ex) when (ex is COMException or InvalidComObjectException)
+        {
+            return false;
+        }
+        finally
+        {
+            if (ua != nint.Zero) Marshal.Release(ua);
+            if (ub != nint.Zero) Marshal.Release(ub);
+        }
+    }
 
     public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
     {
@@ -574,13 +680,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         if (lastHit is null)
             return false;
         LogpointSpec? spec;
+        OwnedBreakpoint? owner;
         lock (_gate)
         {
-            spec = _sessions.TryGetValue(sessionId, out var entry)
-                ? entry.Logpoints.FirstOrDefault(s => s.Key.Equals(lastHit, StringComparison.OrdinalIgnoreCase))
-                : null;
+            _sessions.TryGetValue(sessionId, out var entry);
+            spec = entry?.Logpoints.FirstOrDefault(s => s.Key.Equals(lastHit, StringComparison.OrdinalIgnoreCase));
+            owner = spec is null ? null : entry!.Owned.FirstOrDefault(o => o.Id == spec.Id);
         }
-        if (spec is null)
+        if (spec is null || owner is null)
             return false;
         var captured = spec;
         (string Token, string Message, int Hits, int ThreadId)? logged;
@@ -591,28 +698,21 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 var debugger = DebuggerOf(SessionDte(sessionId));
                 if (ModeOf(debugger) != "break")
                     return ((string, string, int, int)?)null;
-                foreach (Breakpoint bp in debugger.Breakpoints)
+                var message = BreakpointOptions.FormatLogMessage(captured.LogMessage, expr =>
                 {
-                    if ($"{bp.File}:{bp.FileLine}".Equals(lastHit, StringComparison.OrdinalIgnoreCase))
+                    try
                     {
-                        var message = BreakpointOptions.FormatLogMessage(captured.LogMessage, expr =>
-                        {
-                            try
-                            {
-                                var evaluated = debugger.GetExpression(expr, false, 5000);
-                                return evaluated.IsValidValue ? evaluated.Value ?? "(unavailable)" : "(unavailable)";
-                            }
-                            catch (COMException)
-                            {
-                                return "(unavailable)";
-                            }
-                        });
-                        var tid = -1;
-                        try { tid = debugger.CurrentThread?.ID ?? -1; } catch (COMException) { }
-                        return ((string, string, int, int)?)(TokenOf(bp, debugger), message, HitsOf(bp), tid);
+                        var evaluated = debugger.GetExpression(NoSideEffects(expr), false, 5000);
+                        return evaluated.IsValidValue ? evaluated.Value ?? "(unavailable)" : "(unavailable)";
                     }
-                }
-                return ((string, string, int, int)?)null;
+                    catch (COMException)
+                    {
+                        return "(unavailable)";
+                    }
+                });
+                var tid = -1;
+                try { tid = debugger.CurrentThread?.ID ?? -1; } catch (COMException) { }
+                return ((string, string, int, int)?)(captured.Id, message, HitsOf(owner.Breakpoint), tid);
             }, 10_000, ct);
         }
         catch (Exception ex) when (ex is TimeoutException or COMException or OperationCanceledException)
@@ -782,46 +882,57 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         => await RunSnapshotAsync(sessionId, debugger =>
         {
             RequireBreak(debugger);
-            if (path is not null)
-            {
-                // Read-only evaluate: no auto-evaluate, so inspecting never runs user code as a side effect.
-                var evaluated = debugger.GetExpression(path, false, 5000);
-                if (!evaluated.IsValidValue)
-                    throw new DebugDomainException(
-                        "path-not-found", $"no expandable path {path}", "drill down only via expandable paths returned by read_variables");
-                return new ReadVariablesResult(frameId, path, SnapshotMembers(evaluated, path, maxVariables),
-                    ModeOf(debugger), LastHitOf(debugger));
-            }
+            // Frame first for both branches: a drill-down resolves in the frame asked
+            // about, never in whatever frame the debugger last selected.
             var frame = FindFrame(debugger, frameId);
             if (frame is null)
                 throw new DebugDomainException(
                     "frame-not-found", $"no frame {frameId}", "call read_stack for valid frame ids");
             debugger.CurrentStackFrame = frame;
-            var seen = new HashSet<string>(StringComparer.Ordinal);
-            var vars = new List<ValueInfo>();
-            foreach (Expression local in frame.Locals)
+            try
             {
-                if (vars.Count >= maxVariables) break;
-                if (seen.Add(local.Name)) vars.Add(SnapshotValue(local, null));
+                if (path is not null)
+                {
+                    var evaluated = debugger.GetExpression(NoSideEffects(path), false, 5000);
+                    if (!evaluated.IsValidValue)
+                        throw new DebugDomainException(
+                            "path-not-found", $"no expandable path {path}", "drill down only via expandable paths returned by read_variables");
+                    return new ReadVariablesResult(frameId, path, SnapshotMembers(evaluated, path, maxVariables),
+                        ModeOf(debugger), LastHitOf(debugger));
+                }
+                var seen = new HashSet<string>(StringComparer.Ordinal);
+                var vars = new List<ValueInfo>();
+                foreach (Expression local in frame.Locals)
+                {
+                    if (vars.Count >= maxVariables) break;
+                    if (seen.Add(local.Name)) vars.Add(SnapshotValue(local, null));
+                }
+                foreach (Expression arg in frame.Arguments)
+                {
+                    if (vars.Count >= maxVariables) break;
+                    if (seen.Add(arg.Name)) vars.Add(SnapshotValue(arg, null));
+                }
+                return new ReadVariablesResult(frameId, null, vars, ModeOf(debugger), LastHitOf(debugger));
             }
-            foreach (Expression arg in frame.Arguments)
+            finally
             {
-                if (vars.Count >= maxVariables) break;
-                if (seen.Add(arg.Name)) vars.Add(SnapshotValue(arg, null));
+                // Inspecting a frame never moves evaluate off the top frame.
+                SelectTopFrame(debugger);
             }
-            return new ReadVariablesResult(frameId, null, vars, ModeOf(debugger), LastHitOf(debugger));
         }, ct);
 
     public async Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
         {
             RequireBreak(debugger);
-            // Read-only evaluate: no auto-evaluate, so inspecting never runs user code as a side effect.
-            var evaluated = debugger.GetExpression(expression, false, timeoutMs);
+            // evaluate always runs in f0, whatever frame was inspected (here or in the VS UI) before.
+            SelectTopFrame(debugger);
+            var evaluated = debugger.GetExpression(NoSideEffects(expression), false, timeoutMs);
             if (!evaluated.IsValidValue)
                 throw new DebugDomainException(
-                    "invalid-expression", $"expression parsed but did not evaluate: {expression}",
-                    "pass a read-only expression valid in the current frame");
+                    "invalid-expression", $"expression did not evaluate without side effects: {expression}",
+                    "pass a read-only expression valid in the top frame; prefer fields and property reads over method calls");
+            // Echo the agent's expression, never the evaluator's ",nse" form.
             return SnapshotEvaluation(evaluated, expression, ModeOf(debugger), LastHitOf(debugger));
         }, ct);
 
@@ -967,31 +1078,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     /// <summary>Bounds the fire-and-forget issue call so a small timeoutMs is honoured.</summary>
     private static int IssueBudgetMs(int timeoutMs) => Math.Clamp(timeoutMs, 1_000, 10_000);
 
-    private static int IndexOf(Debugger debugger, Breakpoint target)
-    {
-        var index = 0;
-        foreach (Breakpoint bp in debugger.Breakpoints)
-        {
-            index++;
-            if (ReferenceEquals(bp, target)) return index;
-        }
-        return -1;
-    }
-
-    private static Breakpoint? FindByToken(Debugger debugger, string token)
-    {
-        if (!token.StartsWith("bp", StringComparison.Ordinal) || !int.TryParse(token[2..], out var n) || n < 1)
-            return null;
-        var index = 0;
-        foreach (Breakpoint bp in debugger.Breakpoints)
-        {
-            if (++index == n) return bp;
-        }
-        return null;
-    }
-
-    private static string TokenOf(Breakpoint target, Debugger debugger) => $"bp{IndexOf(debugger, target)}";
-
     // Hits accrue on the bound children; the pending parent always reports 0.
     private static int HitsOf(Breakpoint bp)
     {
@@ -1000,7 +1086,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         return hits;
     }
 
-    private static BreakpointInfo SnapshotBreakpoint(Breakpoint bp, int index)
+    private static BreakpointInfo SnapshotBreakpoint(Breakpoint bp, string id)
     {
         // Bind state is eventual and invisible to automation: a successful Add means accepted.
         // Option reads are best-effort; a transient COM failure falls back to the plain shape.
@@ -1025,8 +1111,25 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
         // LogMessage comes from the session's logpoint specs (see ListBreakpointsAsync);
         // the VS-side log action is not automation-readable.
-        return new($"bp{index}", bp.File, bp.FileLine, Bound: true, Warning: null,
+        return new(id, bp.File, bp.FileLine, Bound: true, Warning: null,
             condition, target, mode, hits, LogMessage: null);
+    }
+
+    /// <summary>Every agent-supplied evaluation runs in the C# evaluator's no-side-effects
+    /// mode (ADR-0010): a call that would mutate state is refused, not executed.</summary>
+    private static string NoSideEffects(string expression) => $"{expression}, nse";
+
+    private static void SelectTopFrame(Debugger debugger)
+    {
+        try
+        {
+            if (FindFrame(debugger, "f0") is { } top)
+                debugger.CurrentStackFrame = top;
+        }
+        catch (COMException)
+        {
+            // Best effort: a stack that vanished mid-call leaves nothing to select.
+        }
     }
 
     private static StackFrame? FindFrame(Debugger debugger, string frameId)

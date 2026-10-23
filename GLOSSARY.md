@@ -71,6 +71,14 @@ emulated evaluate-then-decide with auto-continue, because native log output (VS
 Output window) is not automation-readable.
 _Avoid_: tracepoint (when meaning logpoint), watch (when meaning condition)
 
+**Breakpoint id**:
+A stable identity minted per debug session (`bp<N>`, only goes up, never
+reused or renumbered) for a breakpoint that debug session created. A
+**foreign breakpoint** is any other breakpoint in the VS instance (set by the
+user or another debug session): it shows as `other<N>` (positional, recomputed
+per listing) and is list-only, so `remove_breakpoint` never touches it.
+_Avoid_: index, position (when meaning a `bp<N>` id); user breakpoint, mine (when meaning foreign/owned)
+
 **Truncation / expandable**:
 Values over 500 chars are cut with a `[truncated]` marker. `expandable`
 marks drillable values; its `path` feeds back into `read_variables`.

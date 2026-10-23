@@ -61,6 +61,10 @@ internal sealed class ComDispatcher : IDisposable
     {
         foreach (var (work, done) in _queue.GetConsumingEnumerable())
         {
+            // The caller already gave up (timeout/cancel): never issue stale work late,
+            // so a reported timeout means nothing ran behind the caller's back.
+            if (done.Task.IsCompleted)
+                continue;
             try
             {
                 done.TrySetResult(work());

@@ -1,6 +1,6 @@
 # ADR-0005: Read-only evaluator; assignment absent, not discouraged
 
-Status: accepted
+Status: superseded by ADR-0010
 
 ## Context
 

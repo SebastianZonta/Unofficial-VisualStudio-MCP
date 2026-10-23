@@ -20,6 +20,34 @@ public sealed class ComDispatcherTests
     }
 
     [Fact]
+    public async Task Queued_call_whose_caller_gave_up_never_runs_and_later_calls_keep_order()
+    {
+        using var dispatcher = new ComDispatcher();
+        using var release = new ManualResetEventSlim(false);
+        using var entered = new ManualResetEventSlim(false);
+        var ran = new List<string>();
+
+        // The worker parks on the gate; the stale call waits behind it past its budget.
+        var gate = dispatcher.InvokeAsync(() => { entered.Set(); release.Wait(); return 0; }, CancellationToken.None);
+        Assert.True(entered.Wait(TimeSpan.FromSeconds(5)));
+        var stale = dispatcher.InvokeAsync(() => { lock (ran) ran.Add("stale"); return 1; }, timeoutMs: 50, CancellationToken.None);
+        await Assert.ThrowsAsync<TimeoutException>(() => stale);
+
+        using var cts = new CancellationTokenSource();
+        var cancelled = dispatcher.InvokeAsync(() => { lock (ran) ran.Add("cancelled"); return 2; }, cts.Token);
+        var first = dispatcher.InvokeAsync(() => { lock (ran) ran.Add("first"); return 3; }, CancellationToken.None);
+        var second = dispatcher.InvokeAsync(() => { lock (ran) ran.Add("second"); return 4; }, CancellationToken.None);
+        cts.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => cancelled);
+
+        release.Set();
+        Assert.Equal(3, await first);
+        Assert.Equal(4, await second);
+        Assert.Equal(0, await gate);
+        Assert.Equal(["first", "second"], ran);
+    }
+
+    [Fact]
     public async Task Pre_canceled_token_throws_and_dispatcher_stays_usable()
     {
         using var dispatcher = new ComDispatcher();

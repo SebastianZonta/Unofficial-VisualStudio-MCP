@@ -43,6 +43,16 @@ public static class ArgumentValidator
             throw new McpException($"{ErrorCodes.InvalidArgument}: frameId must not be empty; remediation: call read_stack for valid frame ids");
     }
 
+    /// <summary>A drill-down path reaches the expression evaluator, so it gets the evaluate rule. Null means top level.</summary>
+    public static void ValidatePath(string? path)
+    {
+        if (path is null)
+            return;
+        var reason = BreakpointOptions.CheckExpression(path);
+        if (reason is not null)
+            throw new McpException($"{ErrorCodes.InvalidArgument}: path {reason.Value.Detail}; remediation: pass an expandable path returned by read_variables");
+    }
+
     public static void ValidateDirection(string direction)
     {
         if (direction is not ("over" or "into" or "out"))
@@ -61,7 +71,7 @@ public static class ArgumentValidator
             throw new McpException($"{ErrorCodes.InvalidArgument}: statements are not supported; remediation: pass a single-line read-only expression");
 
         if (ContainsAssignment(expression))
-            throw new McpException($"{ErrorCodes.InvalidArgument}: assignment is not supported; remediation: pass a read-only expression without '='");
+            throw new McpException($"{ErrorCodes.InvalidArgument}: assignment, increment and decrement are not supported; remediation: pass a read-only expression without '=', '++' or '--'");
     }
 
     public static void ValidateTimeoutMs(int timeoutMs, string paramName = "timeoutMs")

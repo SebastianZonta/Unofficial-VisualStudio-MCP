@@ -66,6 +66,43 @@ public sealed class InspectionTests
     }
 
     [Fact]
+    public async Task Each_frame_reads_its_own_variables_top_level_and_drill_down()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+
+        var f0 = await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f0", null, 50, CancellationToken.None);
+        var f1 = await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f1", null, 50, CancellationToken.None);
+        Assert.Equal("41.80", Assert.Single(f0.Variables, v => v.Name == "total").Value);
+        Assert.Equal("99.00", Assert.Single(f1.Variables, v => v.Name == "total").Value);
+
+        var drilled = await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f1", "items", 50, CancellationToken.None);
+        Assert.Equal("f1", drilled.FrameId);
+        Assert.Equal("3", Assert.Single(drilled.Variables, v => v.Name == "items.Count").Value);
+    }
+
+    [Fact]
+    public async Task Evaluate_runs_in_the_top_frame_after_reading_another_frame()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+
+        await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f1", null, 50, CancellationToken.None);
+        await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f1", "items", 50, CancellationToken.None);
+        var eval = await InspectionTools.EvaluateAsync(bridge, sessionId, "total", 5000, CancellationToken.None);
+
+        Assert.Equal("41.80", eval.Value);
+    }
+
+    [Fact]
+    public async Task Unknown_frame_with_path_fails_frame_not_found()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            InspectionTools.ReadVariablesAsync(bridge, sessionId, "f99", "items", 50, CancellationToken.None));
+        Assert.Contains("frame-not-found", ex.Message);
+    }
+
+    [Fact]
     public async Task Unknown_frame_fails_named()
     {
         var (bridge, sessionId) = await BrokenAsync();
