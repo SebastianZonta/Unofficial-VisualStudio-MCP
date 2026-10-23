@@ -415,6 +415,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             throw new DebugDomainException(
                 "already-running", "debuggee is already running", "pause first to inspect");
         var resumeDte = SessionDte(sessionId);
+        if (currentMode == "break")
+        {
+            // A hit already pending may be a logpoint: log-and-continue it instead
+            // of blind-resuming past it (which would silently drop the log entry).
+            var (preMode, preHit) = await TrySnapshotAsync(sessionId, ct);
+            if (preMode == "break" && await TryLogAndContinueAsync(sessionId, preHit, timeoutMs, ct))
+                return await PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 1, ct);
+        }
         try
         {
             // Non-blocking Go: returns immediately after resuming so the single STA
@@ -440,9 +448,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             throw SessionComError(sessionId, resumeDte, ex);
         }
 
-        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
+        return await PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 0, ct);
+    }
+
+    private async Task<ExecutionResult> PollResumeAsync(string sessionId, DateTime deadline, int timeoutMs, int logged, CancellationToken ct)
+    {
         var seenRun = false;
-        var logged = 0;
         while (true)
         {
             ct.ThrowIfCancellationRequested();
@@ -499,14 +510,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         if (spec is null)
             return false;
         var captured = spec;
-        (string Token, string Message, int Hits)? logged;
+        (string Token, string Message, int Hits, int ThreadId)? logged;
         try
         {
             logged = await _dispatcher.InvokeAsync(() =>
             {
                 var debugger = DebuggerOf(SessionDte(sessionId));
                 if (ModeOf(debugger) != "break")
-                    return ((string, string, int)?)null;
+                    return ((string, string, int, int)?)null;
                 foreach (Breakpoint bp in debugger.Breakpoints)
                 {
                     if ($"{bp.File}:{bp.FileLine}".Equals(lastHit, StringComparison.OrdinalIgnoreCase))
@@ -523,10 +534,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                                 return "(unavailable)";
                             }
                         });
-                        return ((string, string, int)?)(TokenOf(bp, debugger), message, bp.CurrentHits);
+                        var tid = -1;
+                        try { tid = debugger.CurrentThread?.ID ?? -1; } catch (COMException) { }
+                        return ((string, string, int, int)?)(TokenOf(bp, debugger), message, bp.CurrentHits, tid);
                     }
                 }
-                return ((string, string, int)?)null;
+                return ((string, string, int, int)?)null;
             }, 10_000, ct);
         }
         catch (Exception ex) when (ex is TimeoutException or COMException or OperationCanceledException)
@@ -554,7 +567,45 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         {
             // The Go may still have taken effect; keep polling within the deadline.
         }
+        // The Go is non-blocking: the mode still reads break until the resumed
+        // thread actually runs, and the poll loop would re-log the same hit.
+        // Settle (bounded) until the resume takes effect or another thread's hit
+        // surfaces; any later break is then genuinely new.
+        var settled = System.Diagnostics.Stopwatch.StartNew();
+        while (settled.Elapsed < TimeSpan.FromSeconds(2))
+        {
+            await Task.Delay(100, ct);
+            var (settleMode, _, settleThread) = await TrySnapshotThreadAsync(sessionId, ct);
+            if (settleMode != "break" || settleThread != logged.Value.ThreadId)
+                break;
+        }
         return true;
+    }
+
+    private async Task<(string Mode, string? LastHit, int ThreadId)> TrySnapshotThreadAsync(string sessionId, CancellationToken ct)
+    {
+        var dte = SessionDte(sessionId);
+        try
+        {
+            return await _dispatcher.InvokeAsync(() =>
+            {
+                var debugger = DebuggerOf(dte);
+                var mode = ModeOf(debugger);
+                if (mode != "break")
+                    return (mode, (string?)null, -1);
+                var tid = -1;
+                try { tid = debugger.CurrentThread?.ID ?? -1; } catch (COMException) { }
+                return (mode, LastHitOf(debugger), tid);
+            }, 10_000, ct);
+        }
+        catch (TimeoutException)
+        {
+            return ("unknown", null, -1);
+        }
+        catch (COMException)
+        {
+            return ("unknown", null, -1);
+        }
     }
 
     public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)

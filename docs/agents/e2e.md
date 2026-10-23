@@ -7,7 +7,7 @@ plus this pass are the bar.
 ## Who runs this
 
 Fan out this pass to a subagent running against the freshly published
-binary. The subagent walks sections 1–6 in order, exercising every tool
+binary. The subagent walks sections 1–7 in order, exercising every tool
 across both instances at once: the full debug loop on A while proving B
 stays isolated and usable throughout.
 
@@ -77,9 +77,41 @@ Done when: A bound, B empty.
 Done when: attach → break (`lastHit` set) → stack → variables (+1 drill-down)
 → evaluate → step → pause/resume all succeed on A.
 
-## 5. Sibling-session isolation under load
+## 5. Conditional breakpoint types on A
 
-While A sits in `break`:
+A is still attached from §4 with the debuggee running. Trigger hits with
+an HTTP `GET /work?n=<k>` against DemoApi (`/ping` answers 200 when idle).
+Use a stable line (previously Program.cs:9); remove each breakpoint before
+setting the next.
+
+1. `condition` false (e.g. `n == -1`) → trigger → must NOT stop (`resume`
+   returns `run`, `lastHit` null). `condition` true (e.g. `n == 5`, trigger
+   with `?n=5`) → breaks with `lastHit` set. Conditions are read-only:
+   a write-like condition (e.g. `n = 5`) is rejected with
+   `invalid-argument` and creates nothing.
+2. `hitCount: 2` (exact is default) → trigger twice → breaks on the 2nd
+   hit only. `hitCount` + `hitCountMode: every` → breaks every Nth hit.
+   (Cosmetic: VS reads 0 hits on the stopping hit — display-only.)
+3. Combined `condition` + `hitCount` → breaks only when the condition holds
+   on the Nth hit.
+4. `logMessage` (e.g. `"n is {n}"`) → trigger → must NEVER stop; exactly one
+   entry per trigger is retrievable from the session log carried by
+   `list_breakpoints`. Drain each trigger (resume → confirm the entry)
+   before firing the next; never remove/re-set the breakpoint mid-case.
+   Regression: the spec keys on the VS snapshot path, so a user-passed
+   relative `file` still matches `lastHit`; the resume path waits for the
+   Go to take effect, so a slow thread is never logged twice.
+5. Invalid inputs are rejected with `invalid-argument` naming the field and
+   create nothing: `logMessage` combined with `condition`/`hitCount`,
+   empty or unbalanced-brace `logMessage`, non-positive `hitCount`.
+
+Done when: false-condition never stops, true-condition stops with `lastHit`,
+exact breaks on the Nth hit, every breaks every Nth, combined needs both,
+logpoint never stops and logs, invalid inputs rejected without creating.
+
+## 6. Sibling-session isolation under load
+
+While A sits in `break` (leave one §5 breakpoint active):
 
 1. Every B call still works: `list_breakpoints(B)`, `read_stack(B)` fails
    only with `not-in-break-mode` (B is in `run`/`design`, never A's data).
@@ -88,9 +120,9 @@ While A sits in `break`:
 
 Done when: B usable while A is stopped; `detach` affects only its own session.
 
-## 6. Cleanup (required — leaves no state)
+## 7. Cleanup (required — leaves no state)
 
-1. `remove_breakpoint(A, id)` → `list_breakpoints(A)` empty.
+1. `remove_breakpoint` every A id from §§3 and 5 → `list_breakpoints(A)` empty.
 2. `detach(A)`, `detach(B)` → `list_sessions` empty.
 3. Unknown-id spot-check once: `detach("nope")` or
    `remove_breakpoint(A, "nope")` → `no-session` / `breakpoint-not-found`,
@@ -99,7 +131,7 @@ Done when: B usable while A is stopped; `detach` affects only its own session.
 ## Pass criteria
 
 - `dotnet test VsDebugMcp.slnx --no-build` green.
-- Sections 1–6 all reach their "Done when" with zero `vs-busy`,
+- Sections 1–7 all reach their "Done when" with zero `vs-busy`,
   `elevation-mismatch`, or `vs-not-running` surprises (dismiss dialogs and
   retry once before calling it a regression).
 - On any failure: record failing tool + `code` + which session (A/B) and
