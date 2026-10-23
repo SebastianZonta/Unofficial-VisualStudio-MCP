@@ -33,6 +33,6 @@ dotnet test --filter "FullyQualifiedName~<TestClass>"  # single suite
 - Triage labels are the five canonical strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
 - Commits for spec work use conventional commits (`feat:`, `fix:`, `docs:`, …).
 - Tool/parameter reference: `docs/TOOLS.md`; failure playbook: `docs/TROUBLESHOOTING.md`.
-- E2E: after a feature, run `docs/agents/e2e.md` (two-VS regression).
+- E2E: after a feature, fan out `docs/agents/e2e.md` to a subagent (two-VS regression, perfection bar: every tool flawless on both instances).
 - Publish the MCP before the E2E pass so it runs against the fresh binary (src/bin is locked while hosts run: stop the clients first).
 - After a feature, update this file if it changed agent-facing facts (build/architecture/gotchas/conventions) — one line, no restating docs.
