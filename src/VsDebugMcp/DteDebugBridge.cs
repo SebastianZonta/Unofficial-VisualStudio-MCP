@@ -536,7 +536,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                         });
                         var tid = -1;
                         try { tid = debugger.CurrentThread?.ID ?? -1; } catch (COMException) { }
-                        return ((string, string, int, int)?)(TokenOf(bp, debugger), message, bp.CurrentHits, tid);
+                        return ((string, string, int, int)?)(TokenOf(bp, debugger), message, HitsOf(bp), tid);
                     }
                 }
                 return ((string, string, int, int)?)null;
@@ -919,6 +919,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private static string TokenOf(Breakpoint target, Debugger debugger) => $"bp{IndexOf(debugger, target)}";
 
+    // Hits accrue on the bound children; the pending parent always reports 0.
+    private static int HitsOf(Breakpoint bp)
+    {
+        var hits = 0;
+        foreach (Breakpoint child in bp.Children) hits += child.CurrentHits;
+        return hits;
+    }
+
     private static BreakpointInfo SnapshotBreakpoint(Breakpoint bp, int index)
     {
         // Bind state is eventual and invisible to automation: a successful Add means accepted.
@@ -936,7 +944,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 mode = bp.HitCountType == dbgHitCountType.dbgHitCountTypeMultiple
                     ? HitCountModes.Every : HitCountModes.Exact;
             }
-            hits = bp.CurrentHits;
+            hits = HitsOf(bp);
         }
         catch (COMException)
         {
