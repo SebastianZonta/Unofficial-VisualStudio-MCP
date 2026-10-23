@@ -41,7 +41,7 @@ different edition or install path. They are build-time only (embedded interop).
 
 ```powershell
 dotnet build                                    # Debug, for development
-dotnet test                                     # 101 tests, no VS required (fake bridge)
+dotnet test                                     # no VS required (fake bridge)
 dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o standalone
 ```
 
