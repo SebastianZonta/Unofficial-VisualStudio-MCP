@@ -8,3 +8,4 @@ publish/
 *.suo
 *.userosscache
 .DS_Store
+.codegraph/
