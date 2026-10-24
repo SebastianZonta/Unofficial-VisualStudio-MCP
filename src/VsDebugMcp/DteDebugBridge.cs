@@ -664,6 +664,13 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     logged++;
                     continue;
                 }
+                // A false here may be a stale snapshot (the Go landed between the
+                // snapshot and the re-read) or a transient first-hit automation
+                // race, not a genuine stop: confirm with one fresh snapshot and
+                // keep polling unless the same break is still pending.
+                var (confirmMode, confirmHit) = await TrySnapshotAsync(sessionId, ct);
+                if (confirmMode != "break" || !string.Equals(confirmHit, lastHit, StringComparison.OrdinalIgnoreCase))
+                    continue;
                 return new ExecutionResult(mode, lastHit, "ok",
                     logged > 0 ? $"hit breakpoint; logged {logged} logpoint hits" : "hit breakpoint");
             }
@@ -762,12 +769,16 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     /// observably took effect (running, another thread's hit, or the same thread
     /// already re-hit with an advanced count, so the pending break is new).
     /// A same-thread/same-count break means the Go hasn't landed yet: keep
-    /// waiting so the outer poll never re-logs the hit just buffered. A failed
-    /// hit-count read (-1) is not progress: keep waiting rather than risk a
-    /// duplicate log entry.</summary>
+    /// waiting so the outer poll never re-logs the hit just buffered. Mode,
+    /// thread and count are separate non-atomic COM reads: right after the Go
+    /// is accepted VS can still report break with CurrentThread already cleared
+    /// (tid -1), which proves nothing about another thread, so only a readable
+    /// thread id counts as a thread change. A failed hit-count read (-1) is not
+    /// progress: keep waiting rather than risk a duplicate log entry.</summary>
     internal static bool LogpointResumeSettled(string settleMode, int settleThread, int settleHits, int loggedThread, int loggedHits) =>
-        settleMode != "break" || settleThread != loggedThread
-        || (settleHits >= 0 && settleHits != loggedHits);
+        settleMode != "break"
+        || (settleHits >= 0 && settleHits != loggedHits)
+        || (settleThread != loggedThread && settleThread >= 0);
 
     private async Task<(string Mode, string? LastHit, int ThreadId, int Hits)> TrySnapshotThreadAsync(
         string sessionId, OwnedBreakpoint owner, CancellationToken ct)

@@ -165,6 +165,13 @@ public sealed class ConditionalBreakpointTests
     // Same thread, unreadable count: a failed read is not progress. Keep
     // waiting rather than risk a duplicate log entry.
     [InlineData("break", 1, -1, 1, 5, false)]
+    // Cleared thread, same count: the Go was accepted but VS still reports the
+    // stale break (mode/thread/count are non-atomic reads). Waiting, not
+    // another thread: keep waiting for the Go to take effect.
+    [InlineData("break", -1, 5, 1, 5, false)]
+    // Another readable thread with an unreadable count: genuinely new debugger
+    // state, stop settling so the poll loop re-evaluates it.
+    [InlineData("break", 2, -1, 1, 5, true)]
     public void Logpoint_settle_exits_only_once_the_resume_took_effect(
         string mode, int settleThread, int settleHits, int loggedThread, int loggedHits, bool expected)
     {
