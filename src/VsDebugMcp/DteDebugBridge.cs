@@ -877,6 +877,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
     }
 
+    public Task<ExecutionResult> RunToCursorAsync(string sessionId, string file, int line, int timeoutMs, CancellationToken ct) =>
+        RunToCursor.RunAsync(this, sessionId, file, line, mode => mode == "break"
+            ? ResumeAsync(sessionId, timeoutMs, ct)
+            // Already running: no Go, just the resume wait for the next stop.
+            : PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 0, ct), ct);
+
     public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)
     {
         string currentMode;

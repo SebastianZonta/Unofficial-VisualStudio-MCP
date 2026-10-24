@@ -121,6 +121,64 @@ internal static class LiveCheck
         }
     }
 
+    /// <summary>run_to_cursor manual check: launch, break at &lt;line&gt;, drop that breakpoint, run to
+    /// &lt;toLine&gt; in the same file in one call; arrival shows the destination lastHit and the
+    /// breakpoint list is unchanged. Sandbox: launch with no args (loop), TICK then AFTER_LOOP.</summary>
+    public static async Task<int> RunToCursorAsync(string[] args)
+    {
+        var rest = args.SkipWhile(a => a != "--live-check-run-to").Skip(1).ToArray();
+        if (rest.Length < 4 || !int.TryParse(rest[2], out var line) || !int.TryParse(rest[3], out var toLine))
+        {
+            Console.Error.WriteLine("usage: VsDebugMcp --live-check-run-to <exe> <file> <line> <toLine>");
+            return 2;
+        }
+        using var bridge = new DteDebugBridge();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        string? sessionId = null;
+        string? bpId = null;
+        try
+        {
+            var attach = await bridge.AttachAsync(null, cts.Token);
+            sessionId = attach.SessionId;
+            var set = await bridge.SetBreakpointAsync(sessionId, rest[1], line, cts.Token);
+            bpId = set.Breakpoint.Id;
+            var launch = await bridge.LaunchProcessAsync(sessionId, rest[0], null, null, null, 30_000, cts.Token);
+            Console.WriteLine($"launch: pid={launch.ProcessId} mode={launch.Mode} lastHit={launch.LastHit}");
+            if (launch.Mode != "break")
+            {
+                Console.Error.WriteLine("start breakpoint did not hit");
+                return 1;
+            }
+            await bridge.RemoveBreakpointAsync(sessionId, bpId, cts.Token);
+            bpId = null;
+            // A breakpoint of mine already at the destination must survive the temporary one's removal.
+            bpId = (await bridge.SetBreakpointAsync(sessionId, rest[1], toLine, cts.Token)).Breakpoint.Id;
+            var before = (await bridge.ListBreakpointsAsync(sessionId, cts.Token)).Breakpoints.Count;
+            var run = await bridge.RunToCursorAsync(sessionId, rest[1], toLine, 30_000, cts.Token);
+            var listed = (await bridge.ListBreakpointsAsync(sessionId, cts.Token)).Breakpoints;
+            var after = listed.Count;
+            var survived = listed.Any(b => b.Id == bpId);
+            Console.WriteLine($"run_to_cursor: mode={run.Mode} status={run.Status} lastHit={run.LastHit} breakpoints {before}->{after} mine survived={survived}");
+            var arrived = run.Mode == "break" && run.LastHit?.EndsWith($":{toLine}", StringComparison.Ordinal) == true;
+            if (survived)
+                await bridge.RemoveBreakpointAsync(sessionId, bpId, cts.Token);
+            bpId = null;
+            var end = await bridge.ResumeAsync(sessionId, 30_000, cts.Token);
+            Console.WriteLine($"run to end: mode={end.Mode} note={end.Note}");
+            return arrived && survived && before == after ? 0 : 1;
+        }
+        catch (DebugDomainException ex)
+        {
+            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
+            return 1;
+        }
+        finally
+        {
+            if (sessionId is not null && bpId is not null)
+                await bridge.RemoveBreakpointAsync(sessionId, bpId, CancellationToken.None);
+        }
+    }
+
     /// <summary>audit-must-fix manual check against a throwaway target whose <c>Helper(items, total)</c>
     /// is called from top-level code holding <c>list</c> and a different <c>total</c>: stable ids,
     /// another session's breakpoint listed but not removable, no-side-effects evaluate, frame-true

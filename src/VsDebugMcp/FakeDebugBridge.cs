@@ -195,6 +195,23 @@ public sealed class FakeDebugBridge : IDebugBridge
                 "already-running", "debuggee is already running", "pause first to inspect");
         if (ForceTimeout)
             return new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "resume exceeded timeoutMs; still waiting");
+        return RunUntilStop(session);
+    }
+
+    public Task<ExecutionResult> RunToCursorAsync(string sessionId, string file, int line, int timeoutMs, CancellationToken ct) =>
+        RunToCursor.RunAsync(this, sessionId, file, line, async mode =>
+        {
+            if (mode == "break")
+                return await ResumeAsync(sessionId, timeoutMs, ct);
+            // Already running: only wait for the next stop.
+            var session = await RequireAsync(sessionId, ct);
+            return ForceTimeout
+                ? new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "resume exceeded timeoutMs; still waiting")
+                : RunUntilStop(session);
+        }, ct);
+
+    private ExecutionResult RunUntilStop(FakeSession session)
+    {
         session.Mode = "run";
         session.LastHit = null;
         // Evaluate-then-decide per hit, in creation order: the counter advances on

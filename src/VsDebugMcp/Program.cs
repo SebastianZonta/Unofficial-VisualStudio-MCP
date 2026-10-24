@@ -10,6 +10,9 @@ if (args.Contains("--live-check-full", StringComparer.Ordinal))
 if (args.Contains("--live-check-launch", StringComparer.Ordinal))
     return await LiveCheck.RunLaunchAsync(args);
 
+if (args.Contains("--live-check-run-to", StringComparer.Ordinal))
+    return await LiveCheck.RunToCursorAsync(args);
+
 if (args.Contains("--live-check-audit", StringComparer.Ordinal))
     return await LiveCheck.RunAuditAsync(args);
 

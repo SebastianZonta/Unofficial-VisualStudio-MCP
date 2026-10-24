@@ -31,6 +31,7 @@ session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 |---|---|---|
 | `pause` | `sessionId` | Fails with `not-running` unless running. |
 | `resume` | `sessionId`, `timeoutMs` = 5000 | Over-budget waits return `status: timeout`, never a hang. |
+| `run_to_cursor` | `sessionId`, `file`, `line`, `timeoutMs` = 5000 | Places a temporary breakpoint at `file:line` (same path/line rules as `set_breakpoint`), continues (resume from break, wait from run), and removes it on every exit path, so `list_breakpoints` never shows it and your own breakpoints are untouched. Requires break or run mode (design is `not-running`). Same envelope as `resume`: `lastHit` is the destination on arrival; an earlier breakpoint hit wins and is returned instead; an over-budget wait reports like `resume`. A breakpoint already at the destination (yours or foreign) is reused as-is instead of placing a temporary one (VS would hand back that same breakpoint, and removing it would delete yours), so its condition, hit count, or logpoint applies. A location that does not bind is `unbound-location`; live VS cannot observe pending-vs-bound, so there it fails fast only when VS rejects the location outright, and a typo'd path otherwise runs to the timeout. |
 | `step` | `sessionId`, `direction` = `over`\|`into`\|`out`, `timeoutMs` = 5000 | Requires break mode. |
 
 ## Inspection (in `InspectionTools`)
@@ -70,7 +71,8 @@ Failures are structured `code: detail; remediation: …`:
 | `already-bound` | `launch_process` or `attach_process` while the debug session already debugs a target process (consent and same-user are still checked first) | detach or let the current run end, then bind |
 | `launch-failed` | the OS could not start the executable, or the VS instance could not see the started target process | check the executable is runnable by the bridge user; retry |
 | `not-in-break-mode` | inspect/step/evaluate outside break mode | resume to a breakpoint or pause first |
-| `not-running` | `pause` while not running, or `list_modules` in design mode (not debugging) | resume first, then pause while running; for `list_modules`, `attach_process` or `launch_process` first |
+| `not-running` | `pause` while not running, or `list_modules`/`run_to_cursor` in design mode (not debugging) | resume first, then pause while running; for `list_modules`/`run_to_cursor`, `attach_process` or `launch_process` first |
+| `unbound-location` | `run_to_cursor` destination did not bind (the temporary breakpoint is already removed) | check the file path and line, or `list_modules` for the module's symbol state |
 | `already-running` | `resume` while already running | pause first to inspect |
 | `invalid-argument` | empty file/breakpointId/expression, bad line, bad step direction, `;`, newline, assignment, `++`/`--` or `<<=`/`>>=` in an expression or `read_variables` `path`, write-like/multiline `condition`, bad `hitCount`/`hitCountMode`, bad `logMessage` (empty, unbalanced braces, write-like hole, or combined with stopping options), relative, `devenv`, or non-.NET (no `.runtimeconfig.json` beside it) `executablePath`, missing `workingDirectory` | follow the per-field guidance in the message |
 | `invalid-expression` | expression did not evaluate, or would have side effects (no-side-effects mode refused it) | pass a read-only expression valid in the top frame; prefer fields and property reads over method calls |

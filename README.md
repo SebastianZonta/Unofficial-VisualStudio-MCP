@@ -1,6 +1,6 @@
 # VsDebugMcp
 
-Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 16 tools over stdio.
+Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 17 tools over stdio.
 
 > **Unofficial project. Not affiliated with, sponsored, or endorsed by Microsoft.**
 > Visual Studio, EnvDTE, and .NET are trademarks of the Microsoft group of companies.
@@ -36,6 +36,7 @@ An agent workflow looks like this:
 | `remove_breakpoint` | Remove a breakpoint by id. |
 | `pause` | Pause a running debuggee. |
 | `resume` | Run until a breakpoint or the timeout. Over-budget waits return a timeout status, never a hang. |
+| `run_to_cursor` | Run to a file/line in one call via a temporary breakpoint that is always removed. Break or run mode. |
 | `step` | Step `over`, `into`, or `out`. Requires break mode. |
 | `read_stack` | Call stack, newest first. Requires break mode. |
 | `read_variables` | Frame locals/args; expandable paths drill into members. Requires break mode. |

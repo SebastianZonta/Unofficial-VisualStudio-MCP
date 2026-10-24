@@ -21,6 +21,7 @@ public static class ErrorCodes
     public const string ExecutableNotFound = "executable-not-found";
     public const string AlreadyBound = "already-bound";
     public const string LaunchFailed = "launch-failed";
+    public const string UnboundLocation = "unbound-location";
 
     /// <summary>Key under which <see cref="DebugDomainException.Code"/> is preserved
     /// in <c>McpException.Data</c> by <see cref="ToolErrors"/>.</summary>

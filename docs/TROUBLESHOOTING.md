@@ -65,6 +65,11 @@ missing` means no PDB was loaded for it (build Debug, keep the `.pdb` beside the
 binary). Live VS reports only `loaded`/`missing`; `unknown` means no
 information, not "fine". In design mode `list_modules` is `not-running`.
 
+`run_to_cursor` fails with `unbound-location` (temporary breakpoint already
+removed) when the destination does not bind. Live VS only reports this when it
+rejects the location; a pending one runs to the timeout, so on a still-running
+result check the path and `list_modules` as above.
+
 ## PID recycle (`process-not-found`)
 
 Symptom: `attach_process` fails right after a successful `list_processes`.

@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Arrival reports the destination lastHit and the temporary breakpoint is gone afterwards.
-- [ ] Timeout returns still-running with cleanup done; unbindable file/line fails fast; design mode is rejected.
-- [ ] Pre-existing breakpoints survive; a concurrent earlier hit wins with cleanup still done.
+- [x] Arrival reports the destination lastHit and the temporary breakpoint is gone afterwards.
+- [x] Timeout returns still-running with cleanup done; unbindable file/line fails fast; design mode is rejected.
+- [x] Pre-existing breakpoints survive; a concurrent earlier hit wins with cleanup still done.

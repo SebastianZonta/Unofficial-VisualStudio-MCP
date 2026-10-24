@@ -80,6 +80,15 @@ user or another debug session): it shows as `other<N>` (positional, recomputed
 per listing) and is list-only, so `remove_breakpoint` never touches it.
 _Avoid_: index, position (when meaning a `bp<N>` id); user breakpoint, mine (when meaning foreign/owned)
 
+**Run to cursor / temporary breakpoint**:
+`run_to_cursor` runs a debug session's target process forward to a file/line
+through a temporary breakpoint: placed by the call, removed before it returns
+on every exit path (arrival, earlier hit, timeout, error). It never lists as a
+persistent `bp<N>` and never touches owned or foreign breakpoints. An earlier
+breakpoint hit on the way wins and becomes `lastHit`. A breakpoint already at
+the destination is reused instead of a temporary one.
+_Avoid_: cursor (when meaning the editor caret), one-shot (when meaning a hit-count breakpoint)
+
 **Module / symbol state**:
 A module is a binary loaded into a debug session's target process, listed by
 `list_modules`. `symbolState` is debugger-reported: `loaded` (detail is the

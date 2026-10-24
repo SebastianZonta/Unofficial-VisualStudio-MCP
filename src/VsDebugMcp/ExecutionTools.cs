@@ -32,6 +32,23 @@ public sealed class ExecutionTools
         return ToolErrors.MapAsync(() => bridge.ResumeAsync(sessionId, timeoutMs, cancellationToken));
     }
 
+    [McpServerTool(Name = "run_to_cursor")]
+    [Description("Run the debuggee in the active session to a file/line via a temporary breakpoint, removed on every exit. Requires break or run mode; an earlier breakpoint hit wins; an over-budget wait returns like resume.")]
+    public static Task<ExecutionResult> RunToCursorAsync(
+        IDebugBridge bridge,
+        [Description("Session id returned by attach.")] string sessionId,
+        [Description("Source file path, as shown in the solution.")] string file,
+        [Description("1-based line number.")] int line,
+        [Description("Budget in milliseconds for the wait (default 5000).")] int timeoutMs = 5000,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        ArgumentValidator.ValidateFile(file);
+        ArgumentValidator.ValidateLine(line);
+        ArgumentValidator.ValidateTimeoutMs(timeoutMs);
+        return ToolErrors.MapAsync(() => bridge.RunToCursorAsync(sessionId, file, line, timeoutMs, cancellationToken));
+    }
+
     [McpServerTool(Name = "step")]
     [Description("Step the debuggee in the active session. Direction is over, into, or out. Requires break mode; an over-budget wait returns a timeout status.")]
     public static Task<ExecutionResult> StepAsync(
