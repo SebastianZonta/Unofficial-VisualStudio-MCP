@@ -49,7 +49,9 @@ suite. The manual pass below remains the authority for everything the suite skip
 3. Check the host: the vs-debug toolset must list all 21 tools (`run_to_cursor`,
    `list_exception_settings`, `set_exception_setting` included). If any tool is missing, the host runs a stale binary: stop.
 4. Pick a run tag `<yyyy-MM-dd-HHmm>`, copy `Sandbox/` (without `bin/`, `obj/`)
-   to two temp dirs (one for R2, one for R3; R1 uses the repo source), then fan
+   to two temp dirs (one for R2, one for R3; R1 uses the repo source), then
+   `Unblock-File -Recurse` both copies (they carry Mark-of-the-Web or VS sits
+   at `solution unreadable`), then fan
    out exactly three subagents (R1, R2, R3) on **muse-spark-1.3-contributor** (opencode) / **sonnet** (Claude Code),
    one prompt template instantiated per slice (below).
 5. Merge the three partials (`.scratch/e2e-runs/<tag>-R1.md` … `-R3.md`) into
@@ -239,7 +241,7 @@ before the next case.
 | C7 | `condition: "n++ > 0"`; `logMessage: "i={i++}"`; `condition: "i = 5"` | `invalid-argument` each, naming condition/logMessage; `list_breakpoints` empty |
 | C8 | `logMessage` + `condition`; `logMessage: ""`; `logMessage: "a{b"`; `hitCount: 0`; `hitCountMode: "every"` alone; `hitCountMode: "sometimes"` with `hitCount: 2` | `invalid-argument` each, naming the field; nothing created |
 | C9 | `condition: "i == 3 \|\| i == 4"` | breaks at `i` = 3, then `i` = 4 (comparison operators pass the read-only rule) |
-| C10 | `threads` scenario: logpoint at `WORKER` `"{id}/{n}"`; `launch_process(Sandbox.exe, "threads")` | never stops; ends `design`; `Log` has exactly 20 entries, each pair `1/1` … `4/5` exactly once |
+| C10 | `threads` scenario: logpoint at `WORKER` `"{id}/{n}"`; `launch_process(Sandbox.exe, "threads")` | never stops; ends `design`; `Log` gains exactly 20 new entries for this logpoint's id, each pair `1/1` … `4/5` exactly once (the session `Log` is cumulative across launches — C6's entries persist) |
 
 ## P5: inspection (`inspect`)
 
