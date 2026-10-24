@@ -10,7 +10,7 @@ instances and never touches any other VS instance.
 The pass runs as three concurrent runners (R1, R2, R3) against the same
 revision, each with its own P0 setup plus its assigned slice
 (see [Parallel run](#parallel-run-3-runners-sliced-phases)): R1 = P0 + P1–P4 + P9,
-R2 = P0 + P5–P7, R3 = P0 + P8 + P10–P11. Wall-clock target is ~7 minutes against the
+R2 = P0 + P5–P7 + P10, R3 = P0 + P8 + P11. Wall-clock target is ~7 minutes against the
 ~20 minute single-runner baseline; the first parallel run is the pilot and its
 wall-clock is recorded. Phase H stays human-assisted and runs after the merge.
 
@@ -72,7 +72,7 @@ Agent(
   prompt: """
     You are E2E runner <R1|R2|R3> for the VS debug MCP at <repo root>.
     Read docs/agents/e2e.md fully, then run your slice in order, exactly as
-    written: R1 = P0 + P1-P4 + P9, R2 = P0 + P5-P7, R3 = P0 + P8 + P10-P11
+    written: R1 = P0 + P1-P4 + P9, R2 = P0 + P5-P7 + P10, R3 = P0 + P8 + P11
     (plus the Parallel-run rules for your temp copy, PID scoping and cleanup).
     Run tag: <tag>. Your Sandbox copy: <repo Sandbox/ for R1 | temp dir for R2/R3>.
     Your VS display-name prefix, session ids and target PIDs are yours alone.
@@ -95,7 +95,7 @@ budget.
 - **Per-runner P0.** Each runner builds, resolves marker lines dynamically
   (never hardcodes), starts its own VS, records its own wait PID. S5's
   `%TEMP%\SandboxB` is the single-runner name: in a parallel run every temp
-  path is runner-scoped (run tag + R-suffix), including R3's second copy for
+  path is runner-scoped (run tag + R-suffix), including R2's second copy for
   P10's M0. The repo keeps exactly one Sandbox source; scenario edits stay a
   one-file change plus the marker table, and copies can never drift.
   P9 runs in R1 against R1's own wait PID — its only coupling is the P0 that
