@@ -113,6 +113,27 @@ Values over 500 chars are cut with a `[truncated]` marker. `expandable`
 marks drillable values; its `path` feeds back into `read_variables`.
 _Avoid_: clipping, collapsed
 
+**Runner**:
+A single E2E subagent owning one slice of the parallel pass: its own VS
+instances (which it starts and no other runner touches), its own debug
+session, its own target processes, its own Sandbox file path, and its own
+partial report. Three runners (R1, R2, R3) run concurrently against the same
+revision.
+_Avoid_: session (when meaning the runner itself)
+
+**Slice**:
+One runner's assigned phase range, always including its own P0 setup:
+R1 = P0 + P1–P4, R2 = P0 + P5–P7, R3 = P0 + P8–P11. Boundaries are fixed by
+the unbreakable chains (P5's shared stopped target, P8's live-target chain,
+P9's reuse of the P0 wait PID never cross a runner boundary).
+_Avoid_: phase (when meaning a runner's whole assignment)
+
+**Run tag**:
+The shared `<yyyy-MM-dd-HHmm>` timestamp naming one parallel run. Each
+runner's partial report appends its R-suffix (`<tag>-R1.md` …); the main
+agent merges the three partials into the single verdict file `<tag>.md`.
+_Avoid_: timestamp (when meaning the shared run identifier)
+
 **VS PID vs target PID**:
 The VS PID identifies the IDE process (`devenv`, from `list_instances`) and
 is never an attach target. The target PID identifies the program under test

@@ -7,9 +7,16 @@ frames, the evaluator, threads, exceptions, two VS instances). The target is
 `Sandbox/`, a .NET console app built for this pass. The pass starts its own VS
 instances and never touches any other VS instance.
 
+The pass runs as three concurrent runners (R1, R2, R3) against the same
+revision, each with its own P0 setup plus its assigned slice
+(see [Parallel run](#parallel-run-3-runners-sliced-phases)): R1 = P0 + P1–P4,
+R2 = P0 + P5–P7, R3 = P0 + P8–P11. Wall-clock target is ~7 minutes against the
+~20 minute single-runner baseline; the first parallel run is the pilot and its
+wall-clock is recorded. Phase H stays human-assisted and runs after the merge.
+
 Bar: every non-OBS case PASS. One FAIL or BLOCKED fails the pass.
 
-Contents: [Automated suite](#automated-suite-audit-should-fix) · [Roles](#roles) · [Runner rules](#runner-rules) · [Sandbox reference](#sandbox-reference) · cases [P0 setup](#p0-setup) → [P1 discovery](#p1-discovery-session-less) → [P2 lifecycle](#p2-session-lifecycle) → [P3 breakpoint identity](#p3-breakpoint-identity-and-ownership) → [P4 conditions](#p4-conditions-hit-counts-logpoints-loop) → [P5 inspection](#p5-inspection-inspect) → [P6 frames](#p6-frames-stack) → [P7 stepping](#p7-stepping-step) → [P8 execution and launch](#p8-execution-control-and-launch) → [P9 attach_process](#p9-attach_process-waitpid-from-s4) → [P10 two VS](#p10-two-vs-instances) → [P11 cleanup](#p11-cleanup-always-run-even-after-a-fail-or-blocked) · [H human-assisted](#h-human-assisted-main-agent-after-the-subagent-returns) · [Report](#report)
+Contents: [Automated suite](#automated-suite-audit-should-fix) · [Roles](#roles) · [Parallel run](#parallel-run-3-runners-sliced-phases) · [Runner rules](#runner-rules) · [Sandbox reference](#sandbox-reference) · cases [P0 setup](#p0-setup) → [P1 discovery](#p1-discovery-session-less) → [P2 lifecycle](#p2-session-lifecycle) → [P3 breakpoint identity](#p3-breakpoint-identity-and-ownership) → [P4 conditions](#p4-conditions-hit-counts-logpoints-loop) → [P5 inspection](#p5-inspection-inspect) → [P6 frames](#p6-frames-stack) → [P7 stepping](#p7-stepping-step) → [P8 execution and launch](#p8-execution-control-and-launch) → [P9 attach_process](#p9-attach_process-waitpid-from-s4) → [P10 two VS](#p10-two-vs-instances) → [P11 cleanup](#p11-cleanup-always-run-even-after-a-fail-or-blocked) · [H human-assisted](#h-human-assisted-main-agent-after-the-subagent-returns) · [Report](#report)
 
 ## Automated suite (audit-should-fix)
 
@@ -32,7 +39,7 @@ suite. The manual pass below remains the authority for everything the suite skip
 
 ## Roles
 
-**Main agent (orchestrator)** does preflight, fans out, then triages:
+**Main agent (orchestrator)** does preflight, fans out, merges, then triages:
 
 1. `dotnet build VsDebugMcp.slnx` and `dotnet test VsDebugMcp.slnx --no-build` green.
 2. Publish the MCP and get the host restarted on the fresh binary (live is the
@@ -41,27 +48,75 @@ suite. The manual pass below remains the authority for everything the suite skip
    host is the user's action; ask, don't work around it.
 3. Check the host: the vs-debug toolset must list all 21 tools (`run_to_cursor`,
    `list_exception_settings`, `set_exception_setting` included). If any tool is missing, the host runs a stale binary: stop.
-4. Fan out exactly one subagent on **muse-spark-1.3-contributor** (opencode) / **sonnet** (Claude Code), using the prompt below.
-5. After it returns, run phase **H** (human-assisted) yourself with the user.
-6. Read the report. Triage every FAIL and BLOCKED into `.scratch/` issues, and
+4. Pick a run tag `<yyyy-MM-dd-HHmm>`, copy `Sandbox/` (without `bin/`, `obj/`)
+   to two temp dirs (one for R2, one for R3; R1 uses the repo source), then fan
+   out exactly three subagents (R1, R2, R3) on **muse-spark-1.3-contributor** (opencode) / **sonnet** (Claude Code),
+   one prompt template instantiated per slice (below).
+5. Merge the three partials (`.scratch/e2e-runs/<tag>-R1.md` … `-R3.md`) into
+   the single verdict file (`.scratch/e2e-runs/<tag>.md`, same format as
+   [Report](#report)): merged counts plus the combined failures/blocked and
+   observations tables. Verdict is PASS only if every non-OBS case passes in
+   all three slices. Then run phase **H** (human-assisted) yourself with the
+   user, appended to the merged file.
+6. Read the merged report. Triage every FAIL and BLOCKED into `.scratch/` issues, and
    relay the verdict to the user. A FAIL is never "fixed" by editing this doc
    to match the observed behaviour without saying so.
 
 ```text
 Agent(
-  description: "E2E against Sandbox",
+  description: "E2E slice against Sandbox",
   subagent_type: "general-purpose",
   model: "opencode-go/muse-spark-1.3-contributor",  # Claude Code: model: "sonnet"
   prompt: """
-    You are the E2E runner for the VS debug MCP at <repo root>.
-    Read docs/agents/e2e.md fully, then run phases P0-P11 in order, exactly as written.
+    You are E2E runner <R1|R2|R3> for the VS debug MCP at <repo root>.
+    Read docs/agents/e2e.md fully, then run your slice in order, exactly as
+    written: R1 = P0 + P1-P4, R2 = P0 + P5-P7, R3 = P0 + P8-P11
+    (plus the Parallel-run rules for your temp copy, PID scoping and cleanup).
+    Run tag: <tag>. Your Sandbox copy: <repo Sandbox/ for R1 | temp dir for R2/R3>.
+    Your VS display-name prefix, session ids and target PIDs are yours alone.
     Load the vs-debug MCP tools via ToolSearch (query "+vs-debug", max_results 20).
     Never touch a VS instance you did not start. Never skip a case silently.
-    Write the report where the doc says and return: verdict, PASS/FAIL/BLOCKED/OBS
+    Write your partial report to .scratch/e2e-runs/<tag>-R<N>.md in the doc's
+    format and return: verdict, PASS/FAIL/BLOCKED/OBS
     counts, every FAIL and BLOCKED with evidence, and the report path.
     Change under test: <one line>. Extra focus: <optional>.
   """)
 ```
+
+## Parallel run (3 runners, sliced phases)
+
+One template, three instantiations differing only in slice (phase range), run
+tag and Sandbox copy. Staggering the three P0 starts is not required (distinct
+temp-copy dirs, no shared bin lock); VS startup polling keeps its 10 s / 3 min
+budget.
+
+- **Per-runner P0.** Each runner builds, resolves marker lines dynamically
+  (never hardcodes), starts its own VS, records its own wait PID. S5's
+  `%TEMP%\SandboxB` is the single-runner name: in a parallel run every temp
+  path is runner-scoped (run tag + R-suffix), including R3's second copy for
+  P10's M0. The repo keeps exactly one Sandbox source; scenario edits stay a
+  one-file change plus the marker table, and copies can never drift.
+- **File paths.** R1 uses the repo `Sandbox/`; R2/R3 use the main agent's temp
+  copies. Pass breakpoint `file` args from your own copy only, so `file:line`
+  identity, `lastHit` assertions and the two-VS path-distinction check (M6)
+  stay attributable, and a leaked breakpoint in one runner cannot flake
+  another. Each runner deletes every temp copy it used in cleanup (Z3); per-run
+  machinery never lands on disk.
+- **PID scoping (surgical).** Every other case, table and budget is
+  byte-identical to the single-runner pass; only three assertions scope to the
+  runner's own recorded PIDs: D3 (exactly your own `waitPid` entry, not the
+  only Sandbox process on the box), E14 (no process starts: nothing new named
+  Sandbox outside your own PIDs), Z3 (stop only the Sandbox processes and VS
+  instances you started, and only those; your `sandbox` filter reads empty).
+- **Unchanged strictness.** Retry once on `vs-busy` or a `timeout` before
+  calling it a FAIL; never retry an assertion. `launch_process`/`resume`
+  timeout budgets are unchanged. The exception-settings restore chain (E25)
+  keeps its must-run-cleanup semantics inside R3. Phase H is unchanged.
+- **Watch list (pilot only).** CPU contention from three concurrent VS
+  startups, the P10 two-VS spike (four VS instances plus the maintainer's
+  own), and any leaked-breakpoint or PID-reuse surprise the scoping above is
+  designed to contain. If VS-startup contention dominates, the follow-up is
+  staggering P0 starts, never re-merging slices.
 
 ## Runner rules
 
@@ -74,7 +129,8 @@ Agent(
   FAIL. Never retry an assertion until it passes.
 - **Isolation.** Every `attach` passes `instanceOverride` (the display name of an
   instance you started). The only exception is M1, which targets the newest
-  instance on purpose. Act on VS only through MCP tools. The shell is for building, starting
+  instance on purpose. Never touch a VS instance, debug session or target
+  process another runner started; stop only the PIDs you started. Act on VS only through MCP tools. The shell is for building, starting
   and stopping the processes this pass owns, nothing else.
 - **Budgets.** Use `timeoutMs` 30000 for `launch_process`/`resume` unless the
   case says otherwise. "Run to end" means `resume` until `mode: design`.
@@ -334,7 +390,12 @@ the main agent runs these with the user. It asks before each manual step
 
 ## Report
 
-Write `.scratch/e2e-runs/<yyyy-MM-dd-HHmm>.md` (gitignored):
+Each runner writes its partial `.scratch/e2e-runs/<tag>-R<N>.md`
+(gitignored) in the format below, covering only its slice. The main agent
+merges the three partials into `.scratch/e2e-runs/<tag>.md` (merged counts
+plus the combined failures/blocked and observations tables), appends phase H
+to it, and triages from it — still exactly one verdict file per run.
+Single-runner filename `<yyyy-MM-dd-HHmm>.md` is the run tag without a suffix.
 
 ```markdown
 # E2E run <timestamp>
