@@ -56,7 +56,7 @@ Add session-scoped tooling to configure first-chance versus unhandled-only break
 
 ## Out of Scope
 
-- Global or persisted Exception Settings: configuration is per debug session and does not rewrite the VS-wide defaults file.
+- Global or persisted Exception Settings: configuration is per debug session and does not rewrite the VS-wide defaults file. (As built, settings live in the bound VS instance's table, which VS may persist with the solution; see ADR-0011.)
 - Group toggles (whole CLR category on/off) beyond per-type settings; bulk operations are repeated single-type calls.
 - Exception filters by module, condition expressions, or break-when-thrown counts.
 - Custom exception visualizations or new stack frame formats.

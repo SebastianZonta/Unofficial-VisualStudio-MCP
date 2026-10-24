@@ -94,9 +94,12 @@ to or disturbs anything.
 
 - Stack frames carry function + module only — EnvDTE exposes no file/line on frames.
   Breakpoint hits are the exception: they report `file:line` via `lastHit`.
-- No dedicated exception object: on an exception break (`[Exception]` frames, no
-  `lastHit`), inspect the `$exception` local via `read_variables` / `evaluate`
-  (`$exception.Message` works; method calls like `$exception.ToString()` do not).
+- Exception breaks carry only type, `$exception` path, and top-level message
+  (null when the no-side-effects evaluator refuses it); inner exceptions and
+  stack text stay reachable via `read_variables` / `evaluate` on `$exception`.
+- Exception settings change the bound VS instance's own table: they are not
+  reverted on `detach` and VS may persist them with the solution. Reset with
+  `set_exception_setting(..., "default")`.
 - If the debuggee exits, the session reports run-ended-back-in-design; there is no
   post-mortem of a dead process.
 - PIDs are recycled by the OS: list, then attach promptly.

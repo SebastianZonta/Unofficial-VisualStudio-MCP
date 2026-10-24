@@ -64,7 +64,7 @@ A same-machine, C#-only, minimal-core debugger MCP server for Visual Studio 2026
 ## Out of Scope
 
 - VS Code, Rider, or any non-VS-2026 IDE; remote debugging across machines; any language beyond C#.
-- Conditional breakpoints, watch windows, threads/tasks parallel views, Edit-and-Continue, profiler/IntelliTrace, exception-settings management, minidumps.
+- Conditional breakpoints, watch windows, threads/tasks parallel views, Edit-and-Continue, profiler/IntelliTrace, exception-settings management (since added by `.scratch/exception-config/`), minidumps.
 - Value assignment and statement execution (deferred as separate consent-gated tools); multi-process or multi-target operations (named-limitation errors instead).
 - HTTP transport, authentication, prompts/resources, assembly-scan tool registration, dynamic tool generation.
 - Custom debug-engine authorship (Concord/MIEngine) and any in-proc VSIX — the VSIX remains only a documented fallback if build-time validation hits unresolvable targeting, hang, event, or elevation walls.

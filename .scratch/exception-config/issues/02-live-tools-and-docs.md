@@ -11,4 +11,4 @@
 - [x] Existing `[Exception]` frame rendering and `read_stack` semantics unchanged.
 - [x] `TOOLS.md`, `GLOSSARY.md`, and `README.md` document the tools (no test counts in `README.md`).
 
-Live code and docs are in; the two live checks above are unverified (E2E pass skipped by request, no exception-config cases in docs/agents/e2e.md yet).
+Live code and docs are in; the two live checks above are unverified (E2E pass skipped by request; cases E13 and E21–E25 in docs/agents/e2e.md cover them).

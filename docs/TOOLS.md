@@ -34,7 +34,7 @@ session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 | `run_to_cursor` | `sessionId`, `file`, `line`, `timeoutMs` = 5000 | Places a temporary breakpoint at `file:line` (same path/line rules as `set_breakpoint`), continues (resume from break, wait from run), and removes it on every exit path, so `list_breakpoints` never shows it and your own breakpoints are untouched. Requires break or run mode (design is `not-running`). Same envelope as `resume`: `lastHit` is the destination on arrival; an earlier breakpoint hit wins and is returned instead; an over-budget wait reports like `resume`. A breakpoint already at the destination (yours or foreign) is reused as-is instead of placing a temporary one (VS would hand back that same breakpoint, and removing it would delete yours), so its condition, hit count, or logpoint applies. A location that does not bind is `unbound-location`; live VS cannot observe pending-vs-bound, so there it fails fast only when VS rejects the location outright, and a typo'd path otherwise runs to the timeout. |
 | `step` | `sessionId`, `direction` = `over`\|`into`\|`out`, `timeoutMs` = 5000 | Requires break mode. |
 | `list_exception_settings` | `sessionId`, `nameFilter?` = null (case-insensitive substring on type name) | Read-only, any mode (including run). Entry per CLR exception type: `name`, `mode` (`first-chance` = break when thrown, `unhandled-only`). Sorted by name. |
-| `set_exception_setting` | `sessionId`, `exceptionType`, `mode` = `first-chance`\|`unhandled-only`\|`default` | Requires break or design mode (run is `already-running`). `exceptionType` is the exact fully qualified CLR name; short or unknown names are `exception-not-found`. `default` restores the setting this debug session found before its first change. Settings live in the session's VS instance, so siblings on other instances are unaffected; they are not reverted on `detach`. |
+| `set_exception_setting` | `sessionId`, `exceptionType`, `mode` = `first-chance`\|`unhandled-only`\|`default` | Requires break or design mode (run is `already-running`). `exceptionType` is the exact fully qualified CLR name; short or unknown names are `exception-not-found`. `default` restores the setting this debug session found before its first change. Settings live in the session's VS instance, so siblings on other instances are unaffected; they are not reverted on `detach` and VS may persist them with the solution, so reset what you tuned ([ADR-0011](adr/0011-exception-settings-in-vs-instance.md)). |
 
 When `resume`, `step`, `run_to_cursor` or `launch_process` stops on an exception, the result carries `exception`: `type`, `path` (`$exception`, usable as a `read_variables` `path` or in `evaluate`), and `message` (truncated at 500 chars like other values; read in no-side-effects mode, [ADR-0010](adr/0010-no-side-effects-eval.md)). `lastHit` is null and the note names `first-chance` or `unhandled` plus the type. An unreadable or refused message is null (never empty) and the note points at `$exception`; the break is still reported. Every other stop has no `exception`.
 
@@ -51,7 +51,10 @@ When `resume`, `step`, `run_to_cursor` or `launch_process` stops on an exception
 Every session-scoped result carries debugger `mode` (`design`/`run`/`break`)
 plus `lastHit` (`file:line` of the breakpoint last hit, null otherwise), so no
 separate status call is needed. The two session-less list tools return only
-their collections.
+their collections. Execution results that stopped on an exception add
+`exception` (`type`, `path`, `message`; see Execution above and
+[ADR-0011](adr/0011-exception-settings-in-vs-instance.md)); no other result
+carries one.
 
 Values are truncated at 500 chars (`… [truncated]`) with an `expandable` flag
 plus a drill-down `path` — large collections never flood context.

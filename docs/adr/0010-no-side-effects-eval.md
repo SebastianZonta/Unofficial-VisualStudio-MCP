@@ -34,6 +34,11 @@ One read-only rule governs every expression the agent sends: `evaluate`,
    (logpoint holes render `(unavailable)`). Results echo the agent's
    expression, never the `, nse` form.
 
+Reads the bridge makes on its own also run under `nse`: on an exception break
+it reads `$exception` and `$exception.Message` for the result's `exception`
+payload (ADR-0011). A refusal there leaves `message` null with a note, never
+a failed break.
+
 Breakpoint conditions are evaluated natively by VS on every hit, outside the
 bridge, so they keep only the text rule.
 

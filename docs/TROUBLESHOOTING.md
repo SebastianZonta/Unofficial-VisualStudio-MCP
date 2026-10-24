@@ -52,9 +52,27 @@ fresh folder and repoint the client config.
 
 Symptom: results carry `lastHit: null`. This is normal: `lastHit` is only set
 for breakpoint hits (`file:line` via `BreakpointLastHit`). Stepping,
-exception breaks, and design/run states report null. On an exception break
-(`[Exception]` frames, no `lastHit`), inspect the `$exception` local
+exception breaks, and design/run states report null. An exception break
+carries `exception` instead (`type`, `path` `$exception`, `message`); drill
+further via `read_variables(path: "$exception")` or `evaluate`
 (`$exception.Message` works; method calls like `$exception.ToString()` do not).
+
+## Exception break with a null `message`
+
+Symptom: the result has `exception.message: null` and the note says the message
+is unreadable. Cause: the no-side-effects evaluator refused (or failed) the
+`Message` getter, which often builds text from resources. The break itself is
+real. Fix: `read_variables(f0, path: "$exception")` and read the backing
+field (e.g. `_message`). Record which exception types do this here.
+
+## Exception settings did not stop the target
+
+Symptom: `set_exception_setting(..., "first-chance")` succeeded but the throw
+did not break. Check `list_exception_settings(nameFilter: <type>)` shows
+`first-chance`, and that the thrown type is exactly that name (a derived type
+has its own entry). Changes need break or design mode: a change attempted while
+running fails with `already-running`. Settings live in the VS instance and may
+persist with the solution: reset with `default` when done.
 
 ## Breakpoint stays unbound
 

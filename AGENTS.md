@@ -29,7 +29,7 @@ dotnet test --filter "FullyQualifiedName~<TestClass>"  # single suite
 - `Breakpoints.Add` on an occupied location returns the existing breakpoint: `set_breakpoint` checks first (own repeat → same id, foreign → `breakpoint-exists`); verify with `--live-check-occupied <instance> <file> <line>`.
 - `run_to_cursor` is a composed set-breakpoint/continue/remove (`RunToCursor.cs`), so it inherits their COM behavior; verify live with `--live-check-run-to <exe> <file> <line> <toLine> [<runLine>]` (Sandbox: TICK, AFTER_LOOP, HEARTBEAT).
 - `evaluate` is read-only (no assignments/`++`/`--`/statements/`;`; live evaluations get `, nse`, ADR-0010) and always runs in `f0`; inspection tools need break mode. Verify ids/`nse`/frames live with `--live-check-audit <exe> <file> <line>`. Frames carry function + module only; `lastHit` (`file:line`) exists only for breakpoint hits. Values truncate at 500 chars — drill via expandable `path`.
-- Exception settings use `Debugger3.ExceptionGroups["Common Language Runtime Exceptions"]`; exception breaks are detected by `LastBreakReason` and read `$exception`/`$exception.Message` under `, nse`. Not yet verified live.
+- Exception settings use `Debugger3.ExceptionGroups["Common Language Runtime Exceptions"]`; exception breaks are detected by `LastBreakReason` and read `$exception`/`$exception.Message` under `, nse` (ADR-0011). Not yet verified live.
 
 ## Conventions
 

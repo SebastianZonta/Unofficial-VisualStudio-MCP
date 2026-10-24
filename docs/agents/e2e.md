@@ -1,7 +1,7 @@
 # E2E: every tool against a real VS, on the Sandbox
 
 The unit tests prove the tool contracts against `FakeDebugBridge`. This pass
-proves them against real VS 2026: every tool (exception-config cases are not written yet), every reachable
+proves them against real VS 2026: every one of the 20 tools, every reachable
 error code, and the situations the fake can't produce (COM identity, real
 frames, the evaluator, threads, exceptions, two VS instances). The target is
 `Sandbox/`, a .NET console app built for this pass. The pass starts its own VS
@@ -37,8 +37,8 @@ suite. The manual pass below remains the authority for everything the suite skip
    default; `--live` is accepted as a no-op)
    (stop the clients first: the exe is locked while hosts run). Restarting the
    host is the user's action; ask, don't work around it.
-3. Check the host: the vs-debug toolset must list all 20 tools (`run_to_cursor`
-   included). If any tool is missing, the host runs a stale binary: stop.
+3. Check the host: the vs-debug toolset must list all 20 tools (`run_to_cursor`,
+   `list_exception_settings`, `set_exception_setting` included). If any tool is missing, the host runs a stale binary: stop.
 4. Fan out exactly one subagent on **Sonnet 5.5**, using the prompt below.
 5. After it returns, run phase **H** (human-assisted) yourself with the user.
 6. Read the report. Triage every FAIL and BLOCKED into `.scratch/` issues, and
@@ -255,7 +255,12 @@ Remove the breakpoint and run to end.
 | E10 | `launch_process(Sandbox.exe, "exit")` | ends `mode: design` (note says the run ended) |
 | E11 | Breakpoint at `ECHO`; `launch_process(Sandbox.exe, arguments: "echo a1 \"two words\"", workingDirectory: %TEMP% (absolute), environment: {SANDBOX_E2E: "yes"})` | `break`; `argsJoined` = "a1\|two words"; `cwd` = %TEMP% (case-insensitive, no trailing slash); `envValue` = "yes". Remove it, run to end |
 | E12 | Breakpoint at `ASYNC`; launch `async` | `break`; `f0.function` contains `AsyncFlow`; `before`, `after` are integers. Remove it, run to end |
-| E13 | launch `throw` (no breakpoints) | `break`, `lastHit` null; a frame contains `Fail`; `evaluate("$exception.Message")` = "sandbox boom". `resume` (repeat once if still `break`) → `design` |
+| E13 | launch `throw` (no breakpoints) | `break`, `lastHit` null; a frame contains `Fail`; `evaluate("$exception.Message")` = "sandbox boom". `exception.type` = `System.InvalidOperationException`, `exception.path` = `$exception`, `exception.message` equals that `evaluate` value exactly (OBS if null: record the note). `resume` (repeat once if still `break`) → `design` |
+| E21 | design mode: `list_exception_settings(nameFilter: "invalidoperation")`; `list_exception_settings()` | `mode: design`; contains `System.InvalidOperationException`, record its mode as M0; unfiltered list sorted by name (OBS: entry count) |
+| E22 | `set_exception_setting("System.InvalidOperationException", "first-chance")`; launch `throw` | set echoes `first-chance`; launch → `break`, note starts `first-chance`, `exception.type` = `System.InvalidOperationException`, `exception.message` equals `evaluate("$exception.Message")`, `lastHit` null. `resume` → OBS (record whether a second `unhandled` stop comes); resume to `design` |
+| E23 | launch `wait 600`; `list_exception_settings(nameFilter: "invalidoperation")`; `set_exception_setting("System.InvalidOperationException", "unhandled-only")`; `Stop-Process` it | list works: `mode: run`, still `first-chance`; set → `already-running` naming run; setting unchanged |
+| E24 | `set_exception_setting` with `"InvalidOperationException"`; `"System.NoSuchException"`; then `mode: "always"`; `exceptionType: ""` | `exception-not-found`; `exception-not-found`; `invalid-argument`; `invalid-argument` |
+| E25 | `set_exception_setting("System.InvalidOperationException", "default")`; list it | mode back to M0. Cleanup: this must run even if E22–E24 failed |
 | E14 | `launch_process` with: relative `Sandbox.exe`; absolute missing `C:\nope\Sandbox.exe`; the devenv path; `C:\Windows\System32\notepad.exe`; valid exe with `workingDirectory: C:\nope` | `invalid-argument`; `executable-not-found`; `invalid-argument`; `invalid-argument`; `invalid-argument`. No process starts (nothing new named Sandbox in `list_processes`) |
 
 ## P9: attach_process (`waitPid` from S4)
