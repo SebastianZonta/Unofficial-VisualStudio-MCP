@@ -36,13 +36,15 @@ jobs:
           # PlatformNotSupportedException, breaks list_processes/attach_process)
           # once shadowed a good publish (see TROUBLESHOOTING stale-dir entry).
           # Publish to an empty dir and trip if the placeholder is on top.
-          # Probe below exits 2 by design; keep native non-zero from aborting so $LASTEXITCODE is checked manually.
-          $PSNativeCommandUseErrorActionPreference = $false
+          # Probe below exits 2 by design (usage line); Start-Process + file
+          # redirects keep a native non-zero exit and its stderr from
+          # aborting the step, so check ExitCode manually.
           $out = Join-Path $env:RUNNER_TEMP 'publish-check'
           if (Test-Path $out) { Remove-Item -Recurse -Force $out }
           dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o $out
           $dll = Join-Path $out 'System.Management.dll'
           $len = (Get-Item $dll).Length
           if ($len -lt 100KB) { throw "publish poisoned: $dll is $len bytes (placeholder stub, want the ~314 KB Windows impl)" }
-          & (Join-Path $out 'VsDebugMcp.exe') --live-check
-          if ($LASTEXITCODE -ne 2) { throw "smoke probe failed: exit $LASTEXITCODE, want 2 (usage line)" }
+          $p = Start-Process -FilePath (Join-Path $out 'VsDebugMcp.exe') -ArgumentList '--live-check' -NoNewWindow -Wait -PassThru -RedirectStandardOutput (Join-Path $out 'probe-out.txt') -RedirectStandardError (Join-Path $out 'probe-err.txt')
+          Get-Content (Join-Path $out 'probe-out.txt'), (Join-Path $out 'probe-err.txt')
+          if ($p.ExitCode -ne 2) { throw "smoke probe failed: exit $($p.ExitCode), want 2 (usage line)" }
