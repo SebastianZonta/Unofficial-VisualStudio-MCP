@@ -136,6 +136,16 @@ public sealed class AttachProcessTests
     }
 
     [Fact]
+    public void IsDevenvPid_never_throws_and_rejects_ordinary_pids()
+    {
+        // Live-only fallback: EnvDTE LocalProcesses omits devenv, so the live
+        // bridge names a VS PID via the OS process name. Positive case is E26
+        // live; here pin the no-throw shape (own test-host pid, ghost pid).
+        Assert.False(DteDebugBridge.IsDevenvPid(Environment.ProcessId));
+        Assert.False(DteDebugBridge.IsDevenvPid(-1));
+    }
+
+    [Fact]
     public void Owner_lookup_resolves_the_current_process_to_the_current_user()
     {
         if (!OperatingSystem.IsWindows())

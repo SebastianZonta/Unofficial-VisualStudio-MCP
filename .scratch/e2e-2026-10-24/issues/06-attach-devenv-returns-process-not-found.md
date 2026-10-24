@@ -14,6 +14,18 @@ self-attach guard runs, so the guard never sees it. AGENTS.md says
 
 **Blocked by:** None.
 
+**Fix (done, unit-green, needs live E26):** root cause was not a missing
+guard — both bridges have it. EnvDTE `LocalProcesses` omits devenv itself,
+so the live lookup missed the PID and threw `process-not-found` before the
+guard (the fake's seeded list includes devenv, so unit tests stayed green —
+exactly the fake/live divergence from the retro). Fix:
+`DteDebugBridge.IsDevenvPid` (internal static, OS process-name check,
+never throws) consulted on lookup miss; same `invalid-argument` message as
+the fake. New test pins the no-throw shape; positive case is E26 live.
+309/309 unit green. Published to `standalone-v7/` — needs host restart +
+scoped live E26 (`attach_process(<devenv pid>)` → `invalid-argument`) to
+close.
+
 **Status:** needs-triage
 
 ## Comments

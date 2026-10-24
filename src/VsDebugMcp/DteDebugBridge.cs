@@ -267,6 +267,22 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         return new DetachResult(sessionId);
     }
 
+    // EnvDTE LocalProcesses omits devenv itself, so a VS PID never reaches the
+    // guard below: name it here. Best-effort: a vanished PID reads as
+    // not-found, never as devenv.
+    internal static bool IsDevenvPid(int processId)
+    {
+        try
+        {
+            using var proc = System.Diagnostics.Process.GetProcessById(processId);
+            return proc.ProcessName.Equals("devenv", StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<ExecutionResult> AttachProcessAsync(
         string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct)
     {
@@ -292,8 +308,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                         if (candidate.ProcessID == processId) { target = candidate; break; }
                     }
                     if (target is null)
+                    {
+                        if (IsDevenvPid(processId))
+                            throw new DebugDomainException(
+                                ErrorCodes.InvalidArgument, $"devenv (PID {processId}) is a VS instance, never a target process",
+                                "pass the program under test, not Visual Studio itself");
                         throw new DebugDomainException(
                             "process-not-found", $"no local process {processId}", "list local processes and retry");
+                    }
                     // A VS PID (devenv) is never an attach target: it would bind the IDE to itself.
                     if (Path.GetFileNameWithoutExtension(target.Name).Equals("devenv", StringComparison.OrdinalIgnoreCase))
                         throw new DebugDomainException(
