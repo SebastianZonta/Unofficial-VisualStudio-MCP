@@ -201,7 +201,7 @@ after every inspect case.
 | S2 | Resolve devenv: `& "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property productPath`; start VS A: `Start-Process <devenv> '"<repo>\Sandbox\Sandbox.slnx"' -PassThru`; record `vsPidA` | process started |
 | S3 | Poll `list_instances` every 10 s (max 3 min) | an entry with pid `vsPidA`, `reachable: true`, solution `Sandbox`; record its display name `A` |
 | S4 | Start `Sandbox.exe wait 900` from the shell (not under a debugger); record `waitPid` | prints its pid |
-| S5 | Copy `Sandbox/` (without `bin/`, `obj/`) to `%TEMP%\SandboxB` and build it there | build green; distinct file paths for VS B |
+| S5 | Copy `Sandbox/` (without `bin/`, `obj/`, `.vs/`) to `%TEMP%\SandboxB` and build it there | build green; distinct file paths for VS B |
 
 If S2/S3 fail, mark every later case BLOCKED and go to P11.
 

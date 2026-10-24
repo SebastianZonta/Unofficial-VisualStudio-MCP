@@ -21,8 +21,7 @@ Root files: [README](../README.md) (what the server is, tool list) · [AGENTS.md
 
 - [agents/domain.md](agents/domain.md): How skills consume GLOSSARY and ADRs; read when exploring unfamiliar code.
 - [agents/e2e.md](agents/e2e.md): Real-VS test pass against `Sandbox/`: roles, case tables, report format; read after a feature or when a case fails.
-- [agents/issue-tracker.md](agents/issue-tracker.md): The `.scratch/` file conventions (spec, issues, `Status:`, wayfinding maps); read before creating or claiming work.
-- [agents/triage-labels.md](agents/triage-labels.md): The five triage label strings; read when setting a `Status:`.
+- [agents/issue-tracker.md](agents/issue-tracker.md): The `.scratch/` file conventions (spec, issues, `Status:` values, wayfinding maps); read before creating or claiming work.
 
 ## Work tracking
 

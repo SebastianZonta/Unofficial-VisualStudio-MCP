@@ -9,6 +9,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
@@ -27,6 +29,18 @@ jobs:
 
       - name: Test
         run: dotnet test VsDebugMcp.slnx --no-build
+
+      - name: Bridge-behavior gate (fake/live parity)
+        shell: pwsh
+        run: |
+          # CODING_STANDARDS.md pre-audit gate as code: a bridge or shared-gate
+          # diff must ship with an AuditE2ETests case. No VS needed.
+          $bridge = @('src/VsDebugMcp/DteDebugBridge.cs', 'src/VsDebugMcp/FakeDebugBridge.cs', 'src/VsDebugMcp/BreakpointOptions.cs', 'src/VsDebugMcp/ArgumentValidator.cs', 'src/VsDebugMcp/VariableWrite.cs', 'src/VsDebugMcp/ComErrorMapper.cs')
+          $base = (git merge-base HEAD origin/main 2>$null); if (-not $base) { $base = 'HEAD~1' }
+          $diff = @(git diff --name-only $base HEAD)
+          $touched = $bridge | Where-Object { $diff -contains $_ }
+          $auditTouched = $diff -contains 'tests/VsDebugMcp.E2E/AuditE2ETests.cs'
+          if ($touched -and -not $auditTouched) { throw "bridge diff ($($touched -join ', ')) needs an AuditE2ETests.cs case (CODING_STANDARDS.md pre-audit gate)" }
 
       - name: Publish hygiene (stale-dir poison guard)
         shell: pwsh

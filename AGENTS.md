@@ -37,11 +37,11 @@ dotnet test --filter "FullyQualifiedName~<TestClass>"  # single suite
 ## Conventions
 
 - Vocabulary: use `GLOSSARY.md` terms (VS instance vs debug session vs target process, mine/consent, mode/lastHit). Surface ADR conflicts explicitly.
-- Issues/specs live in `.scratch/` (one dir per feature, `spec.md` + `issues/NN-<slug>.md` with `Status:` line); conventions and labels in `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`.
+- Issues/specs live in `.scratch/` (one dir per feature, `spec.md` + `issues/NN-<slug>.md` with `Status:` line); conventions and `Status:` values in `docs/agents/issue-tracker.md`.
 - Commits for spec work use conventional commits (`feat:`, `fix:`, `docs:`, …).
 - Docs index (tools, troubleshooting, ADRs, e2e, work tracking): `docs/README.md`.
 - E2E: after a feature, run the real-VS pass in `docs/agents/e2e.md`: fan out three subagents R1/R2/R3 on their slices (opencode subagent tool: model `opencode-go/muse-spark-1.3-contributor`; Claude Code Agent tool: `model: "sonnet"`), each starting its own VS instances and never touching another runner's. Merge the three partials, then the main agent runs phase H with the user. Bar: every case PASS.
 - `Sandbox/` is the E2E debug target: outside the solution, its own `Directory.Build.props` (no analyzers), breakpoint lines found by `// E2E:<NAME>` markers. When you change a scenario, update the e2e.md marker table too.
-- Publish the MCP before the E2E pass so it runs against the fresh binary (src/bin is locked while hosts run: stop the clients first). Check which folder the client config's command points at (e.g. `standalone-v5/`); `standalone*/` dirs are gitignored publish generations — repoint config after publishing to a fresh folder.
-- After a feature: a spec deviation gets an ADR (`docs/adr/`), a new failure mode a `docs/TROUBLESHOOTING.md` entry, changed behaviour an e2e case; `DocsContractTests` checks tool/error-code rows and tool counts. Review standards: `CODING_STANDARDS.md`.
+- Publish the MCP via `scripts/publish-fresh.ps1` to a fresh **empty** folder before the E2E pass (src/bin is locked while hosts run: stop the clients first; repoint client config after publishing). Paste its `MCP binary:` line into the report header.
+- After a feature: follow `docs/agents/definition-of-done.md`. Review standards: `CODING_STANDARDS.md`.
 - After a feature, update this file if it changed agent-facing facts (build/architecture/gotchas/conventions) — one line, no restating docs.

@@ -1,6 +1,6 @@
 # Work index
 
-Specs and issues, one directory per feature. Status is copied from each file's `Status:` line; edit the file, not this table. Conventions, labels and wayfinding maps: [issue-tracker.md](../docs/agents/issue-tracker.md), [triage-labels.md](../docs/agents/triage-labels.md).
+Specs and issues, one directory per feature. Status is copied from each file's `Status:` line; edit the file, not this table. Conventions and valid `Status:` values: [issue-tracker.md](../docs/agents/issue-tracker.md).
 
 Add a feature: create `.scratch/<feature-slug>/spec.md` plus `issues/NN-<slug>.md` as described in [issue-tracker.md](../docs/agents/issue-tracker.md), then add a row here.
 
@@ -8,6 +8,7 @@ Add a feature: create `.scratch/<feature-slug>/spec.md` plus `issues/NN-<slug>.m
 
 | Feature | Spec | Status | Issues |
 |---|---|---|---|
+| workflow-hardening | [spec](workflow-hardening/spec.md) | ready-for-agent | [01](workflow-hardening/issues/01-publish-script-and-ci-gate.md) ready-for-agent · [02](workflow-hardening/issues/02-definition-of-done-and-tracker.md) ready-for-agent |
 | auto-reattach-pid | [spec](auto-reattach-pid/spec.md) | ready-for-agent | [01](auto-reattach-pid/issues/01-fingerprint-and-fake.md) ready-for-agent · [02](auto-reattach-pid/issues/02-live-watch-and-docs.md) ready-for-agent |
 | audit-oct24-medium | [spec](audit-oct24-medium/spec.md) | ready-for-agent | none |
 | exception-config | [spec](exception-config/spec.md) | ready-for-agent | [01](exception-config/issues/01-seam-and-fake.md) resolved · [02](exception-config/issues/02-live-tools-and-docs.md) resolved |
