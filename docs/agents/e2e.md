@@ -122,6 +122,26 @@ budget.
   designed to contain. If VS-startup contention dominates, the follow-up is
   staggering P0 starts, never re-merging slices.
 
+### Slice map (tool-slices 02–05)
+
+Which tool slice owns which phases, runner, fake suite and live audit case.
+Slices A/B (platform) and G (contracts) own no phases: their gates are the
+fake-only `ComDispatcherTests`, `ComPlumbingTests`, `VsDiscoveryTests` and
+`DocsContractTests` suites plus the manual `BusyVs` check below.
+
+| Slice | Phases | Runner | Fake suite | Live audit (`AuditE2ETests`) |
+|---|---|---|---|---|
+| C session/process/launch | P1, P2, P9, P10 (+ launch half of P8) | R1 (P1, P2, P9), R2 (P10), R3 (P8) | `AttachTests`, `AttachProcessTests`, `LaunchProcessTests`, `ListInstancesTests`, `ListProcessesTests`, `MultiSessionTests` | `ParallelAttach_SameInstance_SameSession`, `AttachMode_ReportsKnownMode`, `OneTargetRule_BothDirections` |
+| D breakpoints/modules | P3, P4 | R1 | `BreakpointTests`, `ConditionalBreakpointTests`, `OccupiedLocationTests`, `ListModulesTests` | `StableIds_BreakpointIdentity` (conditions/logpoints/symbol-honesty live in the manual P4 cases) |
+| E execution/exceptions | P7, P8 | R2 (P7), R3 (P8) | `ExecutionTests`, `RunToCursorTests`, `ExceptionConfigTests` | manual P8/E13/E21–E25 cases (no automated audit case yet) |
+| F inspection/write | P5, P6 | R2 | `InspectionTests`, `ReadOnlyGateTests`, `SetVariableTests`, `TruncationContractTests` | `ReadOnlyGate_NoSideEffects`, `FrameTrue_StackLevels`, `EvaluateBudget_FullTimeoutMsHonored` |
+
+Skipped live cases (explicit reason, not coverage): `BusyVs_StillSurfacesAfterRetryWindow`
+(manual: needs a human-held modal dialog in VS). Devenv-guard and symbol-state
+honesty are pinned on the fake (`Attach_refuses_devenv_pid`,
+`Launching_devenv_is_refused…`, `ListModulesTests`) and exercised by the manual
+P9/P3 cases; they have no automated audit case.
+
 ## Runner rules
 
 - **Case ids.** Report every case by its id. Statuses: PASS, FAIL (actual

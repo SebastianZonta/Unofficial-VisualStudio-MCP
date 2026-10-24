@@ -18,12 +18,29 @@ public sealed class DocsContractTests
 
     private static string Doc(string relative) => File.ReadAllText(Path.Combine(Root, relative));
 
-    private static IReadOnlyList<string> ToolNames() => typeof(IDebugBridge).Assembly.GetTypes()
-        .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
-        .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
-        .Select(m => m.GetCustomAttribute<McpServerToolAttribute>()?.Name)
-        .OfType<string>()
-        .ToList();
+    private static IReadOnlyList<string> ToolNames() => ToolMethods().Select(t => t.Name).ToList();
+
+    private static IReadOnlyList<(string Name, System.Reflection.MethodInfo Method)> ToolMethods() =>
+        typeof(IDebugBridge).Assembly.GetTypes()
+            .Where(t => t.GetCustomAttribute<McpServerToolTypeAttribute>() is not null)
+            .SelectMany(t => t.GetMethods(BindingFlags.Public | BindingFlags.Static))
+            .Select(m => (Name: m.GetCustomAttribute<McpServerToolAttribute>()?.Name, Method: m))
+            .Where(p => p.Name is not null)
+            .Select(p => (p.Name!, p.Method))
+            .ToList();
+
+    // Tool-call params only: the injected bridge and cancellation token are not documented.
+    private static IReadOnlyList<System.Reflection.ParameterInfo> DocParams(System.Reflection.MethodInfo method) =>
+        method.GetParameters()
+            .Where(p => p.ParameterType != typeof(IDebugBridge) && p.ParameterType != typeof(CancellationToken))
+            .ToList();
+
+    private static string ToolRow(string toolsDoc, string tool)
+    {
+        var row = toolsDoc.Split('\n').FirstOrDefault(l => l.Contains($"| `{tool}` |", StringComparison.Ordinal));
+        Assert.True(row is not null, $"no TOOLS.md table row for `{tool}`");
+        return row!;
+    }
 
     [Fact]
     public void Every_tool_has_a_row_in_TOOLS_and_README()
@@ -61,5 +78,54 @@ public sealed class DocsContractTests
 
         Assert.NotEmpty(counts);
         Assert.All(counts, n => Assert.Equal(ToolNames().Count, n));
+    }
+
+    [Fact]
+    public void Every_tool_parameter_is_documented_in_TOOLS()
+    {
+        var tools = Doc("docs/TOOLS.md");
+        foreach (var (name, method) in ToolMethods())
+        {
+            var row = ToolRow(tools, name);
+            Assert.All(DocParams(method), p =>
+                Assert.Contains($"`{p.Name}", row));
+        }
+    }
+
+    [Fact]
+    public void Optional_tool_parameters_show_a_default_marker_in_TOOLS()
+    {
+        // Convention: a parameter with a code default appears as `name?` or `name` = <default>.
+        var tools = Doc("docs/TOOLS.md");
+        foreach (var (name, method) in ToolMethods())
+        {
+            var row = ToolRow(tools, name);
+            Assert.All(DocParams(method).Where(p => p.HasDefaultValue), p =>
+                Assert.True(row.Contains($"`{p.Name}?`", StringComparison.Ordinal)
+                    || row.Contains($"`{p.Name}` =", StringComparison.Ordinal),
+                    $"`{name}` param `{p.Name}` has a code default but no `?`/`=` marker in TOOLS.md"));
+        }
+    }
+
+    [Fact]
+    public void Result_envelope_is_mode_lastHit_and_exception_only()
+    {
+        // Session-less lists and the detach echo carry no mode; every other
+        // result carries Mode + LastHit; execution-shaped results add Exception.
+        var results = typeof(IDebugBridge).Assembly.GetTypes()
+            .Where(t => t.IsSealed && t.Name.EndsWith("Result", StringComparison.Ordinal))
+            .ToList();
+        Assert.NotEmpty(results);
+        var modeless = results.Where(t => t.GetProperty("Mode") is null)
+            .Select(t => t.Name).Order().ToList();
+        Assert.Equal(["DetachResult", "ListInstancesResult", "ListProcessesResult", "ListSessionsResult"], modeless);
+        Assert.All(results.Where(t => t.GetProperty("Mode") is not null),
+            t => Assert.NotNull(t.GetProperty("LastHit")));
+        foreach (var name in new[] { "ExecutionResult", "LaunchProcessResult" })
+            Assert.NotNull(results.Single(t => t.Name == name).GetProperty("Exception"));
+        var envelope = Doc("docs/TOOLS.md");
+        Assert.Contains("`mode`", envelope);
+        Assert.Contains("`lastHit`", envelope);
+        Assert.Contains("`exception`", envelope);
     }
 }
