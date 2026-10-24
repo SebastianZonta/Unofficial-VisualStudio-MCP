@@ -1,5 +1,5 @@
 # Audit should-fix: live-by-default, attach race, honest budgets and modes, busy-VS retry, one target per session, reproducible E2E, lean
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

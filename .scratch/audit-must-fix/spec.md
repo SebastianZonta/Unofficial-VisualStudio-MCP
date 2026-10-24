@@ -1,5 +1,5 @@
 # Audit must-fix: stable breakpoint ids, frame-true inspection, a read-only gate that holds, no ghost COM calls
-Status: ready-for-agent
+Status: done
 
 ## Problem Statement
 

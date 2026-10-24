@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 (needs the seam contract to implement).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [ ] Live attach, break, and list shows the expected symbol state for a module with an unbound breakpoint; resume and re-list works.
 - [ ] Reporting is read-only: no symbol loads, no breakpoint changes, no mode change.
