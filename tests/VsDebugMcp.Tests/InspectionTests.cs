@@ -117,9 +117,9 @@ public sealed class InspectionTests
     {
         var (bridge, sessionId) = await BrokenAsync();
 
-        var eval = await InspectionTools.EvaluateAsync(bridge, sessionId, "order.Total", 5000, CancellationToken.None);
+        var eval = await InspectionTools.EvaluateAsync(bridge, sessionId, "total", 5000, CancellationToken.None);
 
-        Assert.Equal("order.Total", eval.Expression);
+        Assert.Equal("total", eval.Expression);
         Assert.False(string.IsNullOrWhiteSpace(eval.Value));
         Assert.False(string.IsNullOrWhiteSpace(eval.Type));
         Assert.Equal("break", eval.Mode);
@@ -172,6 +172,32 @@ public sealed class InspectionTests
         var eval = await Assert.ThrowsAsync<McpException>(() =>
             InspectionTools.EvaluateAsync(bridge, sessionId, "order.Total", 5000, CancellationToken.None));
         Assert.Contains("not-in-break-mode", eval.Message);
+    }
+
+    [Fact]
+    public async Task TopLevel_expandable_has_path()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+
+        var vars = await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f0", null, 50, CancellationToken.None);
+
+        var order = Assert.Single(vars.Variables, v => v.Name == "order");
+        Assert.True(order.Expandable);
+        Assert.Equal("order", order.Path);
+
+        var children = await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f0", order.Path, 50, CancellationToken.None);
+        Assert.Equal("order", children.Path);
+        Assert.Contains(children.Variables, v => v.Name == "order.Id");
+    }
+
+    [Fact]
+    public async Task Evaluate_unknown_fails_like_live()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            InspectionTools.EvaluateAsync(bridge, sessionId, "order.Nope", 5000, CancellationToken.None));
+        Assert.Contains("invalid-expression", ex.Message);
     }
 
     [Fact]

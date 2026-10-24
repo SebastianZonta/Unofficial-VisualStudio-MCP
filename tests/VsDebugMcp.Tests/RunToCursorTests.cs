@@ -141,6 +141,64 @@ public sealed class RunToCursorTests
         Assert.Equal(0, await BreakpointCountAsync(bridge, sessionId));
     }
 
+    [Fact]
+    public async Task RunToCursor_joins_run_when_started_after_set()
+    {
+        var inner = new FakeDebugBridge();
+        var sessionId = (await SessionTools.AttachAsync(inner, instanceOverride: null, CancellationToken.None)).SessionId;
+        await BreakpointTools.SetBreakpointAsync(inner, sessionId, "Program.cs", 10, CancellationToken.None);
+        await ExecutionTools.ResumeAsync(inner, sessionId, 5000, CancellationToken.None);
+        await BreakpointTools.RemoveBreakpointAsync(inner, sessionId, "bp1", CancellationToken.None);
+        var bridge = new AlreadyRunningOnceBridge(inner);
+
+        // Temp is placed in break mode; the target starts running before the
+        // continue lands. The run joins the wait instead of failing.
+        var run = await ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None);
+
+        Assert.Equal("break", run.Mode);
+        Assert.Equal("ok", run.Status);
+        Assert.Contains("Order.cs:20", run.LastHit);
+        Assert.Empty((await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None)).Breakpoints);
+    }
+
+    [Fact]
+    public async Task RunToCursor_never_deletes_preexisting()
+    {
+        var inner = new FakeDebugBridge();
+        var attach = await SessionTools.AttachAsync(inner, instanceOverride: null, CancellationToken.None);
+        var bridge = new SeedOnSetBridge(inner, "Order.cs", 20);
+        var sessionId = attach.SessionId;
+        await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "Program.cs", 10, CancellationToken.None);
+        await ExecutionTools.ResumeAsync(bridge, sessionId, 5000, CancellationToken.None);
+        await BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, "bp1", CancellationToken.None);
+
+        // A concurrent set wins the List-then-Set race: the run reuses the
+        // seeded breakpoint and leaves it listed.
+        var run = await ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None);
+
+        Assert.Equal("break", run.Mode);
+        Assert.Contains("Order.cs:20", run.LastHit);
+        var list = await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None);
+        var survivor = Assert.Single(list.Breakpoints);
+        Assert.Contains("Order.cs:20", $"{survivor.File}:{survivor.Line}");
+    }
+
+    [Fact]
+    public async Task RunToCursor_reuse_requires_bound()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+        bridge.SymbolsLoaded = false;
+        var seeded = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "Order.cs", 20, CancellationToken.None);
+        Assert.False(seeded.Breakpoint.Bound);
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None));
+
+        Assert.Contains(ErrorCodes.UnboundLocation, ex.Message);
+        var list = await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None);
+        Assert.Equal(seeded.Breakpoint.Id, Assert.Single(list.Breakpoints).Id);
+    }
+
     [Theory]
     [InlineData(@"C:\src\Shop\Order.cs", "Order.cs", true)]
     [InlineData(@"C:\src\Shop\Order.cs", "Shop/Order.cs", true)]
@@ -163,5 +221,73 @@ public sealed class RunToCursorTests
         var otherList = await BreakpointTools.ListBreakpointsAsync(bridge, other.SessionId, CancellationToken.None);
         Assert.Equal("design", otherList.Mode);
         Assert.Empty(otherList.Breakpoints);
+    }
+}
+
+/// <summary>Pass-through decorator over the fake bridge for List-then-Set race
+/// tests. Subclasses override one seam; everything else delegates.</summary>
+internal class DelegatingBridge(FakeDebugBridge inner) : IDebugBridge
+{
+    protected FakeDebugBridge Inner { get; } = inner;
+
+    public virtual Task<AttachResult> AttachAsync(string? instanceOverride, CancellationToken ct) => Inner.AttachAsync(instanceOverride, ct);
+    public virtual Task<ListInstancesResult> ListInstancesAsync(CancellationToken ct) => Inner.ListInstancesAsync(ct);
+    public virtual Task<ListSessionsResult> ListSessionsAsync(CancellationToken ct) => Inner.ListSessionsAsync(ct);
+    public virtual Task<DetachResult> DetachAsync(string sessionId, CancellationToken ct) => Inner.DetachAsync(sessionId, ct);
+    public virtual Task<ListProcessesResult> ListProcessesAsync(string? nameFilter, bool ownedOnly, CancellationToken ct) => Inner.ListProcessesAsync(nameFilter, ownedOnly, ct);
+    public virtual Task RequireSessionAsync(string sessionId, CancellationToken ct) => Inner.RequireSessionAsync(sessionId, ct);
+    public virtual Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct, string? condition = null, int? hitCount = null, string? hitCountMode = null, string? logMessage = null) => Inner.SetBreakpointAsync(sessionId, file, line, ct, condition, hitCount, hitCountMode, logMessage);
+    public virtual Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct) => Inner.ListBreakpointsAsync(sessionId, ct);
+    public virtual Task<ListModulesResult> ListModulesAsync(string sessionId, string? nameFilter, CancellationToken ct) => Inner.ListModulesAsync(sessionId, nameFilter, ct);
+    public virtual Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct) => Inner.RemoveBreakpointAsync(sessionId, breakpointId, ct);
+    public virtual Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct) => Inner.PauseAsync(sessionId, ct);
+    public virtual Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct) => Inner.ResumeAsync(sessionId, timeoutMs, ct);
+    public virtual Task<ExecutionResult> RunToCursorAsync(string sessionId, string file, int line, int timeoutMs, CancellationToken ct) =>
+        RunToCursor.RunAsync(this, sessionId, file, line, async mode =>
+            mode == "break" ? await ResumeAsync(sessionId, timeoutMs, ct) : await Inner.ResumeAsync(sessionId, timeoutMs, ct), ct);
+    public virtual Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct) => Inner.StepAsync(sessionId, direction, timeoutMs, ct);
+    public virtual Task<ReadStackResult> ReadStackAsync(string sessionId, int maxFrames, CancellationToken ct) => Inner.ReadStackAsync(sessionId, maxFrames, ct);
+    public virtual Task<ReadVariablesResult> ReadVariablesAsync(string sessionId, string frameId, string? path, int maxVariables, CancellationToken ct) => Inner.ReadVariablesAsync(sessionId, frameId, path, maxVariables, ct);
+    public virtual Task<SetVariableResult> SetVariableAsync(string sessionId, string frameId, string path, string value, bool consent, CancellationToken ct) => Inner.SetVariableAsync(sessionId, frameId, path, value, consent, ct);
+    public virtual Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct) => Inner.EvaluateAsync(sessionId, expression, timeoutMs, ct);
+    public virtual Task<ExecutionResult> AttachProcessAsync(string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct) => Inner.AttachProcessAsync(sessionId, processId, consent, timeoutMs, ct);
+    public virtual Task<LaunchProcessResult> LaunchProcessAsync(string sessionId, string executablePath, string? arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment, int timeoutMs, CancellationToken ct) => Inner.LaunchProcessAsync(sessionId, executablePath, arguments, workingDirectory, environment, timeoutMs, ct);
+    public virtual Task<ListExceptionSettingsResult> ListExceptionSettingsAsync(string sessionId, string? nameFilter, CancellationToken ct) => Inner.ListExceptionSettingsAsync(sessionId, nameFilter, ct);
+    public virtual Task<SetExceptionSettingResult> SetExceptionSettingAsync(string sessionId, string exceptionType, string mode, CancellationToken ct) => Inner.SetExceptionSettingAsync(sessionId, exceptionType, mode, ct);
+}
+
+/// <summary>Simulates the target starting to run between temp placement and
+/// continue: the first resume reports already-running, like live.</summary>
+internal sealed class AlreadyRunningOnceBridge(FakeDebugBridge inner) : DelegatingBridge(inner)
+{
+    private bool _raced;
+
+    public override Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct)
+    {
+        if (!_raced)
+        {
+            _raced = true;
+            throw new DebugDomainException("already-running", "debuggee is already running", "pause first to inspect");
+        }
+        return Inner.ResumeAsync(sessionId, timeoutMs, ct);
+    }
+}
+
+/// <summary>Seeds an owned breakpoint at the destination between the run's List
+/// and Set, like a concurrent set winning the race.</summary>
+internal sealed class SeedOnSetBridge(FakeDebugBridge inner, string file, int line) : DelegatingBridge(inner)
+{
+    private readonly string _file = file;
+    private readonly int _line = line;
+    private bool _seeded;
+
+    public override async Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct, string? condition = null, int? hitCount = null, string? hitCountMode = null, string? logMessage = null)
+    {
+        if (!_seeded && file == _file && line == _line)
+        {
+            _seeded = true;
+            _ = await Inner.SetBreakpointAsync(sessionId, file, line, ct);
+        }
+        return await Inner.SetBreakpointAsync(sessionId, file, line, ct, condition, hitCount, hitCountMode, logMessage);
     }
 }

@@ -159,7 +159,7 @@ public sealed class FakeDebugBridge : IDebugBridge
                 continue;
             var existing = Render(ownedId, session);
             BreakpointOptions.RequireSameOptions(existing, cond, count, mode, log);
-            return new SetBreakpointResult(existing, session.Mode, session.LastHit);
+            return new SetBreakpointResult(existing, session.Mode, session.LastHit, Created: false);
         }
         var foreign = session.ForeignBreakpoints.FindIndex(bp => BreakpointOptions.SameLocation(bp.File, bp.Line, file, line));
         if (foreign >= 0)
@@ -358,6 +358,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         ?
         [
             new ValueInfo("items", "List<Item>", "Count = 1,247 [truncated]", Expandable: true, Path: "items"),
+            new ValueInfo("order", "Order", "{Id=1001, ...} [truncated]", Expandable: true, Path: "order"),
             new ValueInfo("total", "decimal", "41.80", Expandable: false, Path: null),
         ]
         :
@@ -365,6 +366,13 @@ public sealed class FakeDebugBridge : IDebugBridge
             new ValueInfo("items", "List<Item>", "Count = 3", Expandable: true, Path: "items"),
             new ValueInfo("total", "decimal", "99.00", Expandable: false, Path: null),
         ];
+
+    private static IReadOnlyList<ValueInfo> CannedOrderChildren() =>
+    [
+        new ValueInfo("order.Id", "int", "1001", Expandable: false, Path: null),
+        new ValueInfo("order.Status", "string", "Paid", Expandable: false, Path: null),
+        new ValueInfo("order.Total", "decimal", "5625.00", Expandable: false, Path: null),
+    ];
 
     private static IReadOnlyList<ValueInfo> CannedChildren(string frameId) => frameId == "f0"
         ?
@@ -400,11 +408,12 @@ public sealed class FakeDebugBridge : IDebugBridge
             [
                 new ValueInfo("Message", "string", current.Message ?? "(unavailable)", Expandable: false, Path: null),
             ], session.Mode, session.LastHit);
-        if (path != "items")
+        if (path != "items" && path != "order")
             throw new DebugDomainException(
                 "path-not-found", $"no expandable path {path} on frame {frameId}",
                 "drill down only via expandable paths returned by read_variables");
-        return new ReadVariablesResult(frameId, path, Written(session, frameId, CannedChildren(frameId)).Take(maxVariables).ToList(), session.Mode, session.LastHit);
+        return new ReadVariablesResult(frameId, path,
+            Written(session, frameId, path == "order" ? CannedOrderChildren() : CannedChildren(frameId)).Take(maxVariables).ToList(), session.Mode, session.LastHit);
     }
 
     private static IEnumerable<ValueInfo> Written(FakeSession session, string frameId, IEnumerable<ValueInfo> canned) =>
@@ -451,10 +460,13 @@ public sealed class FakeDebugBridge : IDebugBridge
             return new EvaluateResult(expression, message, "string", Expandable: false, session.Mode, session.LastHit);
         // Read-only by construction: the fake holds no live handles and this path never mutates state.
         // Evaluate always runs in the top frame (f0), whatever frame was inspected before.
+        // Unknown names fail like live (invalid-expression), never a canned value.
         var top = CannedTopLevel("f0").FirstOrDefault(v => v.Name == expression.Trim());
         if (top is not null)
             return new EvaluateResult(expression, top.Value, top.Type, top.Expandable, session.Mode, session.LastHit);
-        return new EvaluateResult(expression, Value: "41.80", Type: "decimal", Expandable: false, session.Mode, session.LastHit);
+        throw new DebugDomainException(
+            "invalid-expression", $"expression did not evaluate without side effects: {expression}",
+            "pass a read-only expression valid in the top frame; prefer fields and property reads over method calls");
     }
 
     public async Task<ExecutionResult> AttachProcessAsync(
@@ -467,6 +479,13 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "consent-required", $"attaching to process {processId} needs explicit consent",
                 "re-call attach_process with consent: true");
+        // A VS PID (devenv) is never an attach target: listing still shows VS
+        // instances for diagnosis, but attaching would bind the IDE to itself.
+        var known = Processes.FirstOrDefault(p => p.Pid == processId);
+        if (known is not null && Path.GetFileNameWithoutExtension(known.Name).Equals("devenv", StringComparison.OrdinalIgnoreCase))
+            throw new DebugDomainException(
+                ErrorCodes.InvalidArgument, $"devenv (PID {processId}) is a VS instance, never a target process",
+                "pass the program under test, not Visual Studio itself");
         if (!ProcessOwners.TryGetValue(processId, out var owner))
             throw new DebugDomainException(
                 "process-not-found", $"no local process {processId}", "list local processes and retry");

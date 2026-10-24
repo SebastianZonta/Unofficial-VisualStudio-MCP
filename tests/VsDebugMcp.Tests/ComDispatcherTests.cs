@@ -104,6 +104,29 @@ public sealed class ComDispatcherTests
     }
 
     [Fact]
+    public void Filter_instance_rooted()
+    {
+        var filterType = typeof(ComDispatcher).GetNestedType("OleMessageFilter",
+            System.Reflection.BindingFlags.NonPublic)!;
+        filterType.GetMethod("Register", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!
+            .Invoke(null, null);
+        try
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+            var root = filterType.GetField("_root", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static)!
+                .GetValue(null);
+            Assert.NotNull(root);
+        }
+        finally
+        {
+            filterType.GetMethod("Revoke", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!
+                .Invoke(null, null);
+        }
+    }
+
+    [Fact]
     public async Task Invoke_after_dispose_fails_named_and_dispose_is_idempotent()
     {
         var dispatcher = new ComDispatcher();

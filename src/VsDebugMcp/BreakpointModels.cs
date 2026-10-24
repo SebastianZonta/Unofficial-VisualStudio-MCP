@@ -14,7 +14,7 @@ public sealed record BreakpointInfo(
 
 public sealed record BreakpointLogEntry(string BreakpointId, string Message, int HitCount);
 
-public sealed record SetBreakpointResult(BreakpointInfo Breakpoint, string Mode, string? LastHit);
+public sealed record SetBreakpointResult(BreakpointInfo Breakpoint, string Mode, string? LastHit, bool Created = true);
 
 public sealed record ListBreakpointsResult(
     IReadOnlyList<BreakpointInfo> Breakpoints, string Mode, string? LastHit,

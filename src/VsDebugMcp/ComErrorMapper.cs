@@ -23,12 +23,12 @@ internal static class ComErrorMapper
     {
         RpcECallRejected => new DebugDomainException(
             "vs-busy", $"Visual Studio rejected the automation call (HRESULT 0x{RpcECallRejected:X8}; modal dialog or busy UI thread)",
-            "dismiss any modal dialog in VS and retry"),
+            "dismiss any modal dialog in VS and retry", ex),
         EAccessDenied => new DebugDomainException(
             "elevation-mismatch", $"access denied talking to Visual Studio (HRESULT 0x{EAccessDenied:X8}; integrity-level mismatch)",
-            "restart the bridge at the same elevation as VS (both elevated or both not)"),
+            "restart the bridge at the same elevation as VS (both elevated or both not)", ex),
         var hr => new DebugDomainException(
             "automation-failed", $"VS automation call failed (HRESULT 0x{hr:X8}): {ex.Message}",
-            "dismiss any modal dialog in VS and retry; if it persists, restart VS"),
+            "dismiss any modal dialog in VS and retry; if it persists, restart VS", ex),
     };
 }

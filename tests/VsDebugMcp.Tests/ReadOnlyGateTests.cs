@@ -37,6 +37,8 @@ public sealed class ReadOnlyGateTests
     [InlineData("a <= b")]
     [InlineData("a >= b")]
     [InlineData("a << 1 > b >> 2")]
+    [InlineData("a > (b)")]
+    [InlineData("x => x")]
     [InlineData("-total")]
     [InlineData("a - -b")]
     [InlineData("i == 3 || i == 4")]
@@ -45,16 +47,16 @@ public sealed class ReadOnlyGateTests
     [InlineData("order.Items[0].Sku")]
     [InlineData("order.Coupon == null")]
     [InlineData("counter.NextTicket")]
-    public async Task Evaluate_still_accepts_comparisons_reads_and_indexers(string expression)
+    public void Read_only_gate_still_accepts_comparisons_reads_and_indexers(string expression)
     {
-        var (bridge, sessionId) = await BrokenAsync();
-
-        var eval = await InspectionTools.EvaluateAsync(bridge, sessionId, expression, 5000, CancellationToken.None);
-        Assert.Equal(expression, eval.Expression);
+        // Gate-level acceptance only: whether an unknown name evaluates is the
+        // debugger's call (live invalid-expression), never the fake's canned value.
+        Assert.Null(BreakpointOptions.CheckExpression(expression));
     }
 
     [Theory]
     [InlineData("counter.Increment()")]
+    [InlineData("foo<T>(x)")]
     [InlineData("order.Items.Clear()")]
     [InlineData("items.Remove(1)")]
     [InlineData("order.ComputeSubtotal()")]

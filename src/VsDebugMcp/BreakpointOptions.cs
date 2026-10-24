@@ -225,8 +225,10 @@ internal static class BreakpointOptions
     // call-looking '(' (word char, ')', ']' or quote before it) is refused. Bare
     // grouping/casts, member reads, comparisons and indexers have no such '('
     // and still pass; side-effecting getters without parens (counter.NextTicket)
-    // stay on the live NSE backstop. shortcut: string literals and generic
-    // arity (foo<T>(x)) are not parsed out, same coarseness as ContainsAssignment.
+    // stay on the live NSE backstop. A generic-arity call foo<T>(x) ends its type
+    // argument list with '>', so '>' before '(' counts when a '<' precedes it;
+    // lambdas (a => (b)) and comparisons (a > (b)) have no '<' and still pass.
+    // shortcut: string literals are not parsed out, same coarseness as ContainsAssignment.
     internal static bool ContainsInvocation(string expression)
     {
         for (var i = 0; i < expression.Length; i++)
@@ -240,6 +242,8 @@ internal static class BreakpointOptions
                 continue; // leading '(' groups or casts; it calls nothing
             var prev = expression[j];
             if (prev == '_' || prev == ')' || prev == ']' || prev == '"' || prev == '\'' || char.IsLetterOrDigit(prev))
+                return true;
+            if (prev == '>' && expression.AsSpan(0, j).Contains('<'))
                 return true;
         }
         return false;

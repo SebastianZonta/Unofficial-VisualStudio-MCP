@@ -122,6 +122,20 @@ public sealed class AttachProcessTests
     }
 
     [Fact]
+    public async Task Attach_refuses_devenv_pid()
+    {
+        var bridge = new FakeDebugBridge();
+        bridge.Processes.Add(new TargetProcessInfo(1234, "devenv", "FAKE\\dev", Mine: true, Error: null));
+        bridge.ProcessOwners[1234] = "FAKE\\dev"; // same user: the IDE-name guard fires, not the user gate
+        var (_, sessionId) = await AttachedAsync(bridge);
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            SessionTools.AttachProcessAsync(bridge, sessionId, 1234, consent: true, 30_000, CancellationToken.None));
+        Assert.Contains("invalid-argument", ex.Message);
+        Assert.Contains("devenv", ex.Message);
+    }
+
+    [Fact]
     public void Owner_lookup_resolves_the_current_process_to_the_current_user()
     {
         if (!OperatingSystem.IsWindows())

@@ -100,4 +100,35 @@ public sealed class ToolValidationTests
         var stack = await InspectionTools.ReadStackAsync(bridge, sessionId, maxFrames: 200, CancellationToken.None);
         Assert.NotEmpty(stack.Frames);
     }
+
+    [Fact]
+    public void Validation_errors_carry_Data_code()
+    {
+        void AssertCode(Action act, string code)
+        {
+            var ex = Assert.Throws<McpException>(act);
+            Assert.StartsWith(code, ex.Message);
+            Assert.Equal(code, ex.Data[ErrorCodes.DataKey]);
+        }
+
+        AssertCode(() => ArgumentValidator.ValidateSessionId(""), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateFile(""), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateLine(0), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateBreakpointId("  "), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateBreakpointOptions("n++ > 0", null, null, null), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateFrameId(""), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidatePath("a; b"), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateWritePath(""), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateWriteValue("  "), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateDirection("sideways"), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateExpression(""), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateExpression("foo<T>(x)"), ErrorCodes.InvalidExpression);
+        AssertCode(() => ArgumentValidator.ValidateTimeoutMs(0), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateMaxFrames(0), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateMaxVariables(501), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateProcessId(0), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateExecutablePath("relative.exe"), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateExceptionType(""), ErrorCodes.InvalidArgument);
+        AssertCode(() => ArgumentValidator.ValidateExceptionMode("always"), ErrorCodes.InvalidArgument);
+    }
 }

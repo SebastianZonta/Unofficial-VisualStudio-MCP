@@ -158,7 +158,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         if (dte is null) return false;
         try { _ = dte.Name; return true; }
-        catch (COMException) { return false; }
+        catch (Exception ex) when (ex is COMException or InvalidComObjectException) { return false; }
     }
 
     /// <summary>Marks one session dead on a disconnect HResult (releasing its RCW
@@ -172,6 +172,23 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 "vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
         }
         return ComErrorMapper.ToDomain(ex);
+    }
+
+    /// <summary>A severed RCW (detach raced the call) maps to the session state,
+    /// never a raw interop failure: the binding is marked dead on the way out.</summary>
+    private DebugDomainException SessionInvalidCom(string sessionId)
+    {
+        try
+        {
+            var live = SessionDte(sessionId);
+            MarkDead(sessionId, live);
+        }
+        catch (DebugDomainException ex)
+        {
+            return ex;
+        }
+        return new DebugDomainException(
+            "vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
     }
 
     private void MarkDead(string sessionId, DTE dte)
@@ -242,7 +259,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     return true;
                 }, 10_000, ct);
             }
-            catch (Exception ex) when (ex is TimeoutException or COMException or OperationCanceledException)
+            catch (Exception ex) when (ex is TimeoutException or COMException or InvalidComObjectException or OperationCanceledException)
             {
                 // Session already forgotten; cleanup was best-effort.
             }
@@ -259,45 +276,59 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             throw new DebugDomainException(
                 "consent-required", $"attaching to process {processId} needs explicit consent",
                 "re-call attach_process with consent: true");
-        var dte = SessionDte(sessionId);
         try
         {
             return await _dispatcher.InvokeAsync(() =>
             {
-                var debugger = DebuggerOf(dte);
-                EnvDTE.Process? target = null;
-                foreach (EnvDTE.Process candidate in debugger.LocalProcesses)
+                // Resolved inside the dispatch: a detach racing this call surfaces
+                // no-session or vs-not-running, never a severed live handle.
+                var dte = SessionDte(sessionId);
+                try
                 {
-                    if (candidate.ProcessID == processId) { target = candidate; break; }
+                    var debugger = DebuggerOf(dte);
+                    EnvDTE.Process? target = null;
+                    foreach (EnvDTE.Process candidate in debugger.LocalProcesses)
+                    {
+                        if (candidate.ProcessID == processId) { target = candidate; break; }
+                    }
+                    if (target is null)
+                        throw new DebugDomainException(
+                            "process-not-found", $"no local process {processId}", "list local processes and retry");
+                    // A VS PID (devenv) is never an attach target: it would bind the IDE to itself.
+                    if (Path.GetFileNameWithoutExtension(target.Name).Equals("devenv", StringComparison.OrdinalIgnoreCase))
+                        throw new DebugDomainException(
+                            ErrorCodes.InvalidArgument, $"devenv (PID {processId}) is a VS instance, never a target process",
+                            "pass the program under test, not Visual Studio itself");
+                    var owner = ProcessOwner.OwnerOf(processId);
+                    var me = ProcessOwner.CurrentUserName();
+                    if (owner is null)
+                        throw new DebugDomainException(
+                            "user-mismatch", $"could not determine the owner of process {processId}; failing closed",
+                            "only attach to processes you own");
+                    if (!owner.Equals(me, StringComparison.OrdinalIgnoreCase))
+                        throw new DebugDomainException(
+                            "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {me}",
+                            "only attach to your own processes");
+                    if (debugger.DebuggedProcesses.Count > 0)
+                        throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
+                    target.Attach();
+                    return new ExecutionResult(ModeOf(debugger), LastHitOf(debugger),
+                        "ok", $"attached to process {processId} ({target.Name})");
                 }
-                if (target is null)
-                    throw new DebugDomainException(
-                        "process-not-found", $"no local process {processId}", "list local processes and retry");
-                var owner = ProcessOwner.OwnerOf(processId);
-                var me = ProcessOwner.CurrentUserName();
-                if (owner is null)
-                    throw new DebugDomainException(
-                        "user-mismatch", $"could not determine the owner of process {processId}; failing closed",
-                        "only attach to processes you own");
-                if (!owner.Equals(me, StringComparison.OrdinalIgnoreCase))
-                    throw new DebugDomainException(
-                        "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {me}",
-                        "only attach to your own processes");
-                if (debugger.DebuggedProcesses.Count > 0)
-                    throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
-                target.Attach();
-                return new ExecutionResult(ModeOf(debugger), LastHitOf(debugger),
-                    "ok", $"attached to process {processId} ({target.Name})");
+                catch (COMException ex)
+                {
+                    throw SessionComError(sessionId, dte, ex);
+                }
+                catch (InvalidComObjectException)
+                {
+                    throw SessionInvalidCom(sessionId);
+                }
             }, timeoutMs, ct);
         }
         catch (TimeoutException)
         {
             throw new DebugDomainException(
                 "timeout", $"attaching to process {processId} exceeded timeoutMs", "retry with a larger timeoutMs");
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, dte, ex);
         }
     }
 
@@ -310,7 +341,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         await RequireSessionAsync(sessionId, ct);
         var cwd = ProcessLaunch.CheckStart(executablePath, workingDirectory);
         var envBlock = ProcessLaunch.BuildEnvironmentBlock(ProcessLaunch.InheritedEnvironment(), environment);
-        var dte = SessionDte(sessionId);
         var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
         // Set when the caller stops waiting: the STA work may still be running and must
         // then end its target process, never leave it bound behind a reported failure.
@@ -320,35 +350,47 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         {
             pid = await _dispatcher.InvokeAsync(() =>
             {
-                var debugger = DebuggerOf(dte);
-                if (debugger.DebuggedProcesses.Count > 0)
-                    throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
-                // Attached from birth: start suspended, attach the managed engine, then let
-                // user code run, so breakpoints set before launch bind at startup. The bridge
-                // creates the process as its own user, so it is mine by construction.
-                using var started = ProcessLaunch.StartSuspended(executablePath, arguments, cwd, envBlock);
+                var dte = SessionDte(sessionId);
                 try
                 {
-                    EnvDTE80.Process2? target = null;
-                    foreach (EnvDTE80.Process2 candidate in debugger.LocalProcesses)
+                    var debugger = DebuggerOf(dte);
+                    if (debugger.DebuggedProcesses.Count > 0)
+                        throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
+                    // Attached from birth: start suspended, attach the managed engine, then let
+                    // user code run, so breakpoints set before launch bind at startup. The bridge
+                    // creates the process as its own user, so it is mine by construction.
+                    using var started = ProcessLaunch.StartSuspended(executablePath, arguments, cwd, envBlock);
+                    try
                     {
-                        if (candidate.ProcessID == started.Pid) { target = candidate; break; }
+                        EnvDTE80.Process2? target = null;
+                        foreach (EnvDTE80.Process2 candidate in debugger.LocalProcesses)
+                        {
+                            if (candidate.ProcessID == started.Pid) { target = candidate; break; }
+                        }
+                        if (target is null)
+                            throw new DebugDomainException(
+                                ErrorCodes.LaunchFailed, $"started target PID {started.Pid} is not visible to the VS instance",
+                                "retry the launch");
+                        target.Attach2(CoreClrEngine);
+                        if (Volatile.Read(ref abandoned) != 0)
+                            throw new OperationCanceledException("launch abandoned by the caller");
+                        started.Resume();
                     }
-                    if (target is null)
-                        throw new DebugDomainException(
-                            ErrorCodes.LaunchFailed, $"started target PID {started.Pid} is not visible to the VS instance",
-                            "retry the launch");
-                    target.Attach2(CoreClrEngine);
-                    if (Volatile.Read(ref abandoned) != 0)
-                        throw new OperationCanceledException("launch abandoned by the caller");
-                    started.Resume();
+                    catch
+                    {
+                        started.Kill();
+                        throw;
+                    }
+                    return started.Pid;
                 }
-                catch
+                catch (COMException ex)
                 {
-                    started.Kill();
-                    throw;
+                    throw SessionComError(sessionId, dte, ex);
                 }
-                return started.Pid;
+                catch (InvalidComObjectException)
+                {
+                    throw SessionInvalidCom(sessionId);
+                }
             }, timeoutMs, ct);
         }
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException && Abandon(ref abandoned))
@@ -358,10 +400,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             throw new DebugDomainException(
                 ErrorCodes.Timeout, $"launching {executablePath} exceeded timeoutMs and was abandoned (an unfinished start is ended, never left bound)",
                 "dismiss any VS dialog, then retry with a larger timeoutMs");
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, dte, ex);
         }
         // Same wait as resume: an entry-point hit (or logpoint) surfaces here, still-running is ok.
         var run = await WithExceptionAsync(sessionId, await PollResumeAsync(sessionId, deadline, timeoutMs, 0, ct), ct);
@@ -402,14 +440,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 owned = entry?.Owned.ToList() ?? new List<OwnedBreakpoint>();
                 specs = entry?.Logpoints.ToList() ?? new List<LogpointSpec>();
             }
-            (Breakpoint Breakpoint, BreakpointInfo Info, string Mode, string? LastHit, string? ExistingId) Occupied(int i)
+            (BreakpointInfo Info, string Mode, string? LastHit, bool Created) Occupied(int i)
             {
                 var mine = owned.FirstOrDefault(o => SameBreakpoint(live[i], o.Breakpoint))
                     ?? throw BreakpointOptions.Exists(BreakpointOptions.ForeignId(i + 1), file, line);
                 var spec = specs.FirstOrDefault(s => s.Id == mine.Id);
                 var info = SnapshotBreakpoint(live[i], mine.Id) with { LogMessage = spec?.LogMessage };
                 BreakpointOptions.RequireSameOptions(info, cond, count, mode, log);
-                return (live[i], info, ModeOf(debugger), LastHitOf(debugger), mine.Id);
+                return (info, ModeOf(debugger), LastHitOf(debugger), false);
             }
             var occupied = live.FindIndex(b => BreakpointOptions.SameLocation(b.File, b.FileLine, file, line));
             if (occupied >= 0)
@@ -432,10 +470,38 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 return Occupied(handedBack);
             try
             {
-                // The id is minted below, once the breakpoint is known to exist.
-                var info = SnapshotBreakpoint(bp, id: "");
                 // Automation cannot observe pending-vs-bound (Concord-only); a successful Add means VS accepted it.
-                return (Breakpoint: bp, Info: info with { Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger), ExistingId: (string?)null);
+                var info = SnapshotBreakpoint(bp, id: "");
+                // Mint ownership inside the dispatch: the live handle never crosses
+                // threads, and a detach racing the call leaves nothing behind.
+                DebugDomainException? gone = null;
+                string id = "";
+                lock (_gate)
+                {
+                    if (!_sessions.TryGetValue(sessionId, out var entry) || entry.Dead || entry.Dte is null)
+                        gone = entry is null
+                            ? new DebugDomainException("no-session", "no active session", "call attach first")
+                            : new DebugDomainException(
+                                "vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
+                    else
+                    {
+                        id = BreakpointOptions.OwnedId(++entry.BreakpointCounter);
+                        entry.Owned.Add(new OwnedBreakpoint(id, bp));
+                        if (log is not null)
+                            // Key on the VS snapshot path (full path), never the user-passed file:
+                            // the Resume loop matches specs against lastHit, which is full-path.
+                            entry.Logpoints.Add(new LogpointSpec(id, info.File, info.Line, log));
+                    }
+                }
+                if (gone is not null)
+                {
+                    // Nobody could ever remove this breakpoint (it would list as
+                    // other<N>), so delete it before the error surfaces, never afterwards.
+                    try { bp.Delete(); } catch { /* best effort */ }
+                    try { Marshal.ReleaseComObject(bp); } catch { /* best effort */ }
+                    throw gone;
+                }
+                return (Info: info with { Id = id, Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger), Created: true);
             }
             catch (COMException)
             {
@@ -445,40 +511,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 throw;
             }
         }, ct);
-        if (added.ExistingId is not null)
-            return new SetBreakpointResult(added.Info, added.Mode, added.LastHit);
-        var id = "";
-        lock (_gate)
-        {
-            if (_sessions.TryGetValue(sessionId, out var entry) && !entry.Dead && entry.Dte is not null)
-            {
-                id = BreakpointOptions.OwnedId(++entry.BreakpointCounter);
-                entry.Owned.Add(new OwnedBreakpoint(id, added.Breakpoint));
-                if (log is not null)
-                    // Key on the VS snapshot path (full path), never the user-passed file:
-                    // the Resume loop matches specs against lastHit, which is full-path.
-                    entry.Logpoints.Add(new LogpointSpec(id, added.Info.File, added.Info.Line, log));
-            }
-        }
-        if (id.Length == 0)
-        {
-            // Detached or dead mid-call: nobody could ever remove this breakpoint (it would
-            // list as other<N>), so delete it best-effort, then report no-session / vs-not-running.
-            try
-            {
-                await _dispatcher.InvokeAsync(() =>
-                {
-                    try { added.Breakpoint.Delete(); } catch { /* best effort */ }
-                    try { Marshal.ReleaseComObject(added.Breakpoint); } catch { /* best effort */ }
-                    return true;
-                }, 10_000, ct);
-            }
-            catch (Exception ex) when (ex is TimeoutException or OperationCanceledException) { /* best effort */ }
-            _ = SessionDte(sessionId);
-        }
+        if (!added.Created)
+            return new SetBreakpointResult(added.Info, added.Mode, added.LastHit, Created: false);
         // Round-trip the logpoint template on set: the VS-side log action is not
         // automation-readable, so the session spec is the source for LogMessage.
-        return new SetBreakpointResult(added.Info with { Id = id, LogMessage = log }, added.Mode, added.LastHit);
+        return new SetBreakpointResult(added.Info with { LogMessage = log }, added.Mode, added.LastHit, Created: true);
     }
 
     public async Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct)
@@ -662,20 +699,31 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         if (currentMode != "run")
             throw new DebugDomainException(
                 "not-running", $"debuggee is {currentMode}, nothing to pause", "resume first, then pause while running");
-        var pauseDte = SessionDte(sessionId);
         try
         {
             // Non-blocking break: Break(true) would park the dispatcher until break
             // mode is reached; poll instead so a timeout never wedges later calls.
-            await _dispatcher.InvokeAsync(() => { DebuggerOf(pauseDte).Break(false); return true; }, 10_000, ct);
+            await _dispatcher.InvokeAsync(() =>
+            {
+                var dte = SessionDte(sessionId);
+                try
+                {
+                    DebuggerOf(dte).Break(false);
+                }
+                catch (COMException ex)
+                {
+                    throw SessionComError(sessionId, dte, ex);
+                }
+                catch (InvalidComObjectException)
+                {
+                    throw SessionInvalidCom(sessionId);
+                }
+                return true;
+            }, 10_000, ct);
         }
         catch (TimeoutException)
         {
             return new ExecutionResult("run", null, "timeout", "pause request timed out while issuing; retry");
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, pauseDte, ex);
         }
 
         var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
@@ -710,7 +758,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         if (currentMode == "run")
             throw new DebugDomainException(
                 "already-running", "debuggee is already running", "pause first to inspect");
-        var resumeDte = SessionDte(sessionId);
         if (currentMode == "break")
         {
             // A hit already pending may be a logpoint: log-and-continue it instead
@@ -724,7 +771,23 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             // Non-blocking Go: returns immediately after resuming so the single STA
             // dispatcher thread is never held hostage by a long-running debuggee.
             // Completion (next breakpoint or process exit) is observed by polling below.
-            await _dispatcher.InvokeAsync(() => { DebuggerOf(resumeDte).Go(false); return true; }, IssueBudgetMs(timeoutMs), ct);
+            await _dispatcher.InvokeAsync(() =>
+            {
+                var dte = SessionDte(sessionId);
+                try
+                {
+                    DebuggerOf(dte).Go(false);
+                }
+                catch (COMException ex)
+                {
+                    throw SessionComError(sessionId, dte, ex);
+                }
+                catch (InvalidComObjectException)
+                {
+                    throw SessionInvalidCom(sessionId);
+                }
+                return true;
+            }, IssueBudgetMs(timeoutMs), ct);
         }
         catch (TimeoutException)
         {
@@ -738,10 +801,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 issueMode is null
                     ? "resume request timed out while issuing Go; debugger state unreadable, retry"
                     : $"resume request timed out while issuing Go; debugger mode is {mode}, retry");
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, resumeDte, ex);
         }
 
         return await PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 0, ct);
@@ -851,14 +910,25 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 BreakpointOptions.AppendLog(entry.Log,
                     new BreakpointLogEntry(logged.Value.Token, logged.Value.Message, logged.Value.Hits));
         }
-        var contDte = SessionDte(sessionId);
         try
         {
-            await _dispatcher.InvokeAsync(() => { DebuggerOf(contDte).Go(false); return true; }, IssueBudgetMs(timeoutMs), ct);
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, contDte, ex);
+            await _dispatcher.InvokeAsync(() =>
+            {
+                var dte = SessionDte(sessionId);
+                try
+                {
+                    DebuggerOf(dte).Go(false);
+                }
+                catch (COMException ex)
+                {
+                    throw SessionComError(sessionId, dte, ex);
+                }
+                catch (InvalidComObjectException)
+                {
+                    throw SessionInvalidCom(sessionId);
+                }
+                return true;
+            }, IssueBudgetMs(timeoutMs), ct);
         }
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
         {
@@ -900,11 +970,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     private async Task<(string Mode, string? LastHit, int ThreadId, int Hits)> TrySnapshotThreadAsync(
         string sessionId, OwnedBreakpoint owner, CancellationToken ct)
     {
-        var dte = SessionDte(sessionId);
         try
         {
             return await _dispatcher.InvokeAsync(() =>
             {
+                var dte = SessionDte(sessionId);
                 var debugger = DebuggerOf(dte);
                 var mode = ModeOf(debugger);
                 if (mode != "break")
@@ -921,8 +991,9 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         {
             return ("unknown", null, -1, -1);
         }
-        catch (COMException)
+        catch (Exception ex) when (ex is COMException or DebugDomainException)
         {
+            TraceFallback(ex, "transient thread snapshot failed; polling continues");
             return ("unknown", null, -1, -1);
         }
     }
@@ -955,19 +1026,30 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 "resume to a breakpoint or pause first; only inspect and step in break mode");
         if (direction is not ("over" or "into" or "out"))
             throw new DebugDomainException("invalid-argument", $"unknown step direction {direction}", "pass over, into, or out");
-        var stepDte = SessionDte(sessionId);
         try
         {
             // Non-blocking step for the same reason as Go(false): never park the
             // dispatcher inside a potentially long debugger wait.
             await _dispatcher.InvokeAsync(() =>
             {
-                var debugger = DebuggerOf(stepDte);
-                switch (direction)
+                var dte = SessionDte(sessionId);
+                try
                 {
-                    case "over": debugger.StepOver(false); break;
-                    case "into": debugger.StepInto(false); break;
-                    case "out": debugger.StepOut(false); break;
+                    var debugger = DebuggerOf(dte);
+                    switch (direction)
+                    {
+                        case "over": debugger.StepOver(false); break;
+                        case "into": debugger.StepInto(false); break;
+                        case "out": debugger.StepOut(false); break;
+                    }
+                }
+                catch (COMException ex)
+                {
+                    throw SessionComError(sessionId, dte, ex);
+                }
+                catch (InvalidComObjectException)
+                {
+                    throw SessionInvalidCom(sessionId);
                 }
                 return true;
             }, IssueBudgetMs(timeoutMs), ct);
@@ -982,10 +1064,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 issueMode is null
                     ? "step request timed out while issuing; debugger state unreadable, retry or pause"
                     : $"step request timed out while issuing; debugger mode is {mode}, retry or pause");
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, stepDte, ex);
         }
 
         var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
@@ -1061,12 +1139,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 foreach (Expression local in frame.Locals)
                 {
                     if (vars.Count >= maxVariables) break;
-                    if (seen.Add(local.Name)) vars.Add(SnapshotValue(local, null));
+                    if (seen.Add(local.Name)) vars.Add(SnapshotValue(local, local.Name));
                 }
                 foreach (Expression arg in frame.Arguments)
                 {
                     if (vars.Count >= maxVariables) break;
-                    if (seen.Add(arg.Name)) vars.Add(SnapshotValue(arg, null));
+                    if (seen.Add(arg.Name)) vars.Add(SnapshotValue(arg, arg.Name));
                 }
                 return new ReadVariablesResult(frameId, null, vars, ModeOf(debugger), LastHitOf(debugger));
             }
@@ -1209,10 +1287,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         if (result.Mode != "break")
             return result;
-        var dte = SessionDte(sessionId);
         try
         {
-            var snapshot = await _dispatcher.InvokeAsync(() => SnapshotException(DebuggerOf(dte)), 10_000, ct);
+            var snapshot = await _dispatcher.InvokeAsync(
+                () => SnapshotException(DebuggerOf(SessionDte(sessionId))), 10_000, ct);
             // lastHit is for breakpoint hits only; BreakpointLastHit may still name an earlier one.
             return snapshot is not { } s ? result
                 : result with { LastHit = null, Note = ExceptionConfig.BreakNote(s.Reason, s.Info), Exception = s.Info };
@@ -1263,19 +1341,32 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     private async Task<T> RunSnapshotAsync<T>(string sessionId, Func<Debugger, T> work, CancellationToken ct, int budgetMs = 30_000)
     {
         await RequireSessionAsync(sessionId, ct);
-        var dte = SessionDte(sessionId);
         try
         {
-            return await _dispatcher.InvokeAsync(() => work(DebuggerOf(dte)), budgetMs, ct);
+            // The session resolves inside the dispatch: a detach racing this call
+            // surfaces no-session or vs-not-running, and only plain data crosses
+            // threads, never live handles.
+            return await _dispatcher.InvokeAsync(() =>
+            {
+                var dte = SessionDte(sessionId);
+                try
+                {
+                    return work(DebuggerOf(dte));
+                }
+                catch (COMException ex)
+                {
+                    throw SessionComError(sessionId, dte, ex);
+                }
+                catch (InvalidComObjectException)
+                {
+                    throw SessionInvalidCom(sessionId);
+                }
+            }, budgetMs, ct);
         }
         catch (TimeoutException)
         {
             throw new DebugDomainException(
                 "timeout", "VS automation call exceeded its budget", "dismiss any modal dialog in VS and retry");
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, dte, ex);
         }
     }
 
@@ -1311,31 +1402,63 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private async Task<(string Mode, string? LastHit)> ReadStateAsync(string sessionId, CancellationToken ct)
     {
-        var dte = SessionDte(sessionId);
         try
         {
             return await _dispatcher.InvokeAsync(() =>
             {
-                var debugger = DebuggerOf(dte);
-                return (ModeOf(debugger), LastHitOf(debugger));
+                var dte = SessionDte(sessionId);
+                try
+                {
+                    var debugger = DebuggerOf(dte);
+                    return (ModeOf(debugger), LastHitOf(debugger));
+                }
+                catch (COMException ex)
+                {
+                    if (ComErrorMapper.IsDisconnected(ex))
+                        MarkDead(sessionId, dte);
+                    return ("unknown", (string?)null);
+                }
+                catch (InvalidComObjectException)
+                {
+                    MarkDead(sessionId, dte);
+                    return ("unknown", (string?)null);
+                }
             }, 10_000, ct);
         }
         catch (TimeoutException)
         {
             return ("unknown", null);
         }
-        catch (COMException ex)
+        catch (COMException)
         {
-            if (ComErrorMapper.IsDisconnected(ex))
-                MarkDead(sessionId, dte);
+            return ("unknown", null);
+        }
+        catch (DebugDomainException)
+        {
+            // The session went away while reading: unknown state, like a dead VS.
             return ("unknown", null);
         }
     }
 
     /// <summary>Fast strict snapshot for pre-flight mode checks; throws on timeout/COM.</summary>
-    private async Task<string> SnapshotModeAsync(DTE dte, CancellationToken ct)
+    private async Task<string> SnapshotModeAsync(string sessionId, CancellationToken ct)
     {
-        return await _dispatcher.InvokeAsync(() => ModeOf(DebuggerOf(dte)), 10_000, ct);
+        return await _dispatcher.InvokeAsync(() =>
+        {
+            var dte = SessionDte(sessionId);
+            try
+            {
+                return ModeOf(DebuggerOf(dte));
+            }
+            catch (COMException ex)
+            {
+                throw SessionComError(sessionId, dte, ex);
+            }
+            catch (InvalidComObjectException)
+            {
+                throw SessionInvalidCom(sessionId);
+            }
+        }, 10_000, ct);
     }
 
     /// <summary>Shared Pause/Resume/Step pre-flight: session check plus strict mode read.
@@ -1344,18 +1467,13 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     private async Task<string> RequireModeAsync(string sessionId, ExecutionResult timeoutResult, CancellationToken ct)
     {
         await RequireSessionAsync(sessionId, ct);
-        var dte = SessionDte(sessionId);
         try
         {
-            return await SnapshotModeAsync(dte, ct);
+            return await SnapshotModeAsync(sessionId, ct);
         }
         catch (TimeoutException)
         {
             throw new ModeReadTimeoutException(timeoutResult);
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, dte, ex);
         }
     }
 
@@ -1367,19 +1485,33 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     /// <summary>Best-effort snapshot for polling: null mode means "keep waiting".</summary>
     private async Task<(string? Mode, string? LastHit)> TrySnapshotAsync(string sessionId, CancellationToken ct)
     {
-        var dte = SessionDte(sessionId);
         try
         {
             return await _dispatcher.InvokeAsync(() =>
             {
-                var debugger = DebuggerOf(dte);
-                return ((string?)ModeOf(debugger), LastHitOf(debugger));
+                var dte = SessionDte(sessionId);
+                try
+                {
+                    var debugger = DebuggerOf(dte);
+                    return ((string?)ModeOf(debugger), LastHitOf(debugger));
+                }
+                catch (COMException ex)
+                {
+                    if (ComErrorMapper.IsDisconnected(ex))
+                        MarkDead(sessionId, dte);
+                    TraceFallback(ex, "transient debugger snapshot failed; polling continues");
+                    return ((string?)null, null);
+                }
+                catch (InvalidComObjectException ex)
+                {
+                    MarkDead(sessionId, dte);
+                    TraceFallback(ex, "transient debugger snapshot failed; polling continues");
+                    return ((string?)null, null);
+                }
             }, 5_000, ct);
         }
-        catch (COMException ex)
+        catch (DebugDomainException ex)
         {
-            if (ComErrorMapper.IsDisconnected(ex))
-                MarkDead(sessionId, dte);
             TraceFallback(ex, "transient debugger snapshot failed; polling continues");
             return (null, null);
         }
@@ -1472,9 +1604,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         var raw = SafeGet(() => e.Value) ?? "(unavailable)";
         var truncated = raw.Length > MaxValueLength;
+        // A path is only useful when the value drills down: terminal values
+        // (like the fake bridge) carry none, so dead expandables never surface.
+        var expandable = truncated || HasMembers(e);
         return new ValueInfo(e.Name, SafeGet(() => e.Type) ?? "(unknown)",
             truncated ? raw[..MaxValueLength] + " [truncated]" : raw,
-            truncated || HasMembers(e), path);
+            expandable, expandable ? path : null);
     }
 
     private EvaluateResult SnapshotEvaluation(Expression e, string expression, string mode, string? lastHit)

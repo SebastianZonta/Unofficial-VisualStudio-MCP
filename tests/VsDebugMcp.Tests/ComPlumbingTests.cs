@@ -39,6 +39,16 @@ public sealed class ComPlumbingTests
     }
 
     [Fact]
+    public void ToDomain_preserves_inner()
+    {
+        var com = new COMException("boom", unchecked((int)0x80004005));
+
+        var ex = ComErrorMapper.ToDomain(com);
+
+        Assert.Same(com, ex.InnerException);
+    }
+
+    [Fact]
     public async Task Dispatcher_runs_work_fifo_on_one_thread()
     {
         using var dispatcher = new ComDispatcher();

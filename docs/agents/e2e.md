@@ -193,6 +193,7 @@ If S2/S3 fail, mark every later case BLOCKED and go to P11.
 | D2 | `list_sessions` | no session bound to `A` |
 | D3 | `list_processes(nameFilter: "sandbox")` | exactly the `waitPid` entry (case-insensitive filter), `mine: true` |
 | D4 | `list_processes(ownedOnly: false)` | at least as many entries as `list_processes()`; any `mine: false` entry has an owner or error text |
+| X1 | `set_breakpoint(file: "", line: 0)` | `invalid-argument` with the code in the machine-readable channel (not just the message prefix). Manual: open a modal dialog in VS, then any call → `vs-busy`, never a crash |
 
 ## P2: session lifecycle
 
@@ -266,6 +267,8 @@ stopped through W8 (writes run last: they change values the I cases read). Then 
 | I14 | `evaluate("order.ComputeSubtotal()")`; `evaluate("order.Items.Count(x => x.Qty == 5)")` | OBS each (record value or error) |
 | I15 | `evaluate` each of: `counter.Value++`, `--x`, `order.Id = 0`, `a <<= 1`, `a >>= 1`, `a; b`, two-line text | `invalid-argument` each; then `counter.Value` still 0 |
 | I16 | `read_variables(f0, path: ...)` with each of `order.Id = 0`, `total++`, `a; b` | `invalid-argument` each |
+| I17 | `read_variables(f0)` | top-level expandable `order` carries a non-empty `path`; `read_variables(f0, path: <that>)` lists members; `evaluate("order.Items[0].Sku")` equals the drill-down value (live drill path) |
+| I18 | `evaluate("order.NoSuchField")`; a generic-arity call on a real generic member (else record OBS + gate UT as authority) | `invalid-expression` both |
 | W1 | `set_variable(f0, "subtotal", "1.5")` (consent omitted); then `evaluate("subtotal")` | `consent-required`; still 5625.00 |
 | W2 | `set_variable(f0, "subtotal", "1.5", consent: true)`; `read_variables(f0)` | echoes `frameId` f0, `path` subtotal, `type` decimal, `mode: break`, value 1.5; `subtotal` reads 1.5 |
 | W3 | `set_variable` `note` = `"short"`; `missing` = `7`, then `missing` = `null` (consent each) | each echoes the new value; `evaluate("note.Length")` = 5, `evaluate("missing")` null |
@@ -319,6 +322,8 @@ Remove the breakpoint and run to end.
 | E16 | E1's target still running, no breakpoints: `run_to_cursor` at `HEARTBEAT`; `list_breakpoints` | `break`, `lastHit` ends `Scenarios.cs:<HEARTBEAT>`; no breakpoints listed (the temporary one is gone) |
 | E17 | `set_breakpoint` at `HEARTBEAT` (id H); `run_to_cursor` at `HEARTBEAT`; `list_breakpoints` | `break` at `HEARTBEAT`; exactly one entry, id H (reused, not deleted). Remove H |
 | E18 | `run_to_cursor` at `AFTER_LOOP` (never runs in `wait`), `timeoutMs: 1000`; `list_breakpoints` | `status: ok`, `mode: run`, `lastHit` null; no breakpoints listed |
+| E27 | breakpoint at `HEARTBEAT`, `run_to_cursor HEARTBEAT` while a second concurrent `resume` is issued (or F5 in VS between set and continue) | `break` at `HEARTBEAT`, no `already-running` error, no leaked temp in `list_breakpoints` |
+| E28 | user sets a breakpoint at the destination in VS during the `run_to_cursor` List–Set window (H-style manual step) | pre-existing id survives, `lastHit` is the destination |
 | E19 | `run_to_cursor` with `line: 0`; with `file: ""` | `invalid-argument` both; nothing created |
 | E7 | `resume(timeoutMs: 999)`; `resume(timeoutMs: 60001)` | `invalid-argument` both |
 | E8 | `launch_process` again while E1's target runs | `already-bound` |
@@ -346,9 +351,10 @@ Remove the breakpoint and run to end.
 | A5 | `pause`; `read_stack` | `break`; ≥ 1 frame |
 | A6 | `set_breakpoint` at `HEARTBEAT`; `resume` | `break`, `lastHit` ends `Scenarios.cs:<HEARTBEAT>` |
 | A7 | remove it; `Stop-Process waitPid`; `list_breakpoints` | `mode: design` |
+| E26 | `attach_process(<vsPidA>, consent: true)`; `list_processes` | `invalid-argument` naming devenv (no self-attach); `list_processes` still lists the VS process |
 
-Never pass a `list_instances` PID (devenv) to `attach_process`, and never attach
-to a process you did not start. The user-mismatch path stays with the unit
+A `list_instances` PID (devenv) is refused by `attach_process` (E26) — never
+attach to a process you did not start. The user-mismatch path stays with the unit
 tests: attaching to a foreign-owned process isn't safe to try here.
 
 ## P10: two VS instances

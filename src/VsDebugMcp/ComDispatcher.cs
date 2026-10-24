@@ -104,23 +104,30 @@ internal sealed class ComDispatcher : IDisposable
     /// STA thread. dwTickCount is elapsed ms since the outgoing call was made, so the
     /// window counts against the caller's own budget and never stretches past it by
     /// more than one retry interval; afterwards COM returns RPC_E_CALL_REJECTED and
-    /// the existing vs-busy mapping applies.</summary>
+    /// the existing vs-busy mapping applies.
+    /// The instance is rooted in a static for the process lifetime: an unrooted
+    /// filter can be collected while registered, crashing the next busy callback.
+    /// The previously registered filter (if any) is preserved and restored on revoke.</summary>
     private sealed class OleMessageFilter : IOleMessageFilter
     {
         private const int RetryWindowMs = 3_000;
         private const int RetryAfterMs = 100;
 
+        private static OleMessageFilter? _root;
+        private static IOleMessageFilter? _previous;
+
         private OleMessageFilter() { }
 
         public static void Register()
         {
-            try { _ = NativeMethods.CoRegisterMessageFilter(new OleMessageFilter(), out _); }
+            _root = new OleMessageFilter();
+            try { _ = NativeMethods.CoRegisterMessageFilter(_root, out _previous); }
             catch { /* best effort: without a filter every busy call just surfaces vs-busy */ }
         }
 
         public static void Revoke()
         {
-            try { _ = NativeMethods.CoRegisterMessageFilter(null, out _); }
+            try { _ = NativeMethods.CoRegisterMessageFilter(_previous, out _); }
             catch { /* best effort */ }
         }
 
