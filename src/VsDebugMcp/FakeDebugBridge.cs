@@ -131,6 +131,18 @@ public sealed class FakeDebugBridge : IDebugBridge
         if (error is not null)
             throw new DebugDomainException(ErrorCodes.InvalidArgument, error.Value.Detail, error.Value.Remediation);
         var (cond, count, mode, log) = BreakpointOptions.Normalize(condition, hitCount, hitCountMode, logMessage);
+        // Occupied location, like the live bridge: own repeat returns its id, foreign is refused.
+        foreach (var (ownedId, bp) in session.Breakpoints)
+        {
+            if (!BreakpointOptions.SameLocation(bp.File, bp.Line, file, line))
+                continue;
+            var existing = Render(ownedId, session);
+            BreakpointOptions.RequireSameOptions(existing, cond, count, mode, log);
+            return new SetBreakpointResult(existing, session.Mode, session.LastHit);
+        }
+        var foreign = session.ForeignBreakpoints.FindIndex(bp => BreakpointOptions.SameLocation(bp.File, bp.Line, file, line));
+        if (foreign >= 0)
+            throw BreakpointOptions.Exists(BreakpointOptions.ForeignId(foreign + 1), file, line);
         var id = BreakpointOptions.OwnedId(++session.BreakpointCounter);
         session.Breakpoints[id] = new FakeBreakpoint(file, line, cond, count, mode, HitCount: 0, log);
         return new SetBreakpointResult(Render(id, session), session.Mode, session.LastHit);

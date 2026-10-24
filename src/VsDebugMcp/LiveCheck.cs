@@ -219,6 +219,59 @@ internal static class LiveCheck
         }
     }
 
+    /// <summary>Occupied-location manual check (design mode is enough): session A sets &lt;file&gt;:&lt;line&gt;;
+    /// A repeating it gets the same id; session B (a second bridge, so A's breakpoint is foreign to it)
+    /// is refused with breakpoint-exists, and A's breakpoint survives B's attempt.</summary>
+    public static async Task<int> RunOccupiedAsync(string[] args)
+    {
+        var rest = args.SkipWhile(a => a != "--live-check-occupied").Skip(1).ToArray();
+        if (rest.Length < 3 || !int.TryParse(rest[2], out var line))
+        {
+            Console.Error.WriteLine("usage: VsDebugMcp --live-check-occupied <instance> <file> <line>");
+            return 2;
+        }
+        using var bridgeA = new DteDebugBridge();
+        using var bridgeB = new DteDebugBridge();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        string? a = null;
+        try
+        {
+            a = (await bridgeA.AttachAsync(rest[0], cts.Token)).SessionId;
+            var b = (await bridgeB.AttachAsync(rest[0], cts.Token)).SessionId;
+            var first = await bridgeA.SetBreakpointAsync(a, rest[1], line, cts.Token);
+            var again = await bridgeA.SetBreakpointAsync(a, rest[1], line, cts.Token);
+            Console.WriteLine($"A set: {first.Breakpoint.Id}, repeat: {again.Breakpoint.Id}");
+            var refused = "";
+            try
+            {
+                var bp = await bridgeB.SetBreakpointAsync(b, rest[1], line, cts.Token);
+                Console.Error.WriteLine($"B was not refused: got {bp.Breakpoint.Id}");
+            }
+            catch (DebugDomainException ex) when (ex.Code == ErrorCodes.BreakpointExists)
+            {
+                refused = ex.Message;
+                Console.WriteLine($"B refused: {ex.Message}");
+            }
+            var listA = (await bridgeA.ListBreakpointsAsync(a, cts.Token)).Breakpoints;
+            Console.WriteLine($"A list: {string.Join(", ", listA.Select(x => $"{x.Id}@{x.Line}"))}");
+            await bridgeB.DetachAsync(b, cts.Token);
+            var afterDetach = (await bridgeA.ListBreakpointsAsync(a, cts.Token)).Breakpoints;
+            var survived = afterDetach.Any(x => x.Id == first.Breakpoint.Id);
+            Console.WriteLine($"A's breakpoint survived B's attempt and detach: {survived}");
+            return first.Breakpoint.Id == again.Breakpoint.Id && listA.Count == 1 && refused.Length > 0 && survived ? 0 : 1;
+        }
+        catch (DebugDomainException ex)
+        {
+            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
+            return 1;
+        }
+        finally
+        {
+            if (a is not null)
+                await bridgeA.DetachAsync(a, CancellationToken.None);
+        }
+    }
+
     /// <summary>audit-must-fix manual check against a throwaway target whose <c>Helper(items, total)</c>
     /// is called from top-level code holding <c>list</c> and a different <c>total</c>: stable ids,
     /// another session's breakpoint listed but not removable, no-side-effects evaluate, frame-true

@@ -160,6 +160,7 @@ are covered in phase H.
 | B8 | `remove_breakpoint(S, "")` | `invalid-argument` |
 | B9 | `set_breakpoint(file: "", ...)`; `set_breakpoint(line: 0)` | `invalid-argument` both; nothing created |
 | B10 | `set_breakpoint` at line 1 of `C:\does\not\exist.cs`; then remove it | OBS: record `bound`/`warning` or the error |
+| B11 | `set_breakpoint` at `TICK` twice; then again with `hitCount: 3`; remove it | same id both times, `list_breakpoints` shows it once; `invalid-argument` naming that id; removed |
 
 ## P4: conditions, hit counts, logpoints (`loop`)
 
@@ -308,6 +309,7 @@ the main agent runs these with the user. It asks before each manual step
 | Id | Step | Expected |
 |---|---|---|
 | H1 | SH: `set_breakpoint` at `TICK` → id P. User: in VS A, click the gutter to add a breakpoint at the `ECHO` line. Then `list_breakpoints` | P listed once under its id; the `ECHO` breakpoint listed once as `other<N>`, with the warning that it was not created by this debug session |
+| H1b | SH: `set_breakpoint` at the `ECHO` line (the user's). User confirms it is still in the VS Breakpoints window | `breakpoint-exists` naming H1's `other<N>`; still there, unchanged |
 | H2 | `remove_breakpoint(<that other<N>>)`. User confirms it is still in the VS Breakpoints window | `breakpoint-not-found`; still there |
 | H3 | User: delete breakpoint P by hand in VS. Then `list_breakpoints`, `read_stack` | P gone from the list; session healthy (`not-in-break-mode` from `read_stack` is fine; `vs-not-running` is a FAIL) |
 | H4 | `remove_breakpoint(P)` | `breakpoint-not-found` |

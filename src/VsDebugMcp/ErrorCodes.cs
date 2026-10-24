@@ -22,6 +22,7 @@ public static class ErrorCodes
     public const string AlreadyBound = "already-bound";
     public const string LaunchFailed = "launch-failed";
     public const string UnboundLocation = "unbound-location";
+    public const string BreakpointExists = "breakpoint-exists";
 
     /// <summary>Key under which <see cref="DebugDomainException.Code"/> is preserved
     /// in <c>McpException.Data</c> by <see cref="ToolErrors"/>.</summary>

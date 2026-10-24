@@ -385,6 +385,32 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         // because native log output (VS Output window) is not automation-readable.
         var added = await RunSnapshotAsync(sessionId, debugger =>
         {
+            // VS hands back the existing breakpoint for an occupied location, so owning what Add
+            // returns would let remove/detach delete the user's. Check first: an own repeat
+            // returns its id unchanged, a foreign one is refused (positional id as in the listing).
+            var live = new List<Breakpoint>();
+            foreach (Breakpoint b in debugger.Breakpoints)
+                live.Add(b);
+            List<OwnedBreakpoint> owned;
+            List<LogpointSpec> specs;
+            lock (_gate)
+            {
+                _sessions.TryGetValue(sessionId, out var entry);
+                owned = entry?.Owned.ToList() ?? new List<OwnedBreakpoint>();
+                specs = entry?.Logpoints.ToList() ?? new List<LogpointSpec>();
+            }
+            (Breakpoint Breakpoint, BreakpointInfo Info, string Mode, string? LastHit, string? ExistingId) Occupied(int i)
+            {
+                var mine = owned.FirstOrDefault(o => SameBreakpoint(live[i], o.Breakpoint))
+                    ?? throw BreakpointOptions.Exists(BreakpointOptions.ForeignId(i + 1), file, line);
+                var spec = specs.FirstOrDefault(s => s.Id == mine.Id);
+                var info = SnapshotBreakpoint(live[i], mine.Id) with { LogMessage = spec?.LogMessage };
+                BreakpointOptions.RequireSameOptions(info, cond, count, mode, log);
+                return (live[i], info, ModeOf(debugger), LastHitOf(debugger), mine.Id);
+            }
+            var occupied = live.FindIndex(b => BreakpointOptions.SameLocation(b.File, b.FileLine, file, line));
+            if (occupied >= 0)
+                return Occupied(occupied);
             var created = debugger.Breakpoints.Add(
                 Function: "", File: file, Line: line, Column: 1,
                 Condition: cond ?? "", ConditionType: dbgBreakpointConditionType.dbgBreakpointConditionTypeWhenTrue,
@@ -396,12 +422,17 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             // Own exactly what Add created (its returned collection), never "the last item
             // of the global list", which could be a breakpoint the user set.
             var bp = created is { Count: > 0 } ? created.Item(1) : debugger.Breakpoints.Item(debugger.Breakpoints.Count);
+            // Safety net for a path the location check missed: Add handed back an existing
+            // breakpoint. Never delete or own it.
+            var handedBack = live.FindIndex(b => SameBreakpoint(b, bp));
+            if (handedBack >= 0)
+                return Occupied(handedBack);
             try
             {
                 // The id is minted below, once the breakpoint is known to exist.
                 var info = SnapshotBreakpoint(bp, id: "");
                 // Automation cannot observe pending-vs-bound (Concord-only); a successful Add means VS accepted it.
-                return (Breakpoint: bp, Info: info with { Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger));
+                return (Breakpoint: bp, Info: info with { Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger), ExistingId: (string?)null);
             }
             catch (COMException)
             {
@@ -411,6 +442,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 throw;
             }
         }, ct);
+        if (added.ExistingId is not null)
+            return new SetBreakpointResult(added.Info, added.Mode, added.LastHit);
         var id = "";
         lock (_gate)
         {

@@ -131,6 +131,36 @@ internal static class BreakpointOptions
     public const string ForeignWarning =
         "not created by this debug session (set by the user or another debug session); list-only, remove it in VS";
 
+    /// <summary>A location already holding a breakpoint this debug session did not create. VS would
+    /// hand that breakpoint back from Add, and owning it would let remove/detach delete it.</summary>
+    public static DebugDomainException Exists(string foreignId, string file, int line) =>
+        new(ErrorCodes.BreakpointExists,
+            $"{file}:{line} already has breakpoint {foreignId} (not created by this debug session)",
+            "use it as is (it still stops the target), or remove it in VS and set again");
+
+    /// <summary>Repeat set on a location this debug session already owns returns that id; it never
+    /// changes the existing breakpoint's options.</summary>
+    public static void RequireSameOptions(BreakpointInfo existing,
+        string? condition, int? hitCount, string? hitCountMode, string? logMessage)
+    {
+        if (existing.Condition != condition || existing.HitCountTarget != hitCount
+            || existing.HitCountMode != hitCountMode || existing.LogMessage != logMessage)
+            throw new DebugDomainException(ErrorCodes.InvalidArgument,
+                $"{existing.File}:{existing.Line} already has {existing.Id} with different options",
+                $"remove_breakpoint {existing.Id} first, then set again with the new options");
+    }
+
+    /// <summary>Listed paths are VS full paths; the caller may pass the path as shown in the solution.
+    /// shortcut: suffix match, so a same-named file elsewhere also counts; upgrade if that bites.</summary>
+    public static bool SameLocation(string listedFile, int listedLine, string file, int line)
+    {
+        if (listedLine != line)
+            return false;
+        var tail = file.Replace('/', '\\').TrimStart('\\');
+        return listedFile.Equals(file, StringComparison.OrdinalIgnoreCase)
+            || listedFile.Replace('/', '\\').EndsWith("\\" + tail, StringComparison.OrdinalIgnoreCase);
+    }
+
     public static DebugDomainException NotFound(string breakpointId) =>
         breakpointId.StartsWith(ForeignPrefix, StringComparison.Ordinal)
             ? new DebugDomainException(ErrorCodes.BreakpointNotFound,

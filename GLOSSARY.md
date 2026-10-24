@@ -77,7 +77,9 @@ A stable identity minted per debug session (`bp<N>`, only goes up, never
 reused or renumbered) for a breakpoint that debug session created. A
 **foreign breakpoint** is any other breakpoint in the VS instance (set by the
 user or another debug session): it shows as `other<N>` (positional, recomputed
-per listing) and is list-only, so `remove_breakpoint` never touches it.
+per listing) and is list-only, so `remove_breakpoint` never touches it, and
+`set_breakpoint` on its location is refused (`breakpoint-exists`) rather than
+claiming it. Setting a location this session already owns returns its id.
 _Avoid_: index, position (when meaning a `bp<N>` id); user breakpoint, mine (when meaning foreign/owned)
 
 **Run to cursor / temporary breakpoint**:

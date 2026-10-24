@@ -19,7 +19,7 @@ internal static class RunToCursor
                 "attach_process or launch_process first; run_to_cursor needs break or run mode");
         // VS hands back the existing breakpoint for a duplicate location, so deleting the
         // "temporary" one would delete the user's: reuse it as the destination instead.
-        if (existing.Breakpoints.Any(b => SameLocation(b, file, line)))
+        if (existing.Breakpoints.Any(b => BreakpointOptions.SameLocation(b.File, b.Line, file, line)))
             return await cont(existing.Mode);
         var set = await bridge.SetBreakpointAsync(sessionId, file, line, ct);
         try
@@ -53,16 +53,5 @@ internal static class RunToCursor
                 }
             }
         }
-    }
-
-    /// <summary>Listed paths are VS full paths; the caller may pass the path as shown in the solution.
-    /// shortcut: suffix match, so a same-named file elsewhere also counts; upgrade if that bites.</summary>
-    internal static bool SameLocation(BreakpointInfo bp, string file, int line)
-    {
-        if (bp.Line != line)
-            return false;
-        var tail = file.Replace('/', '\\').TrimStart('\\');
-        return bp.File.Equals(file, StringComparison.OrdinalIgnoreCase)
-            || bp.File.Replace('/', '\\').EndsWith("\\" + tail, StringComparison.OrdinalIgnoreCase);
     }
 }

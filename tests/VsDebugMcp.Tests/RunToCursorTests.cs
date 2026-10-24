@@ -148,9 +148,8 @@ public sealed class RunToCursorTests
     [InlineData(@"C:\src\Shop\MyOrder.cs", "Order.cs", false)]
     public void Destination_matches_listed_full_path(string listed, string passed, bool same)
     {
-        var bp = new BreakpointInfo("bp1", listed, 20, Bound: true, Warning: null);
-        Assert.Equal(same, RunToCursor.SameLocation(bp, passed, 20));
-        Assert.False(RunToCursor.SameLocation(bp, passed, 21));
+        Assert.Equal(same, BreakpointOptions.SameLocation(listed, 20, passed, 20));
+        Assert.False(BreakpointOptions.SameLocation(listed, 20, passed, 21));
     }
 
     [Fact]
