@@ -19,7 +19,7 @@ An agent workflow looks like this:
 4. `attach_process` — aim the debugger at it (`consent: true`, same-user only). Or skip steps 3–4: `launch_process` starts the program with the debugger attached from birth, so startup breakpoints hit.
 5. `set_breakpoint` → `resume` → `read_stack` / `read_variables` / `evaluate` → `resume`.
 
-## Tools (16)
+## Tools (17)
 
 | Tool | One line |
 |---|---|
@@ -32,6 +32,7 @@ An agent workflow looks like this:
 | `launch_process` | Start a .NET target process (path, args, working dir, env) attached from birth; breakpoints set before launch hit at startup. |
 | `set_breakpoint` | File/line breakpoint, optional read-only `condition`, `hitCount` (`exact`/`every`), or `logMessage` logpoint; returns bind state immediately. |
 | `list_breakpoints` | Breakpoints with options, hit counts, and bind states; poll until unbound flips to bound. Carries the session logpoint `Log`. |
+| `list_modules` | Target-process modules with loaded flag and symbol state; why a breakpoint stays unbound. Break or run mode. |
 | `remove_breakpoint` | Remove a breakpoint by id. |
 | `pause` | Pause a running debuggee. |
 | `resume` | Run until a breakpoint or the timeout. Over-budget waits return a timeout status, never a hang. |

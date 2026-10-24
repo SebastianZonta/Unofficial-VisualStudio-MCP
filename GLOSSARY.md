@@ -80,6 +80,14 @@ user or another debug session): it shows as `other<N>` (positional, recomputed
 per listing) and is list-only, so `remove_breakpoint` never touches it.
 _Avoid_: index, position (when meaning a `bp<N>` id); user breakpoint, mine (when meaning foreign/owned)
 
+**Module / symbol state**:
+A module is a binary loaded into a debug session's target process, listed by
+`list_modules`. `symbolState` is debugger-reported: `loaded` (detail is the
+symbol path), `missing`, `failed` (detail is the reason), or `unknown` (no
+information, never "fine"). An unbound breakpoint whose module is absent or
+not `loaded` explains itself.
+_Avoid_: assembly, DLL (when meaning module); PDB status (when meaning symbolState)
+
 **Truncation / expandable**:
 Values over 500 chars are cut with a `[truncated]` marker. `expandable`
 marks drillable values; its `path` feeds back into `read_variables`.

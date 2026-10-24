@@ -32,6 +32,10 @@ internal static class LiveCheck
             Console.WriteLine($"stack ok: frames={stack.Frames.Count}");
             foreach (var f in stack.Frames)
                 Console.WriteLine($"  {f.Id} {f.Function} [{f.Module}]");
+            var modules = await bridge.ListModulesAsync(attach.SessionId, null, cts.Token);
+            Console.WriteLine($"modules ok: count={modules.Modules.Count} mode={modules.Mode}");
+            foreach (var m in modules.Modules.Take(10))
+                Console.WriteLine($"  {m.Name} loaded={m.Loaded} symbols={m.SymbolState} {m.SymbolDetail}");
             var vars = await bridge.ReadVariablesAsync(attach.SessionId, stack.Frames[0].Id, null, 50, cts.Token);
             Console.WriteLine($"variables ok: frame={vars.FrameId} count={vars.Variables.Count}");
             foreach (var v in vars.Variables)
@@ -85,6 +89,10 @@ internal static class LiveCheck
                 var eval = await bridge.EvaluateAsync(sessionId, expr, 10_000, cts.Token);
                 Console.WriteLine($"  {expr} = {eval.Value}");
             }
+            var target = Path.GetFileNameWithoutExtension(rest[0]);
+            var modules = await bridge.ListModulesAsync(sessionId, target, cts.Token);
+            foreach (var m in modules.Modules)
+                Console.WriteLine($"module: {m.Name} loaded={m.Loaded} symbols={m.SymbolState} {m.SymbolDetail}");
             try
             {
                 await bridge.LaunchProcessAsync(sessionId, rest[0], null, null, null, 10_000, cts.Token);

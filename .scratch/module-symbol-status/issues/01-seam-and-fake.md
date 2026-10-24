@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Listing returns name, path, loaded flag, symbol state, and detail, ordered deterministically by name.
-- [ ] Name filter works; one bad entry is flagged without failing the list; design mode fails with not-debugging.
-- [ ] Modules are scoped per debug session; listing twice changes nothing observable.
+- [x] Listing returns name, path, loaded flag, symbol state, and detail, ordered deterministically by name.
+- [x] Name filter works; one bad entry is flagged without failing the list; design mode fails with not-debugging.
+- [x] Modules are scoped per debug session; listing twice changes nothing observable.

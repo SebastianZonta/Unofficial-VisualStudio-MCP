@@ -39,6 +39,18 @@ public sealed class BreakpointTools
         return ToolErrors.MapAsync(() => bridge.ListBreakpointsAsync(sessionId, cancellationToken));
     }
 
+    [McpServerTool(Name = "list_modules")]
+    [Description("List the modules of the session's target process with loaded flag and symbol state (loaded/missing/failed/unknown). Read-only; requires break or run mode. First check when a breakpoint stays unbound.")]
+    public static Task<ListModulesResult> ListModulesAsync(
+        IDebugBridge bridge,
+        [Description("Session id returned by attach.")] string sessionId,
+        [Description("Optional case-insensitive substring filter on module name or path.")] string? nameFilter = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        return ToolErrors.MapAsync(() => bridge.ListModulesAsync(sessionId, nameFilter, cancellationToken));
+    }
+
     [McpServerTool(Name = "remove_breakpoint")]
     [Description("Remove a breakpoint this session created, by the stable id set_breakpoint returned.")]
     public static Task<RemoveBreakpointResult> RemoveBreakpointAsync(

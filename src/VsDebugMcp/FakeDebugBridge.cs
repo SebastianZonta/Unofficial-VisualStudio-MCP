@@ -19,6 +19,8 @@ public sealed class FakeDebugBridge : IDebugBridge
         public bool Dead { get; set; }
         /// <summary>Target PID bound via attach_process or launch_process; null while unbound.</summary>
         public int? TargetPid { get; set; }
+        /// <summary>Seeded module table of the session's target process.</summary>
+        public List<ModuleInfo> Modules { get; } = new();
     }
 
     private sealed record FakeBreakpoint(
@@ -138,6 +140,23 @@ public sealed class FakeDebugBridge : IDebugBridge
         items.AddRange(session.ForeignBreakpoints.Select((bp, i) => new BreakpointInfo(
             BreakpointOptions.ForeignId(i + 1), bp.File, bp.Line, Bound: true, Warning: BreakpointOptions.ForeignWarning)));
         return new ListBreakpointsResult(items, session.Mode, session.LastHit, session.Log.ToList());
+    }
+
+    public async Task<ListModulesResult> ListModulesAsync(string sessionId, string? nameFilter, CancellationToken ct)
+    {
+        var session = await RequireAsync(sessionId, ct);
+        ModuleListing.RequireDebugging(session.Mode);
+        return new ListModulesResult(ModuleListing.FilterAndOrder(session.Modules, nameFilter), session.Mode, session.LastHit);
+    }
+
+    /// <summary>Test hook: seeds the module table of the session's target process.</summary>
+    public void SetModules(string sessionId, IEnumerable<ModuleInfo> modules)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+        {
+            session.Modules.Clear();
+            session.Modules.AddRange(modules);
+        }
     }
 
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)

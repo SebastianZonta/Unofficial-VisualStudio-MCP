@@ -1,6 +1,6 @@
 # Tools reference
 
-16 tools over stdio. Session id comes from `attach` — one live session per VS
+17 tools over stdio. Session id comes from `attach` — one live session per VS
 instance. `list_instances`, `list_processes`, and `list_sessions` are
 session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 
@@ -22,6 +22,7 @@ session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 |---|---|---|
 | `set_breakpoint` | `sessionId`, `file`, `line` (1-based), `condition?`, `hitCount?`, `hitCountMode?` (`exact` default \| `every`), `logMessage?` | Returns id + bind state immediately; unbound carries a warning, never an error. `condition` is read-only (same rules as `evaluate`): break only when true. `hitCount` N breaks on the Nth hit (`exact`) or every Nth hit (`every`); `hitCountMode` alone is rejected. `logMessage` is a template with `{expression}` holes (each read-only): a logpoint never stops and never sets `lastHit`, and is incompatible with `condition`/`hitCount`. Bad options fail naming the input and create nothing. |
 | `list_breakpoints` | `sessionId` | Poll until unbound flips to bound. Entries show `condition`, hit-count setting, current `HitCount`, and bind state; `Log` carries the session's buffered logpoint entries (readable without changing mode). Breakpoints the debug session created keep the `bp<N>` id `set_breakpoint` returned; every other breakpoint in the VS instance (set by the user or another debug session) is listed as `other<N>` (its current position, recomputed each call) with a warning, and is list-only. |
+| `list_modules` | `sessionId`, `nameFilter?` = null (case-insensitive substring on name or path) | Read-only; requires break or run mode (design is `not-running`). Entry per module of the debug session's target process: `name`, `path`, `loaded`, `symbolState` (`loaded`/`missing`/`failed`/`unknown`), `symbolDetail` (symbol path when loaded, reason when failed or unreadable, else empty). Sorted by name, then path. First check when a breakpoint stays unbound. Live VS reports only loaded modules and either a symbol file (`loaded`) or none (`missing`); an unreadable module is `unknown` with detail, never a failed list. Never loads symbols or modules. |
 | `remove_breakpoint` | `sessionId`, `breakpointId` | Removes only breakpoints this debug session created. Ids are stable for the life of the debug session and never reused: removing one leaves every other id unchanged, and a removed id stays `breakpoint-not-found`. `other<N>` ids are rejected with `breakpoint-not-found`. |
 
 ## Execution (in `ExecutionTools`)
@@ -69,7 +70,7 @@ Failures are structured `code: detail; remediation: …`:
 | `already-bound` | `launch_process` or `attach_process` while the debug session already debugs a target process (consent and same-user are still checked first) | detach or let the current run end, then bind |
 | `launch-failed` | the OS could not start the executable, or the VS instance could not see the started target process | check the executable is runnable by the bridge user; retry |
 | `not-in-break-mode` | inspect/step/evaluate outside break mode | resume to a breakpoint or pause first |
-| `not-running` | `pause` while not running | resume first, then pause while running |
+| `not-running` | `pause` while not running, or `list_modules` in design mode (not debugging) | resume first, then pause while running; for `list_modules`, `attach_process` or `launch_process` first |
 | `already-running` | `resume` while already running | pause first to inspect |
 | `invalid-argument` | empty file/breakpointId/expression, bad line, bad step direction, `;`, newline, assignment, `++`/`--` or `<<=`/`>>=` in an expression or `read_variables` `path`, write-like/multiline `condition`, bad `hitCount`/`hitCountMode`, bad `logMessage` (empty, unbalanced braces, write-like hole, or combined with stopping options), relative, `devenv`, or non-.NET (no `.runtimeconfig.json` beside it) `executablePath`, missing `workingDirectory` | follow the per-field guidance in the message |
 | `invalid-expression` | expression did not evaluate, or would have side effects (no-side-effects mode refused it) | pass a read-only expression valid in the top frame; prefer fields and property reads over method calls |

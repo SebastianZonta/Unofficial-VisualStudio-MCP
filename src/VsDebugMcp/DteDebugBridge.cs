@@ -479,6 +479,45 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             return new ListBreakpointsResult(items, ModeOf(debugger), LastHitOf(debugger), log);
         }, ct);
 
+    public async Task<ListModulesResult> ListModulesAsync(string sessionId, string? nameFilter, CancellationToken ct)
+        => await RunSnapshotAsync(sessionId, debugger =>
+        {
+            var mode = ModeOf(debugger);
+            ModuleListing.RequireDebugging(mode);
+            // Report-only: reads the debugger's loaded-module list, never loads symbols or modules.
+            var modules = new List<ModuleInfo>();
+            foreach (EnvDTE.Process process in debugger.DebuggedProcesses)
+            {
+                if (process is not EnvDTE90.Process3 p3) continue;
+                foreach (EnvDTE90.Module module in p3.Modules)
+                    modules.Add(SnapshotModule(module));
+            }
+            return new ListModulesResult(ModuleListing.FilterAndOrder(modules, nameFilter), mode, LastHitOf(debugger));
+        }, ct);
+
+    /// <summary>EnvDTE lists loaded modules only and exposes just the symbol file, so the state is
+    /// loaded (path) or missing (empty); missing-vs-mismatched PDB is not distinguishable here.
+    /// One unreadable module is flagged unknown instead of failing the list.</summary>
+    private static ModuleInfo SnapshotModule(EnvDTE90.Module module)
+    {
+        var name = "";
+        var path = "";
+        try
+        {
+            name = module.Name;
+            path = module.Path;
+            var symbols = module.SymbolFile;
+            return string.IsNullOrEmpty(symbols)
+                ? new ModuleInfo(name, path, Loaded: true, SymbolStates.Missing, "")
+                : new ModuleInfo(name, path, Loaded: true, SymbolStates.Loaded, symbols);
+        }
+        catch (COMException ex) when (!ComErrorMapper.IsDisconnected(ex))
+        {
+            // A dead VS is not one bad module: disconnects propagate to vs-not-running.
+            return new ModuleInfo(name, path, Loaded: true, SymbolStates.Unknown, $"module unreadable: {ex.Message}");
+        }
+    }
+
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
         {

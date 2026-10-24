@@ -12,6 +12,7 @@ public interface IDebugBridge
     Task<SetBreakpointResult> SetBreakpointAsync(string sessionId, string file, int line, CancellationToken ct,
         string? condition = null, int? hitCount = null, string? hitCountMode = null, string? logMessage = null);
     Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct);
+    Task<ListModulesResult> ListModulesAsync(string sessionId, string? nameFilter, CancellationToken ct);
     Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct);
     Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct);
     Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct);

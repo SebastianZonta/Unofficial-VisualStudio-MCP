@@ -56,6 +56,15 @@ exception breaks, and design/run states report null. On an exception break
 (`[Exception]` frames, no `lastHit`), inspect the `$exception` local
 (`$exception.Message` works; method calls like `$exception.ToString()` do not).
 
+## Breakpoint stays unbound
+
+Symptom: `list_breakpoints` keeps showing `bound: false`. First check
+`list_modules(sessionId, nameFilter: <module>)` in break or run mode: no entry
+means the module is not loaded yet (run further, then poll again); `symbolState:
+missing` means no PDB was loaded for it (build Debug, keep the `.pdb` beside the
+binary). Live VS reports only `loaded`/`missing`; `unknown` means no
+information, not "fine". In design mode `list_modules` is `not-running`.
+
 ## PID recycle (`process-not-found`)
 
 Symptom: `attach_process` fails right after a successful `list_processes`.
