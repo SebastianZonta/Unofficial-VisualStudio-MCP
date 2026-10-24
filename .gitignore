@@ -10,3 +10,4 @@ publish/
 .DS_Store
 .codegraph/
 .scratch/e2e-runs/
+.claude/settings.local.json
