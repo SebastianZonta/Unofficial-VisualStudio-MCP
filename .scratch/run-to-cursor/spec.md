@@ -1,6 +1,6 @@
 # Run to Cursor
 
-Status: ready-for-human
+Status: resolved
 
 ## Problem Statement
 

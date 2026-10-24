@@ -123,13 +123,14 @@ internal static class LiveCheck
 
     /// <summary>run_to_cursor manual check: launch, break at &lt;line&gt;, drop that breakpoint, run to
     /// &lt;toLine&gt; in the same file in one call; arrival shows the destination lastHit and the
-    /// breakpoint list is unchanged. Sandbox: launch with no args (loop), TICK then AFTER_LOOP.</summary>
+    /// breakpoint list is unchanged. Sandbox: launch with no args (loop), TICK then AFTER_LOOP.
+    /// Design-mode rejection is always checked; optional &lt;runLine&gt; (Sandbox: HEARTBEAT) adds run mode and timeout via a `wait 20` relaunch.</summary>
     public static async Task<int> RunToCursorAsync(string[] args)
     {
         var rest = args.SkipWhile(a => a != "--live-check-run-to").Skip(1).ToArray();
         if (rest.Length < 4 || !int.TryParse(rest[2], out var line) || !int.TryParse(rest[3], out var toLine))
         {
-            Console.Error.WriteLine("usage: VsDebugMcp --live-check-run-to <exe> <file> <line> <toLine>");
+            Console.Error.WriteLine("usage: VsDebugMcp --live-check-run-to <exe> <file> <line> <toLine> [<runLine>]");
             return 2;
         }
         using var bridge = new DteDebugBridge();
@@ -140,6 +141,17 @@ internal static class LiveCheck
         {
             var attach = await bridge.AttachAsync(null, cts.Token);
             sessionId = attach.SessionId;
+            try
+            {
+                await bridge.RunToCursorAsync(sessionId, rest[1], toLine, 5_000, cts.Token);
+                Console.Error.WriteLine("run_to_cursor in design mode was not refused");
+                return 1;
+            }
+            catch (DebugDomainException ex) when (ex.Code == ErrorCodes.NotRunning)
+            {
+                var left = (await bridge.ListBreakpointsAsync(sessionId, cts.Token)).Breakpoints.Count;
+                Console.WriteLine($"design mode refused: {ex.Code}; breakpoints left={left}");
+            }
             var set = await bridge.SetBreakpointAsync(sessionId, rest[1], line, cts.Token);
             bpId = set.Breakpoint.Id;
             var launch = await bridge.LaunchProcessAsync(sessionId, rest[0], null, null, null, 30_000, cts.Token);
@@ -149,7 +161,19 @@ internal static class LiveCheck
                 Console.Error.WriteLine("start breakpoint did not hit");
                 return 1;
             }
-            await bridge.RemoveBreakpointAsync(sessionId, bpId, cts.Token);
+            // VS can stay busy for a few seconds right after the first break (seen live as vs-busy).
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    await bridge.RemoveBreakpointAsync(sessionId, bpId, cts.Token);
+                    break;
+                }
+                catch (DebugDomainException ex) when (ex.Code == "vs-busy" && attempt < 5)
+                {
+                    await Task.Delay(1_000, cts.Token);
+                }
+            }
             bpId = null;
             // A breakpoint of mine already at the destination must survive the temporary one's removal.
             bpId = (await bridge.SetBreakpointAsync(sessionId, rest[1], toLine, cts.Token)).Breakpoint.Id;
@@ -165,7 +189,23 @@ internal static class LiveCheck
             bpId = null;
             var end = await bridge.ResumeAsync(sessionId, 30_000, cts.Token);
             Console.WriteLine($"run to end: mode={end.Mode} note={end.Note}");
-            return arrived && survived && before == after ? 0 : 1;
+            if (!(arrived && survived && before == after))
+                return 1;
+            if (rest.Length < 5 || !int.TryParse(rest[4], out var runLine))
+                return 0;
+            // Run mode and timeout: a long-running target (Sandbox `wait 20`), destination
+            // <runLine> reached from run mode, then <toLine> never reached within the budget.
+            await bridge.LaunchProcessAsync(sessionId, rest[0], "wait 20", null, null, 15_000, cts.Token);
+            var fromRun = await bridge.RunToCursorAsync(sessionId, rest[1], runLine, 10_000, cts.Token);
+            Console.WriteLine($"from run mode: mode={fromRun.Mode} lastHit={fromRun.LastHit}");
+            var missed = await bridge.RunToCursorAsync(sessionId, rest[1], toLine, 2_000, cts.Token);
+            var leftover = (await bridge.ListBreakpointsAsync(sessionId, cts.Token)).Breakpoints.Count;
+            Console.WriteLine($"timeout: mode={missed.Mode} status={missed.Status} lastHit={missed.LastHit} breakpoints left={leftover}");
+            // Still running: wait out the target via run mode (resume would be already-running).
+            var drained = await bridge.RunToCursorAsync(sessionId, rest[1], toLine, 40_000, cts.Token);
+            Console.WriteLine($"wait to end: mode={drained.Mode}");
+            return fromRun.Mode == "break" && fromRun.LastHit?.EndsWith($":{runLine}", StringComparison.Ordinal) == true
+                && missed.Mode == "run" && missed.LastHit is null && leftover == 0 ? 0 : 1;
         }
         catch (DebugDomainException ex)
         {
