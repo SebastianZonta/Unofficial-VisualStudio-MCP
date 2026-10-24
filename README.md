@@ -1,6 +1,6 @@
 # VsDebugMcp
 
-Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 18 tools over stdio.
+Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 20 tools over stdio.
 
 > **Unofficial project. Not affiliated with, sponsored, or endorsed by Microsoft.**
 > Visual Studio, EnvDTE, and .NET are trademarks of the Microsoft group of companies.
@@ -8,6 +8,10 @@ Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, i
 > (`EnvDTE`) interface. It is a community integration, not a Microsoft product, and it
 > ships with no warranty. Licensed under Apache 2.0 — see [LICENSE](LICENSE).
 See [INSTALL.md](INSTALL.md) for setup.
+
+## Documentation
+
+Everything is indexed in [docs/README.md](docs/README.md): tool reference ([TOOLS.md](docs/TOOLS.md)), failures ([TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)), decisions ([ADRs](docs/adr/README.md)), agent workflow, and work tracking.
 
 ## What it does
 
@@ -19,7 +23,7 @@ An agent workflow looks like this:
 4. `attach_process` — aim the debugger at it (`consent: true`, same-user only). Or skip steps 3–4: `launch_process` starts the program with the debugger attached from birth, so startup breakpoints hit.
 5. `set_breakpoint` → `resume` → `read_stack` / `read_variables` / `evaluate` → `resume`.
 
-## Tools (17)
+## Tools (20)
 
 | Tool | One line |
 |---|---|
@@ -45,16 +49,16 @@ An agent workflow looks like this:
 | `evaluate` | Read-only expression. No assignments, no statements. Requires break mode. |
 
 Failures are structured: `code: detail; remediation: …` (e.g. `consent-required`,
-`user-mismatch`, `process-not-found`, `already-bound`, `no-session`, `vs-not-running`). See
+`user-mismatch`, `process-not-found`, `already-bound`, `no-session`, `vs-not-running`); the full list is the
+[error catalog](docs/TOOLS.md#error-catalog). See
 [GLOSSARY.md](GLOSSARY.md) for the vocabulary these messages use
 (VS instance vs debug session vs target process vs instance override).
 
 ## Requirements
 
 - 64-bit Windows, Visual Studio 2026 running as the same user as the MCP host.
-- For running from source: .NET 10 SDK. The five EnvDTE `HintPath`s in
-  `src/VsDebugMcp/VsDebugMcp.csproj` point at VS 2026 Community in the default
-  install path; retarget them for other editions.
+- For running from source: .NET 10 SDK. A non-default VS install path needs
+  `VSINSTALLDIR` set ([TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#build-envdte-hintpath-misses)).
 - No VS needed for the unit tests (they run against an in-memory fake bridge).
 
 Full setup — self-contained `standalone` folder or source build, client
@@ -68,10 +72,9 @@ dotnet test                                     # no VS required
 dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Debug -o src/VsDebugMcp/bin/Fixed
 ```
 
-Notes on the publish step: the `bin/Fixed` output is an example of what an MCP
-client config can point at. The file is locked while the MCP host runs, so stop the
-host (restart the client) before republishing, then restart the client again to load
-the new binary.
+The `bin/Fixed` output is an example of what an MCP client config can point at.
+Republishing while the host runs fails: see
+[Exe locked on republish](docs/TROUBLESHOOTING.md#exe-locked-on-republish).
 
 `--live-check <file> <line>` and `--live-check-full` run builder-only harnesses
 against the real VS and exit; the server itself uses the live bridge by default.

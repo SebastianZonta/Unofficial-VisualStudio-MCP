@@ -9,6 +9,8 @@ instances and never touches any other VS instance.
 
 Bar: every non-OBS case PASS. One FAIL or BLOCKED fails the pass.
 
+Contents: [Automated suite](#automated-suite-audit-should-fix) · [Roles](#roles) · [Runner rules](#runner-rules) · [Sandbox reference](#sandbox-reference) · cases [P0 setup](#p0-setup) → [P1 discovery](#p1-discovery-session-less) → [P2 lifecycle](#p2-session-lifecycle) → [P3 breakpoint identity](#p3-breakpoint-identity-and-ownership) → [P4 conditions](#p4-conditions-hit-counts-logpoints-loop) → [P5 inspection](#p5-inspection-inspect) → [P6 frames](#p6-frames-stack) → [P7 stepping](#p7-stepping-step) → [P8 execution and launch](#p8-execution-control-and-launch) → [P9 attach_process](#p9-attach_process-waitpid-from-s4) → [P10 two VS](#p10-two-vs-instances) → [P11 cleanup](#p11-cleanup-always-run-even-after-a-fail-or-blocked) · [H human-assisted](#h-human-assisted-main-agent-after-the-subagent-returns) · [Report](#report)
+
 ## Automated suite (audit-should-fix)
 
 `tests/VsDebugMcp.E2E` drives the same Sandbox target through the same tools over

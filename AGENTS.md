@@ -34,10 +34,9 @@ dotnet test --filter "FullyQualifiedName~<TestClass>"  # single suite
 ## Conventions
 
 - Vocabulary: use `GLOSSARY.md` terms (VS instance vs debug session vs target process, mine/consent, mode/lastHit). Surface ADR conflicts explicitly.
-- Issues/specs live in `.scratch/` (one dir per feature, `spec.md` + `issues/NN-<slug>.md` with `Status:` line). See `docs/agents/issue-tracker.md`.
-- Triage labels are the five canonical strings (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+- Issues/specs live in `.scratch/` (one dir per feature, `spec.md` + `issues/NN-<slug>.md` with `Status:` line); conventions and labels in `docs/agents/issue-tracker.md`, `docs/agents/triage-labels.md`.
 - Commits for spec work use conventional commits (`feat:`, `fix:`, `docs:`, …).
-- Tool/parameter reference: `docs/TOOLS.md`; failure playbook: `docs/TROUBLESHOOTING.md`.
+- Docs index (tools, troubleshooting, ADRs, e2e, work tracking): `docs/README.md`.
 - E2E: after a feature, run the real-VS pass in `docs/agents/e2e.md`: fan out one subagent on Sonnet 5.5 (Agent tool, `model: "sonnet"`) against `Sandbox/`, which starts its own VS instances and never touches yours. Then the main agent runs phase H with the user. Bar: every case PASS.
 - `Sandbox/` is the E2E debug target: outside the solution, its own `Directory.Build.props` (no analyzers), breakpoint lines found by `// E2E:<NAME>` markers. When you change a scenario, update the e2e.md marker table too.
 - Publish the MCP before the E2E pass so it runs against the fresh binary (src/bin is locked while hosts run: stop the clients first).

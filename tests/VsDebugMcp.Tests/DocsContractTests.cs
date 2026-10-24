@@ -49,11 +49,14 @@ public sealed class DocsContractTests
         Assert.All(codes, code => Assert.Contains($"| `{code}` |", tools));
     }
 
-    [Fact]
-    public void E2E_tool_counts_match_the_registered_tools()
+    [Theory]
+    [InlineData("docs/agents/e2e.md")]
+    [InlineData("docs/TOOLS.md")]
+    [InlineData("README.md")]
+    public void Tool_counts_match_the_registered_tools(string doc)
     {
-        var counts = Regex.Matches(Doc("docs/agents/e2e.md"), @"(?:all|every one of the) (\d+) tools")
-            .Select(m => int.Parse(m.Groups[1].Value))
+        var counts = Regex.Matches(Doc(doc), @"\b(\d+) tools\b|Tools \((\d+)\)")
+            .Select(m => int.Parse(m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value))
             .ToList();
 
         Assert.NotEmpty(counts);

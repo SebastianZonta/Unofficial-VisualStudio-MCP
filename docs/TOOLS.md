@@ -1,8 +1,10 @@
 # Tools reference
 
-17 tools over stdio. Session id comes from `attach` — one live session per VS
+20 tools over stdio. Session id comes from `attach` — one live session per VS
 instance. `list_instances`, `list_processes`, and `list_sessions` are
 session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
+
+Contents: [Session](#session-in-sessiontools) · [Breakpoints](#breakpoints-in-breakpointtools) · [Execution](#execution-in-executiontools) · [Inspection](#inspection-in-inspectiontools) · [Result envelope](#result-envelope) · [Error catalog](#error-catalog)
 
 ## Session (in `SessionTools`)
 

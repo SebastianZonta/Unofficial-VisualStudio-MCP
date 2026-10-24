@@ -1,12 +1,41 @@
 # Troubleshooting
 
-## Elevation mismatch (`elevation-mismatch`)
+Failure playbook, by symptom. Error codes are defined in the
+[TOOLS.md error catalog](TOOLS.md#error-catalog).
+
+- Setup and environment: [elevation mismatch](#elevation-mismatch-elevation-mismatch), [EnvDTE `HintPath` misses](#build-envdte-hintpath-misses), [exe locked on republish](#exe-locked-on-republish)
+- VS state: [busy / modal dialog](#vs-busy--modal-dialog-vs-busy-timeout), [dead VS instance](#dead-vs-instance-vs-not-running-per-session)
+- Targets and breakpoints: [PID recycle](#pid-recycle-process-not-found), [wrong process attached](#wrong-process-attached), [breakpoint stays unbound](#breakpoint-stays-unbound)
+- Evaluation and results: [side-effect refusal](#side-effect-refusal-invalid-expression), [empty `lastHit`](#empty-lasthit), [null exception `message`](#exception-break-with-a-null-message), [exception setting did not stop](#exception-settings-did-not-stop-the-target)
+
+## Setup and environment
+
+### Elevation mismatch (`elevation-mismatch`)
 
 Symptom: access-denied talking to VS. Cause: bridge and VS run at different
 integrity levels. Fix: restart the bridge at the same elevation as VS — both
 elevated or both not. Same Windows user is always required.
 
-## VS busy / modal dialog (`vs-busy`, `timeout`)
+### Build: EnvDTE `HintPath` misses
+
+Symptom: build fails resolving `EnvDTE*` references. Cause: the `HintPath`s in
+`src/VsDebugMcp/VsDebugMcp.csproj` resolve from `$(VSINSTALLDIR)`, else the
+VS 2026 Enterprise, Professional, then Community default path
+(`C:\Program Files\Microsoft Visual Studio\18\<Edition>\…`); a non-default
+install path matches none. Fix: build from a VS Developer prompt (sets
+`VSINSTALLDIR`) or set it yourself. The references are build-time only
+(embedded interop); the runtime binds DTE from the ROT.
+
+### Exe locked on republish
+
+Symptom: publish/overwrite fails while the client runs. Cause: the MCP host
+locks the exe. Fix: stop the host (close/restart the client) before
+republishing, then restart the client to load the new binary. Or publish to a
+fresh folder and repoint the client config.
+
+## VS state
+
+### VS busy / modal dialog (`vs-busy`, `timeout`)
 
 Symptom: calls fail with `vs-busy` or time out while VS shows a dialog or is
 otherwise occupied. Fix: dismiss any modal dialog in VS and retry. `resume`
@@ -17,64 +46,28 @@ queued is dropped, never run late: a reported `timeout` means no stale `Go`,
 step or launch fires once VS frees up. Work already running on VS is not
 interrupted.
 
-## Side-effect refusal (`invalid-expression`)
-
-Symptom: `evaluate` (or a drill-down `path`, or a logpoint hole showing
-`(unavailable)`) fails although the expression is valid C#. Cause: the live
-bridge evaluates in no-side-effects mode (`, nse`,
-[ADR-0010](adr/0010-no-side-effects-eval.md)); a method call or property
-getter VS judges side-effecting is refused instead of run. Fix: read fields
-or plain properties instead (`list.Count`, `s.Length`); there is no override.
-
-## Dead VS instance (`vs-not-running`, per-session)
+### Dead VS instance (`vs-not-running`, per-session)
 
 Symptom: one session fails with `vs-not-running` while the others keep
 working. Cause: its bound VS exited. Fix: `detach` the dead session (or
 re-attach the same `instanceOverride` for a fresh binding); sibling sessions
 are unaffected and keep their ids.
 
-## Build: EnvDTE `HintPath` misses
+## Targets and breakpoints
 
-Symptom: build fails resolving `EnvDTE*` references. Cause: the five `HintPath`s
-in `src/VsDebugMcp/VsDebugMcp.csproj` point at VS 2026 **Community** in the
-default path (`C:\Program Files\Microsoft Visual Studio\18\Community\…`).
-Fix: retarget them to your edition/install path. They are build-time only
-(embedded interop); the runtime binds DTE from the ROT.
+### PID recycle (`process-not-found`)
 
-## Exe locked on republish
+Symptom: `attach_process` fails right after a successful `list_processes`.
+Cause: PIDs are recycled by the OS — the process exited between list and
+attach. Fix: list, then attach promptly; on `process-not-found`, re-list.
 
-Symptom: publish/overwrite fails while the client runs. Cause: the MCP host
-locks the exe. Fix: stop the host (close/restart the client) before
-republishing, then restart the client to load the new binary. Or publish to a
-fresh folder and repoint the client config.
+### Wrong process attached
 
-## Empty `lastHit`
+`list_instances` PIDs are VS IDE processes (`devenv`) — never pass one to
+`attach_process`. Match the target program by name in `list_processes` and
+check the `mine` flag before attaching with `consent: true`.
 
-Symptom: results carry `lastHit: null`. This is normal: `lastHit` is only set
-for breakpoint hits (`file:line` via `BreakpointLastHit`). Stepping,
-exception breaks, and design/run states report null. An exception break
-carries `exception` instead (`type`, `path` `$exception`, `message`); drill
-further via `read_variables(path: "$exception")` or `evaluate`
-(`$exception.Message` works; method calls like `$exception.ToString()` do not).
-
-## Exception break with a null `message`
-
-Symptom: the result has `exception.message: null` and the note says the message
-is unreadable. Cause: the no-side-effects evaluator refused (or failed) the
-`Message` getter, which often builds text from resources. The break itself is
-real. Fix: `read_variables(f0, path: "$exception")` and read the backing
-field (e.g. `_message`). Record which exception types do this here.
-
-## Exception settings did not stop the target
-
-Symptom: `set_exception_setting(..., "first-chance")` succeeded but the throw
-did not break. Check `list_exception_settings(nameFilter: <type>)` shows
-`first-chance`, and that the thrown type is exactly that name (a derived type
-has its own entry). Changes need break or design mode: a change attempted while
-running fails with `already-running`. Settings live in the VS instance and may
-persist with the solution: reset with `default` when done.
-
-## Breakpoint stays unbound
+### Breakpoint stays unbound
 
 Symptom: `list_breakpoints` keeps showing `bound: false`. First check
 `list_modules(sessionId, nameFilter: <module>)` in break or run mode: no entry
@@ -88,14 +81,40 @@ removed) when the destination does not bind. Live VS only reports this when it
 rejects the location; a pending one runs to the timeout, so on a still-running
 result check the path and `list_modules` as above.
 
-## PID recycle (`process-not-found`)
+## Evaluation and results
 
-Symptom: `attach_process` fails right after a successful `list_processes`.
-Cause: PIDs are recycled by the OS — the process exited between list and
-attach. Fix: list, then attach promptly; on `process-not-found`, re-list.
+### Side-effect refusal (`invalid-expression`)
 
-## Wrong process attached
+Symptom: `evaluate` (or a drill-down `path`, or a logpoint hole showing
+`(unavailable)`) fails although the expression is valid C#. Cause: the live
+bridge evaluates in no-side-effects mode (`, nse`,
+[ADR-0010](adr/0010-no-side-effects-eval.md)); a method call or property
+getter VS judges side-effecting is refused instead of run. Fix: read fields
+or plain properties instead (`list.Count`, `s.Length`); there is no override.
 
-`list_instances` PIDs are VS IDE processes (`devenv`) — never pass one to
-`attach_process`. Match the target program by name in `list_processes` and
-check the `mine` flag before attaching with `consent: true`.
+### Empty `lastHit`
+
+Symptom: results carry `lastHit: null`. This is normal: `lastHit` is only set
+for breakpoint hits (`file:line` via `BreakpointLastHit`). Stepping,
+exception breaks, and design/run states report null. An exception break
+carries `exception` instead (shape in the
+[TOOLS.md envelope](TOOLS.md#execution-in-executiontools)); drill
+further via `read_variables(path: "$exception")` or `evaluate`
+(`$exception.Message` works; method calls like `$exception.ToString()` do not).
+
+### Exception break with a null `message`
+
+Symptom: the result has `exception.message: null` and the note says the message
+is unreadable. Cause: the no-side-effects evaluator refused (or failed) the
+`Message` getter, which often builds text from resources. The break itself is
+real. Fix: `read_variables(f0, path: "$exception")` and read the backing
+field (e.g. `_message`). Record which exception types do this here.
+
+### Exception settings did not stop the target
+
+Symptom: `set_exception_setting(..., "first-chance")` succeeded but the throw
+did not break. Check `list_exception_settings(nameFilter: <type>)` shows
+`first-chance`, and that the thrown type is exactly that name (a derived type
+has its own entry). Changes need break or design mode: a change attempted while
+running fails with `already-running`. Settings live in the VS instance and may
+persist with the solution: reset with `default` when done.
