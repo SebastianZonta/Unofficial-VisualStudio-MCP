@@ -37,6 +37,14 @@ handled). Next full E2E decides it: another C10 launch-stop → full
 PollResume-race investigation; clean pass → close. Until then this stays open
 as the canary.
 
+**Run 3 (scoped C10, standalone-v9, 2026-10-24):** no stop — launch went
+straight to `design`, now 1 stop in 3 runs. But the Log held 19/20 valid
+pairs plus one `(unavailable)/(unavailable)` (`2/1` missing): a logpoint hole
+evaluated while the thread's locals weren't readable. Different wrinkle from
+the stop-race (evaluator timing, not a missed continue), 1 occurrence in 60
+hits across the 3 runs. C10 data assertion technically unmet this run, so the
+canary stays open; the stop-race itself has not reproduced since R1R.
+
 **Status:** needs-info
 
 ## Comments
