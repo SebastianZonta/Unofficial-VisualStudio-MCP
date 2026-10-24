@@ -396,10 +396,20 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             // Own exactly what Add created (its returned collection), never "the last item
             // of the global list", which could be a breakpoint the user set.
             var bp = created is { Count: > 0 } ? created.Item(1) : debugger.Breakpoints.Item(debugger.Breakpoints.Count);
-            // The id is minted below, once the breakpoint is known to exist.
-            var info = SnapshotBreakpoint(bp, id: "");
-            // Automation cannot observe pending-vs-bound (Concord-only); a successful Add means VS accepted it.
-            return (Breakpoint: bp, Info: info with { Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger));
+            try
+            {
+                // The id is minted below, once the breakpoint is known to exist.
+                var info = SnapshotBreakpoint(bp, id: "");
+                // Automation cannot observe pending-vs-bound (Concord-only); a successful Add means VS accepted it.
+                return (Breakpoint: bp, Info: info with { Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger));
+            }
+            catch (COMException)
+            {
+                // Add succeeded but the call fails (e.g. busy): no id will own it, so it would
+                // linger as other<N>. Delete it best-effort before the error surfaces.
+                try { bp.Delete(); } catch (COMException) { /* best effort */ }
+                throw;
+            }
         }, ct);
         var id = "";
         lock (_gate)
@@ -533,10 +543,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             {
                 target.Breakpoint.Delete();
             }
-            catch (COMException)
+            catch (COMException ex) when (!ComErrorMapper.IsCallRejected(ex))
             {
                 // Already deleted by hand in VS (a deleted object can report a disconnect
                 // HResult): gone either way. A dead VS still surfaces via ModeOf below.
+                // A busy rejection deleted nothing: it propagates as vs-busy and the id stays owned.
             }
             Forget(sessionId, [breakpointId]);
             try { Marshal.ReleaseComObject(target.Breakpoint); } catch { /* best effort */ }

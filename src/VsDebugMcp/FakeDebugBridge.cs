@@ -47,6 +47,9 @@ public sealed class FakeDebugBridge : IDebugBridge
     /// <summary>Fake for an over-budget wait. When true, resume/step return a timeout status without changing mode.</summary>
     public bool ForceTimeout { get; set; }
 
+    /// <summary>Fake for a busy VS: the next N remove_breakpoint calls fail with vs-busy and delete nothing.</summary>
+    public int RemoveBusyFailures { get; set; }
+
     /// <summary>Fake for a parsed-but-not-evaluable expression. When true, evaluate returns invalid-expression.</summary>
     public bool ForceInvalidExpression { get; set; }
 
@@ -162,6 +165,12 @@ public sealed class FakeDebugBridge : IDebugBridge
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)
     {
         var session = await RequireAsync(sessionId, ct);
+        if (RemoveBusyFailures > 0)
+        {
+            // Busy rejection: nothing deleted, the id stays owned (like the live bridge).
+            RemoveBusyFailures--;
+            throw new DebugDomainException("vs-busy", "Visual Studio rejected the automation call", "dismiss any modal dialog in VS and retry");
+        }
         if (!session.Breakpoints.Remove(breakpointId))
             throw BreakpointOptions.NotFound(breakpointId);
         return new RemoveBreakpointResult(breakpointId, session.Mode, session.LastHit);

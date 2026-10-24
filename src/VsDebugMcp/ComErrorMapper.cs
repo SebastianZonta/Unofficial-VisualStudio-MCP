@@ -16,6 +16,9 @@ internal static class ComErrorMapper
     public static bool IsDisconnected(COMException ex) => ex.HResult is
         RpcEDisconnected or RpcSServerUnavailable or RpcSUnknownIf or RpcEServerCallRetryLater;
 
+    /// <summary>True when VS refused the call (busy): nothing happened, so the target is unchanged.</summary>
+    public static bool IsCallRejected(COMException ex) => ex.HResult == RpcECallRejected;
+
     public static DebugDomainException ToDomain(COMException ex) => ex.HResult switch
     {
         RpcECallRejected => new DebugDomainException(

@@ -113,6 +113,34 @@ public sealed class RunToCursorTests
         Assert.Equal(mine.Breakpoint.Id, Assert.Single(list.Breakpoints).Id);
     }
 
+    [Fact]
+    public async Task Busy_vs_on_cleanup_is_retried_until_the_temporary_breakpoint_is_gone()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+        bridge.RemoveBusyFailures = 2;
+
+        var run = await ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None);
+
+        Assert.Contains("Order.cs:20", run.LastHit);
+        Assert.Equal(0, await BreakpointCountAsync(bridge, sessionId));
+    }
+
+    [Fact]
+    public async Task Persistently_busy_cleanup_keeps_the_breakpoint_owned_and_removable()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+        bridge.RemoveBusyFailures = 10;
+
+        var run = await ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None);
+
+        Assert.Equal("break", run.Mode); // the run's own result is never masked
+        var left = Assert.Single((await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None)).Breakpoints);
+        Assert.StartsWith("bp", left.Id); // still owned, not other<N>
+        bridge.RemoveBusyFailures = 0;
+        await BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, left.Id, CancellationToken.None);
+        Assert.Equal(0, await BreakpointCountAsync(bridge, sessionId));
+    }
+
     [Theory]
     [InlineData(@"C:\src\Shop\Order.cs", "Order.cs", true)]
     [InlineData(@"C:\src\Shop\Order.cs", "Shop/Order.cs", true)]

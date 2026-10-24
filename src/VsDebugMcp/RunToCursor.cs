@@ -4,6 +4,9 @@ namespace VsDebugMcp;
 /// continue, and remove it on every exit path. Only the breakpoint this call created is touched.</summary>
 internal static class RunToCursor
 {
+    private const int RemoveAttempts = 4;
+    private const int RemoveRetryDelayMs = 250;
+
     /// <param name="cont">Continues from the given mode (break: resume; run: wait for the next stop).</param>
     public static async Task<ExecutionResult> RunAsync(IDebugBridge bridge, string sessionId, string file, int line,
         Func<string, Task<ExecutionResult>> cont, CancellationToken ct)
@@ -29,14 +32,25 @@ internal static class RunToCursor
         }
         finally
         {
-            try
+            // VS is often busy right after a launch or a hit (seen live as vs-busy): retry a few times.
+            for (var attempt = 1; ; attempt++)
             {
-                // Uncancellable: a cancelled call must still not leave the temporary breakpoint behind.
-                await bridge.RemoveBreakpointAsync(sessionId, set.Breakpoint.Id, CancellationToken.None);
-            }
-            catch (Exception ex) when (ex is DebugDomainException or TimeoutException or OperationCanceledException)
-            {
-                // Already gone (deleted by hand) or the VS instance died; never mask the run's own result.
+                try
+                {
+                    // Uncancellable: a cancelled call must still not leave the temporary breakpoint behind.
+                    await bridge.RemoveBreakpointAsync(sessionId, set.Breakpoint.Id, CancellationToken.None);
+                    break;
+                }
+                catch (DebugDomainException ex) when (ex.Code == "vs-busy" && attempt < RemoveAttempts)
+                {
+                    await Task.Delay(RemoveRetryDelayMs, CancellationToken.None);
+                }
+                catch (Exception ex) when (ex is DebugDomainException or TimeoutException or OperationCanceledException)
+                {
+                    // Already gone (deleted by hand), the VS instance died, or still busy: the id stays
+                    // owned, so remove_breakpoint can retry. Never mask the run's own result.
+                    break;
+                }
             }
         }
     }

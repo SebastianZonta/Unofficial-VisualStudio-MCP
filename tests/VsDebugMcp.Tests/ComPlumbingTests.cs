@@ -14,6 +14,14 @@ public sealed class ComPlumbingTests
     }
 
     [Fact]
+    public void Only_call_rejected_counts_as_busy_not_as_already_deleted()
+    {
+        Assert.True(ComErrorMapper.IsCallRejected(new COMException("rejected", unchecked((int)0x80010001))));
+        Assert.False(ComErrorMapper.IsCallRejected(new COMException("gone", unchecked((int)0x80010108))));
+        Assert.False(ComErrorMapper.IsCallRejected(new COMException("boom", unchecked((int)0x80004005))));
+    }
+
+    [Fact]
     public void Access_denied_maps_to_elevation_mismatch()
     {
         var ex = ComErrorMapper.ToDomain(new COMException("denied", unchecked((int)0x80070005)));
