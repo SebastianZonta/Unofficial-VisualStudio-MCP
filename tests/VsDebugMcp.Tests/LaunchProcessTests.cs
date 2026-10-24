@@ -156,4 +156,17 @@ public sealed class LaunchProcessTests : IDisposable
         var ex = await Assert.ThrowsAsync<McpException>(() => SessionTools.LaunchProcessAsync(bridge, sessionId, _exe));
         Assert.Contains("already-bound", ex.Message);
     }
+
+    [Fact]
+    public async Task Attach_process_after_launch_fails_named()
+    {
+        var (bridge, sessionId) = await AttachedAsync();
+        var launched = await SessionTools.LaunchProcessAsync(bridge, sessionId, _exe);
+        bridge.ProcessOwners[4321] = bridge.CurrentUser;
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true));
+        Assert.Contains("already-bound", ex.Message);
+        Assert.Contains(launched.ProcessId.ToString(), ex.Message);
+    }
 }

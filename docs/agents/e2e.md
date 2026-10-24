@@ -9,12 +9,32 @@ instances and never touches any other VS instance.
 
 Bar: every non-OBS case PASS. One FAIL or BLOCKED fails the pass.
 
+## Automated suite (audit-should-fix)
+
+`tests/VsDebugMcp.E2E` drives the same Sandbox target through the same tools over
+MCP stdio against the real server binary in live mode: one case per audit
+behaviour (stable ids, frame-true inspection, read-only gate incl.
+no-side-effects, no ghost resume, parallel attach, evaluate budget, attach mode,
+one-target rule). Opt-in and VS-free by default:
+
+```powershell
+$env:VSDEBUG_E2E=1
+$env:VSDEBUG_E2E_VS_A="!VisualStudio.DTE.18.0:<pidA>"  # from list_instances
+$env:VSDEBUG_E2E_VS_B="!VisualStudio.DTE.18.0:<pidB>"  # optional: enables the two-VS cases
+dotnet test tests/VsDebugMcp.E2E/VsDebugMcp.E2E.csproj
+```
+
+It never runs in CI. Busy-VS behaviour (a modal dialog open in VS) stays a manual
+step: it is the `BusyVs_StillSurfacesAfterRetryWindow` case, marked manual in the
+suite. The manual pass below remains the authority for everything the suite skips.
+
 ## Roles
 
 **Main agent (orchestrator)** does preflight, fans out, then triages:
 
 1. `dotnet build VsDebugMcp.slnx` and `dotnet test VsDebugMcp.slnx --no-build` green.
-2. Publish the MCP and get the host restarted on the fresh binary with `--live`
+2. Publish the MCP and get the host restarted on the fresh binary (live is the
+   default; `--live` is accepted as a no-op)
    (stop the clients first: the exe is locked while hosts run). Restarting the
    host is the user's action; ask, don't work around it.
 3. Check the host: the vs-debug toolset must list all 16 tools (`launch_process`

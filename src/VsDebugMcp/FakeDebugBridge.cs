@@ -70,7 +70,8 @@ public sealed class FakeDebugBridge : IDebugBridge
     public Task<ListInstancesResult> ListInstancesAsync(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        return Task.FromResult(new ListInstancesResult(Instances.ToList()));
+        // Fake marker: canned values must never be mistaken for a real VS instance.
+        return Task.FromResult(new ListInstancesResult(Instances.Select(i => i with { DisplayName = $"{i.DisplayName} [fake]" }).ToList()));
     }
 
     public Task<ListProcessesResult> ListProcessesAsync(string? nameFilter, bool ownedOnly, CancellationToken ct)
@@ -107,7 +108,7 @@ public sealed class FakeDebugBridge : IDebugBridge
     {
         ct.ThrowIfCancellationRequested();
         return Task.FromResult(new ListSessionsResult(
-            _sessions.Select(kv => new SessionInfo(kv.Key, kv.Value.InstanceKey)).ToList()));
+            _sessions.Select(kv => new SessionInfo(kv.Key, $"{kv.Value.InstanceKey} [fake]")).ToList()));
     }
 
     public async Task<DetachResult> DetachAsync(string sessionId, CancellationToken ct)
@@ -346,6 +347,8 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {CurrentUser}",
                 "only attach to your own processes");
+        if (session.TargetPid is { } bound)
+            throw ProcessLaunch.AlreadyBound(bound);
         session.TargetPid = processId;
         return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"attached to process {processId}");
     }

@@ -60,6 +60,12 @@ internal static class BreakpointOptions
         return CheckTextRules(expression) ?? CheckInvocationRule(expression);
     }
 
+    /// <summary>Single home for the tool-boundary code choice: only a pure invocation
+    /// failure is invalid-expression, anything tripping an earlier text gate is
+    /// invalid-argument. ArgumentValidator delegates here.</summary>
+    public static string CodeForExpression(string expression) =>
+        CheckTextRules(expression) is null ? ErrorCodes.InvalidExpression : ErrorCodes.InvalidArgument;
+
     /// <summary>Empty/statement/line/assignment gates: everything before the invocation gate.</summary>
     internal static (string Detail, string Remediation)? CheckTextRules(string expression)
     {

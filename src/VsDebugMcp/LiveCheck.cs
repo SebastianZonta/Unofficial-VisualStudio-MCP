@@ -82,20 +82,8 @@ internal static class LiveCheck
             }
             foreach (var expr in new[] { "args.Length", "args[1]", "System.Environment.CurrentDirectory", "System.Environment.GetEnvironmentVariable(\"LIVE_CHECK\")" })
             {
-                // Func-eval right after startup can be rejected while VS is still busy: retry vs-busy.
-                for (var attempt = 1; ; attempt++)
-                {
-                    try
-                    {
-                        var eval = await bridge.EvaluateAsync(sessionId, expr, 10_000, cts.Token);
-                        Console.WriteLine($"  {expr} = {eval.Value}");
-                        break;
-                    }
-                    catch (DebugDomainException ex) when (ex.Code == "vs-busy" && attempt < 10)
-                    {
-                        await Task.Delay(1000, cts.Token);
-                    }
-                }
+                var eval = await bridge.EvaluateAsync(sessionId, expr, 10_000, cts.Token);
+                Console.WriteLine($"  {expr} = {eval.Value}");
             }
             try
             {
@@ -186,7 +174,7 @@ internal static class LiveCheck
                 Console.Error.WriteLine("did not break in Helper");
                 return 1;
             }
-            var count = await RetryBusy(() => bridge.EvaluateAsync(sessionId, "items.Count", 10_000, cts.Token), cts.Token);
+            var count = await bridge.EvaluateAsync(sessionId, "items.Count", 10_000, cts.Token);
             Check(count.Value == "3" && count.Expression == "items.Count", $"nse property read works and echoes input (got {count.Expression} = {count.Value})");
             Check(await FailsWith(() => bridge.EvaluateAsync(sessionId, "items.Remove(1)", 10_000, cts.Token), "invalid-expression"), "mutating call refused");
             var after = await bridge.EvaluateAsync(sessionId, "items.Count", 10_000, cts.Token);
@@ -235,19 +223,6 @@ internal static class LiveCheck
         {
             Console.WriteLine($"  -> {ex.Code}: {ex.Message}");
             return ex.Code == code;
-        }
-    }
-
-    private static async Task<T> RetryBusy<T>(Func<Task<T>> call, CancellationToken ct)
-    {
-        // Func-eval right after startup can be rejected while VS is still busy.
-        for (var attempt = 1; ; attempt++)
-        {
-            try { return await call(); }
-            catch (DebugDomainException ex) when (ex.Code == "vs-busy" && attempt < 10)
-            {
-                await Task.Delay(1000, ct);
-            }
         }
     }
 

@@ -70,7 +70,9 @@ host (restart the client) before republishing, then restart the client again to 
 the new binary.
 
 `--live-check <file> <line>` and `--live-check-full` run builder-only harnesses
-against the real VS and exit; without `--live`, the server starts on the fake bridge.
+against the real VS and exit; the server itself uses the live bridge by default.
+`--fake` opts into the fake bridge (canned values, a stderr warning, and
+`[fake]` instance display names); `--live` is accepted as a no-op so old configs keep working.
 
 ## Architecture
 

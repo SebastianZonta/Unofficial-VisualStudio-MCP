@@ -54,7 +54,8 @@ Unknown owners fail closed (not mine).
 _Avoid_: owned, permission (when meaning these two gates)
 
 **Mode / last-hit**:
-`mode` is the debugger state (`design`/`run`/`break`) echoed on every result.
+`mode` is the debugger state (`design`/`run`/`break`, or `unknown` when a state
+read timed out or VS rejected it) echoed on every result.
 `lastHit` is the `file:line` of the breakpoint last hit (null otherwise) —
 the only per-frame file/line source.
 _Avoid_: status, state (when meaning mode); hit (when meaning lastHit)

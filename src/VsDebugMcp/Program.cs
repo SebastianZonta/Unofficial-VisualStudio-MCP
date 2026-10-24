@@ -20,10 +20,14 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
-if (args.Contains("--live", StringComparer.Ordinal))
-    builder.Services.AddSingleton<IDebugBridge, DteDebugBridge>();
-else
+var fake = args.Contains("--fake", StringComparer.Ordinal);
+if (fake)
     builder.Services.AddSingleton<IDebugBridge, FakeDebugBridge>();
+else
+    builder.Services.AddSingleton<IDebugBridge, DteDebugBridge>();
+// --live is a no-op (live is the default); --fake opts into the fake bridge.
+if (fake)
+    Console.Error.WriteLine("warning: running with --fake: values are canned and must not be treated as a real debuggee");
 
 builder.Services
     .AddMcpServer()

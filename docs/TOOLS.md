@@ -58,7 +58,7 @@ Failures are structured `code: detail; remediation: …`:
 |---|---|---|
 | `no-session` | unknown session id | call `attach` first |
 | `vs-not-running` | no ROT instance, or override matched none, or the bound VS exited | start VS 2026 / check override / re-attach. Per-session: only the dead session is affected; `detach` it or re-attach. |
-| `vs-busy` | VS rejected the call (RPC_E_CALL_REJECTED: modal dialog or blocked UI thread) | dismiss any modal dialog in VS and retry |
+| `vs-busy` | VS rejected the call (RPC_E_CALL_REJECTED: modal dialog or blocked UI thread); the server already retried briefly before surfacing it | dismiss any modal dialog in VS and retry |
 | `elevation-mismatch` | access denied talking to VS (integrity-level mismatch) | run bridge at the same elevation as VS (both elevated or both not) |
 | `automation-failed` | other COM failure | dismiss dialogs and retry; restart VS if it persists |
 | `timeout` | automation call exceeded its budget | dismiss dialogs and retry (with larger `timeoutMs` for waits) |
@@ -66,7 +66,7 @@ Failures are structured `code: detail; remediation: …`:
 | `user-mismatch` | target process owned by another user (or owner unknowable — fails closed) | only attach to your own processes |
 | `process-not-found` | no local process with that pid (exited or recycled) | re-list and retry promptly |
 | `executable-not-found` | `launch_process` path has no file | pass the full path to a built target executable |
-| `already-bound` | `launch_process` while the debug session already debugs a target process | detach or let the current run end, then launch |
+| `already-bound` | `launch_process` or `attach_process` while the debug session already debugs a target process (consent and same-user are still checked first) | detach or let the current run end, then bind |
 | `launch-failed` | the OS could not start the executable, or the VS instance could not see the started target process | check the executable is runnable by the bridge user; retry |
 | `not-in-break-mode` | inspect/step/evaluate outside break mode | resume to a breakpoint or pause first |
 | `not-running` | `pause` while not running | resume first, then pause while running |

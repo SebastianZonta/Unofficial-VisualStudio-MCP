@@ -60,17 +60,13 @@ public static class ArgumentValidator
     }
 
     /// <summary>Evaluate shares the single read-only rule (<see cref="BreakpointOptions"/>):
-    /// every text failure delegates there. The code follows the first failing
-    /// gate: only a pure invocation failure is invalid-expression, anything
-    /// tripping an earlier text gate stays invalid-argument.</summary>
+    /// the code follows the first failing gate (see CodeForExpression).</summary>
     public static void ValidateExpression(string expression)
     {
         var reason = BreakpointOptions.CheckExpression(expression);
         if (reason is null)
             return;
-        var code = BreakpointOptions.CheckTextRules(expression) is null
-            ? ErrorCodes.InvalidExpression
-            : ErrorCodes.InvalidArgument;
+        var code = BreakpointOptions.CodeForExpression(expression);
         throw new McpException($"{code}: expression {reason.Value.Detail}; remediation: {reason.Value.Remediation}");
     }
 

@@ -15,7 +15,7 @@ dotnet test --filter "FullyQualifiedName~<TestClass>"  # single suite
 ## Architecture
 
 - One seam: everything crosses `IDebugBridge` (`src/VsDebugMcp/IDebugBridge.cs`). Tools (`SessionTools`, `BreakpointTools`, `ExecutionTools`, `InspectionTools` in `src/VsDebugMcp/`) stay thin and delegate through it.
-- Two bridges: `DteDebugBridge` (live EnvDTE) vs `FakeDebugBridge` (tests). Default run uses fake; `--live` selects the real bridge.
+- Two bridges: `DteDebugBridge` (live EnvDTE) vs `FakeDebugBridge` (tests). Default run uses live; `--fake` selects the fake (canned values, `[fake]` display names). `--live` is a no-op.
 - Live COM runs on a single STA dispatcher (`ComDispatcher.cs`) and is snapshotted to plain DTOs — never let live handles escape; map COM errors via `ComErrorMapper.cs` / `ErrorCodes.cs`.
 
 ## VS / EnvDTE gotchas

@@ -26,7 +26,10 @@ MCP host). No .NET install needed — the runtime is bundled (~85 MB).
    ```json
    "vs-debug": {
      "type": "local",
-     "command": ["C:\\Tools\\VsDebugMcp\\VsDebugMcp.exe", "--live"]
+     "command": ["C:\\Tools\\VsDebugMcp\\VsDebugMcp.exe"]
+    }
+    ```
+    Live is the default; `--live` is still accepted as a no-op, `--fake` selects the canned demo bridge.
    }
    ```
    Other clients (Claude Code, VS Code `mcp.json`) take the same command + args shape.

@@ -15,7 +15,7 @@ public sealed class ListInstancesTests
         var result = await SessionTools.ListInstancesAsync(bridge, CancellationToken.None);
 
         var single = Assert.Single(result.Instances);
-        Assert.Equal("!VisualStudio.DTE.18.0:222", single.DisplayName);
+        Assert.Equal("!VisualStudio.DTE.18.0:222 [fake]", single.DisplayName);
         Assert.Equal(222, single.Pid);
         Assert.Equal("Shop", single.SolutionName);
         Assert.Contains("Shop.Api", single.ProjectNames);
@@ -54,5 +54,22 @@ public sealed class ListInstancesTests
         var flagged = result.Instances.Single(i => i.Pid == 555);
         Assert.False(flagged.Reachable);
         Assert.NotNull(flagged.Error);
+    }
+
+    [Fact]
+    public async Task Fake_bridge_marks_display_names_so_canned_values_are_unmistakable()
+    {
+        var bridge = new FakeDebugBridge();
+        bridge.Instances.Add(new VsInstanceInfo(
+            "!VisualStudio.DTE.18.0:222", 222, "18.0",
+            "Shop", @"C:\src\Shop.sln", ["Shop.Api"], true, null));
+
+        var instances = await SessionTools.ListInstancesAsync(bridge, CancellationToken.None);
+        Assert.EndsWith(" [fake]", Assert.Single(instances.Instances).DisplayName);
+
+        var attach = await SessionTools.AttachAsync(bridge, null, CancellationToken.None);
+        var sessions = await SessionTools.ListSessionsAsync(bridge, CancellationToken.None);
+        Assert.EndsWith(" [fake]", Assert.Single(sessions.Sessions).DisplayName);
+        Assert.Equal(attach.SessionId, Assert.Single(sessions.Sessions).SessionId);
     }
 }

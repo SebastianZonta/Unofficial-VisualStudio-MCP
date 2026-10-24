@@ -69,6 +69,49 @@ public sealed class AttachProcessTests
     }
 
     [Fact]
+    public async Task Second_attach_process_while_bound_fails_named()
+    {
+        var bridge = new FakeDebugBridge();
+        bridge.ProcessOwners[4321] = "FAKE\\dev";
+        bridge.ProcessOwners[4322] = "FAKE\\dev";
+        var (_, sessionId) = await AttachedAsync(bridge);
+        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: true, 30_000, CancellationToken.None));
+        Assert.Contains("already-bound", ex.Message);
+        Assert.Contains("4321", ex.Message);
+    }
+
+    [Fact]
+    public async Task Consent_gate_runs_before_the_one_target_check()
+    {
+        var bridge = new FakeDebugBridge();
+        bridge.ProcessOwners[4321] = "FAKE\\dev";
+        bridge.ProcessOwners[4322] = "FAKE\\dev";
+        var (_, sessionId) = await AttachedAsync(bridge);
+        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: false, 30_000, CancellationToken.None));
+        Assert.Contains("consent-required", ex.Message);
+    }
+
+    [Fact]
+    public async Task Same_user_gate_runs_before_the_one_target_check()
+    {
+        var bridge = new FakeDebugBridge();
+        bridge.ProcessOwners[4321] = "FAKE\\dev";
+        bridge.ProcessOwners[4322] = "OTHER\\eve";
+        var (_, sessionId) = await AttachedAsync(bridge);
+        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, CancellationToken.None);
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: true, 30_000, CancellationToken.None));
+        Assert.Contains("user-mismatch", ex.Message);
+    }
+
+    [Fact]
     public async Task Unknown_session_fails_named_no_session()
     {
         var bridge = new FakeDebugBridge();

@@ -63,31 +63,57 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 : new DebugDomainException("vs-not-running", $"no running VS instance matching {instanceOverride}",
                     "check the instance override or start the matching VS and retry");
         // Idempotent re-attach: the same display name returns its live session, never a duplicate binding.
-        var existing = FindByDisplayName(picked);
-        if (existing is not null)
+        // The bind+insert below re-checks under the same lock that inserts, so parallel
+        // attaches for the same VS instance converge on one sessionId; the loser releases
+        // its duplicate handle on the dispatcher and loops back to return the winner
+        // (or rebinds if the winner died mid-race).
+        while (true)
         {
-            var alive = await _dispatcher.InvokeAsync(() => ProbeAlive(existing.Value.Entry.Dte), 10_000, cancellationToken);
-            if (alive)
+            var existing = FindByDisplayName(picked);
+            if (existing is not null)
             {
-                var (mode, lastHit) = await ReadStateAsync(existing.Value.Id, cancellationToken);
-                return new AttachResult(existing.Value.Id, mode, lastHit);
+                var alive = await _dispatcher.InvokeAsync(() => ProbeAlive(existing.Value.Entry.Dte), 10_000, cancellationToken);
+                if (alive)
+                {
+                    var (mode, lastHit) = await ReadStateAsync(existing.Value.Id, cancellationToken);
+                    return new AttachResult(existing.Value.Id, mode, lastHit);
+                }
+                await DetachAsync(existing.Value.Id, cancellationToken);
             }
-            await DetachAsync(existing.Value.Id, cancellationToken);
-        }
-        var dte = await _dispatcher.InvokeAsync(() => BindDisplayName(picked), 10_000, cancellationToken);
-        var sessionId = Guid.NewGuid().ToString("N");
-        lock (_gate)
-        {
-            _sessions[sessionId] = new SessionEntry
+            var dte = await _dispatcher.InvokeAsync(() => BindDisplayName(picked), 10_000, cancellationToken);
+            string sessionId;
+            bool won;
+            lock (_gate)
             {
-                Dte = dte,
-                DisplayName = picked,
-                Pid = VsDiscovery.TryParsePid(picked),
-            };
+                string? raced = null;
+                foreach (var kv in _sessions)
+                {
+                    if (kv.Value.DisplayName == picked) { raced = kv.Key; break; }
+                }
+                if (raced is not null)
+                {
+                    sessionId = raced;
+                    won = false;
+                }
+                else
+                {
+                    sessionId = Guid.NewGuid().ToString("N");
+                    _sessions[sessionId] = new SessionEntry
+                    {
+                        Dte = dte,
+                        DisplayName = picked,
+                        Pid = VsDiscovery.TryParsePid(picked),
+                    };
+                    won = true;
+                }
+            }
+            if (won)
+            {
+                var (freshMode, freshHit) = await ReadStateAsync(sessionId, cancellationToken);
+                return new AttachResult(sessionId, freshMode, freshHit);
+            }
+            ReleaseOnDispatcher(dte);
         }
-        var (freshMode, freshHit) = await ReadStateAsync(sessionId, cancellationToken);
-
-        return new AttachResult(sessionId, freshMode, freshHit);
     }
 
     public Task RequireSessionAsync(string sessionId, CancellationToken ct)
@@ -254,6 +280,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     throw new DebugDomainException(
                         "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {me}",
                         "only attach to your own processes");
+                if (debugger.DebuggedProcesses.Count > 0)
+                    throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
                 target.Attach();
                 return new ExecutionResult(ModeOf(debugger), LastHitOf(debugger),
                     "ok", $"attached to process {processId} ({target.Name})");
@@ -963,17 +991,20 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     "pass a read-only expression valid in the top frame; prefer fields and property reads over method calls");
             // Echo the agent's expression, never the evaluator's ",nse" form.
             return SnapshotEvaluation(evaluated, expression, ModeOf(debugger), LastHitOf(debugger));
-        }, ct);
+        }, ct, timeoutMs + EvaluateMarginMs);
 
     // ---- helpers (all run on the dispatcher thread) ----
 
-    private async Task<T> RunSnapshotAsync<T>(string sessionId, Func<Debugger, T> work, CancellationToken ct)
+    /// <summary>Extra COM round-trip margin over an evaluation's own budget.</summary>
+    private const int EvaluateMarginMs = 5_000;
+
+    private async Task<T> RunSnapshotAsync<T>(string sessionId, Func<Debugger, T> work, CancellationToken ct, int budgetMs = 30_000)
     {
         await RequireSessionAsync(sessionId, ct);
         var dte = SessionDte(sessionId);
         try
         {
-            return await _dispatcher.InvokeAsync(() => work(DebuggerOf(dte)), 30_000, ct);
+            return await _dispatcher.InvokeAsync(() => work(DebuggerOf(dte)), budgetMs, ct);
         }
         catch (TimeoutException)
         {
@@ -1029,13 +1060,13 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
         catch (TimeoutException)
         {
-            return ("design", null);
+            return ("unknown", null);
         }
         catch (COMException ex)
         {
             if (ComErrorMapper.IsDisconnected(ex))
                 MarkDead(sessionId, dte);
-            return ("design", null);
+            return ("unknown", null);
         }
     }
 
