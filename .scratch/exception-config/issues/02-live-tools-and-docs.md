@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 (needs the seam contract to implement).
 
-**Status:** needs-info
+**Status:** resolved
 
-- [ ] First-chance break carries the object path; `$exception.Message`-style probes work immediately after the break.
-- [ ] Live break result carries the message read under `nse`, matching the `$exception.Message` probe; a refused read yields an absent message plus note, never a failed break.
+- [x] First-chance break carries the object path; `$exception.Message`-style probes work immediately after the break.
+- [x] Live break result carries the message read under `nse`, matching the `$exception.Message` probe; a refused read yields an absent message plus note, never a failed break.
 - [x] Existing `[Exception]` frame rendering and `read_stack` semantics unchanged.
 - [x] `TOOLS.md`, `GLOSSARY.md`, and `README.md` document the tools (no test counts in `README.md`).
 
-Live code and docs are in; the two live checks above are unverified (E2E pass skipped by request). Close them with `--live-check-exception <Sandbox.exe>` or e2e cases E13, E21–E25.
+Live code and docs are in; verified live by E2E 2026-10-24-1800-R3: E13 (unhandled break carries `$exception` path, message equals `$exception.Message` probe, no `lastHit`) and E21–E25 (list/set first-chance/unhandled-only round-trip with restore) all PASS.
