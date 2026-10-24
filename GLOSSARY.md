@@ -123,9 +123,10 @@ _Avoid_: session (when meaning the runner itself)
 
 **Slice**:
 One runner's assigned phase range, always including its own P0 setup:
-R1 = P0 + P1–P4, R2 = P0 + P5–P7, R3 = P0 + P8–P11. Boundaries are fixed by
-the unbreakable chains (P5's shared stopped target, P8's live-target chain,
-P9's reuse of the P0 wait PID never cross a runner boundary).
+R1 = P0 + P1–P4 + P9, R2 = P0 + P5–P7, R3 = P0 + P8 + P10–P11. Boundaries are
+fixed by the unbreakable chains (P5's shared stopped target, P8's live-target
+chain and exception M0 chain, P10's self-contained two-VS flow — none cross a
+runner boundary; P9 travels with its runner's own P0 wait PID).
 _Avoid_: phase (when meaning a runner's whole assignment)
 
 **Run tag**:
