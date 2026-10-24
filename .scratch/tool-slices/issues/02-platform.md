@@ -1,6 +1,6 @@
 # 02 — Platform slices A+B: infra/build-publish and COM core
 
-Status: ready-for-human
+Status: resolved
 
 ## Task
 
@@ -38,3 +38,12 @@ Highest seam stays the dispatcher boundary; no new seam.
   dismiss and confirm recovery. Cannot be done headless; do it in the next
   real-VS pass and flip this issue to `resolved`.
 - Build clean, 312 unit tests pass (311 + 1 new), E2E skipped (no live VS).
+- Human-verified 2026-10-24 (live, VS 2026 PID 36064, Sandbox solution):
+  modal open → `list_instances` returned the instance with `reachable:false`,
+  `error: vs-busy ... HRESULT 0x80010001; modal dialog or busy UI thread`;
+  `attach` bound `6e270a36…` with `mode:unknown`. Dialog dismissed →
+  same display name `reachable:true` (Sandbox/Sandbox.slnx), `attach` same id
+  with `mode:design`. Probe session detached; `list_sessions` empty.
+  First probe was BLOCKED (`list_instances: []`, `attach: vs-not-running`)
+  while devenv PID 17180 ran unregisteredd — ROT-invisible (elevation/session
+  split); retried after VS restart as PID 36064. Busy + recovery gates PASS.
