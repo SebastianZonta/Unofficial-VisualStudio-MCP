@@ -11,6 +11,13 @@ match it. When a change adds a field to a shared result type (`ExecutionResult`,
 bridges: each one sets the field, and a test drives each tool that returns it.
 A field set on three of four paths is the typical miss (exception-config: the
 fake's `launch_process` dropped `exception`).
+Live is truth: when live COM disagrees with the fake (audit-oct24-high:
+`Created` flag, honest `evaluate`, devenv guard), fix the fake and its tests
+to match live, never the reverse.
+Pre-audit gate: a bridge-behavior change must add or extend a case in
+`tests/VsDebugMcp.E2E/AuditE2ETests.cs`, and the author runs it live
+(`VSDEBUG_E2E=1`) before the manual 3-runner pass. Reject a bridge diff with
+no E2E case and no live run.
 
 ## Shared rules, one home
 
