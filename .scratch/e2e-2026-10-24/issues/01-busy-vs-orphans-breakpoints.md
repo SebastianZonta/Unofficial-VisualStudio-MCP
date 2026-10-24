@@ -10,11 +10,13 @@
 
 **Blocked by:** None.
 
-**Status:** ready-for-human
+**Status:** resolved
 
 - [x] Fake/unit coverage: cleanup retried on vs-busy; persistently busy cleanup leaves an owned, removable breakpoint; only call-rejected counts as busy.
-- [ ] Scoped E2E E16–E20 green on a fresh publish (needs the user to stop the MCP host, republish, and close leftover VS A / Sandbox processes).
+- [x] Scoped E2E E16–E20 green on a fresh publish (needs the user to stop the MCP host, republish, and close leftover VS A / Sandbox processes).
 
 ## Comments
 
 E2E evidence: `.scratch/e2e-runs/2026-10-24-0210.md` row E16.
+
+Scoped rerun on the 02:18 binary (`.scratch/e2e-runs/2026-10-24-0224.md`): E16, E17, E18, E19, E20 PASS after clearing the breakpoint the pre-fix run had persisted in `Sandbox/.vs`.
