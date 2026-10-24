@@ -1895,7 +1895,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             dte = found;
             string solutionPath;
             try { solutionPath = dte.Solution?.FullName ?? ""; }
-            catch (COMException) { return UnreachableInstance(displayName, "automation-failed: solution unreadable"); }
+            // A modal dialog rejects this call (RPC_E_CALL_REJECTED): report
+            // vs-busy per X1, not automation-failed. Any other failure keeps
+            // the automation-failed mapping with its HRESULT.
+            catch (COMException ex) { return UnreachableInstance(displayName, ComErrorMapper.ToDomain(ex).Message); }
             solutionPath ??= "";
             string solutionName;
             try { solutionName = solutionPath.Length == 0 ? "" : (Path.GetFileNameWithoutExtension(solutionPath) ?? ""); }

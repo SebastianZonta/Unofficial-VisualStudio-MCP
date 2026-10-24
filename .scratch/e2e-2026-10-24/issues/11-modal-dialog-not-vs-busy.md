@@ -13,7 +13,21 @@ half holds).
 
 **Blocked by:** None.
 
-**Status:** needs-triage
+**Contract decision:** modal-blocked → `vs-busy` (X1 premise holds; the
+mapper already documented call-rejected as "modal dialog or busy UI thread").
+
+**Fix (done, unit-green, live-verified on v9):** `SnapshotInstance`'s
+`Solution.FullName` catch hardcoded `automation-failed: solution unreadable`,
+dropping the HRESULT. Now routes through `ComErrorMapper.ToDomain` (same as
+the outer catch): call-rejected → `vs-busy`, anything else →
+`automation-failed` with HRESULT. No new E2E case (X1 already expects
+`vs-busy`); no new UT (mapper pinned by `ComPlumbingTests`, wiring needs real
+COM). X1-manual live: modal open → `vs-busy` (0x80010001); dismissed →
+`reachable:true`, solution `Sandbox`. 311/311 green. Published to
+`standalone-v9/`, host repointed + restarted. VS closed, `Sandbox/.vs`
+cleaned.
+
+**Status:** resolved
 
 ## Comments
 
