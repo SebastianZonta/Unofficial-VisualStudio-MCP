@@ -57,6 +57,12 @@ internal static class BreakpointOptions
     /// itself at set/evaluate time, where nothing is created on failure.</summary>
     public static (string Detail, string Remediation)? CheckExpression(string expression)
     {
+        return CheckTextRules(expression) ?? CheckInvocationRule(expression);
+    }
+
+    /// <summary>Empty/statement/line/assignment gates: everything before the invocation gate.</summary>
+    internal static (string Detail, string Remediation)? CheckTextRules(string expression)
+    {
         if (string.IsNullOrWhiteSpace(expression))
             return ("must not be empty", "pass a read-only expression");
         if (expression.Contains(';'))
@@ -67,6 +73,11 @@ internal static class BreakpointOptions
             return ("must be read-only (assignment, ++ and -- are not supported)", "pass an expression without '=', '++' or '--'");
         return null;
     }
+
+    internal static (string Detail, string Remediation)? CheckInvocationRule(string expression) =>
+        ContainsInvocation(expression)
+            ? ("must be read-only (method calls are not supported)", "pass field, property and indexer reads or comparisons without '(...)'")
+            : null;
 
     /// <summary>Fake/live-emulated log rendering: each {expression} hole becomes its evaluated value.</summary>
     public static string FormatLogMessage(string template, Func<string, string> evaluate)
@@ -170,6 +181,30 @@ internal static class BreakpointOptions
             if (next == '=' || prev == '=' || prev == '!' || prev == '<' || prev == '>' || next == '>')
                 continue;
             return true;
+        }
+        return false;
+    }
+
+    // Any invocation can run code, and the text gate cannot judge purity, so a
+    // call-looking '(' (word char, ')', ']' or quote before it) is refused. Bare
+    // grouping/casts, member reads, comparisons and indexers have no such '('
+    // and still pass; side-effecting getters without parens (counter.NextTicket)
+    // stay on the live NSE backstop. shortcut: string literals and generic
+    // arity (foo<T>(x)) are not parsed out, same coarseness as ContainsAssignment.
+    internal static bool ContainsInvocation(string expression)
+    {
+        for (var i = 0; i < expression.Length; i++)
+        {
+            if (expression[i] != '(')
+                continue;
+            var j = i - 1;
+            while (j >= 0 && char.IsWhiteSpace(expression[j]))
+                j--;
+            if (j < 0)
+                continue; // leading '(' groups or casts; it calls nothing
+            var prev = expression[j];
+            if (prev == '_' || prev == ')' || prev == ']' || prev == '"' || prev == '\'' || char.IsLetterOrDigit(prev))
+                return true;
         }
         return false;
     }

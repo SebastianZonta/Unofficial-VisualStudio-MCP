@@ -59,19 +59,19 @@ public static class ArgumentValidator
             throw new McpException($"{ErrorCodes.InvalidArgument}: direction must be over, into, or out; remediation: pass one of the three directions");
     }
 
+    /// <summary>Evaluate shares the single read-only rule (<see cref="BreakpointOptions"/>):
+    /// every text failure delegates there. The code follows the first failing
+    /// gate: only a pure invocation failure is invalid-expression, anything
+    /// tripping an earlier text gate stays invalid-argument.</summary>
     public static void ValidateExpression(string expression)
     {
-        if (string.IsNullOrWhiteSpace(expression))
-            throw new McpException($"{ErrorCodes.InvalidArgument}: expression must not be empty; remediation: pass a read-only expression");
-
-        if (expression.Contains(';'))
-            throw new McpException($"{ErrorCodes.InvalidArgument}: statements are not supported; remediation: pass a single read-only expression without ';'");
-
-        if (expression.Contains('\r') || expression.Contains('\n'))
-            throw new McpException($"{ErrorCodes.InvalidArgument}: statements are not supported; remediation: pass a single-line read-only expression");
-
-        if (ContainsAssignment(expression))
-            throw new McpException($"{ErrorCodes.InvalidArgument}: assignment, increment and decrement are not supported; remediation: pass a read-only expression without '=', '++' or '--'");
+        var reason = BreakpointOptions.CheckExpression(expression);
+        if (reason is null)
+            return;
+        var code = BreakpointOptions.CheckTextRules(expression) is null
+            ? ErrorCodes.InvalidExpression
+            : ErrorCodes.InvalidArgument;
+        throw new McpException($"{code}: expression {reason.Value.Detail}; remediation: {reason.Value.Remediation}");
     }
 
     public static void ValidateTimeoutMs(int timeoutMs, string paramName = "timeoutMs")
@@ -103,6 +103,4 @@ public static class ArgumentValidator
         if (string.IsNullOrWhiteSpace(executablePath) || !Path.IsPathFullyQualified(executablePath))
             throw new McpException($"{ErrorCodes.InvalidArgument}: executablePath must be an absolute path; remediation: pass the full path to the target executable");
     }
-
-    private static bool ContainsAssignment(string expression) => BreakpointOptions.ContainsAssignment(expression);
 }

@@ -37,15 +37,50 @@ public sealed class ReadOnlyGateTests
     [InlineData("a <= b")]
     [InlineData("a >= b")]
     [InlineData("a << 1 > b >> 2")]
-    [InlineData("items.Where(x => x.Id > 0).Count()")]
     [InlineData("-total")]
     [InlineData("a - -b")]
-    public async Task Evaluate_still_accepts_comparisons_and_lambdas(string expression)
+    [InlineData("i == 3 || i == 4")]
+    [InlineData("(i == 3)")]
+    [InlineData("order.Items.Count")]
+    [InlineData("order.Items[0].Sku")]
+    [InlineData("order.Coupon == null")]
+    [InlineData("counter.NextTicket")]
+    public async Task Evaluate_still_accepts_comparisons_reads_and_indexers(string expression)
     {
         var (bridge, sessionId) = await BrokenAsync();
 
         var eval = await InspectionTools.EvaluateAsync(bridge, sessionId, expression, 5000, CancellationToken.None);
         Assert.Equal(expression, eval.Expression);
+    }
+
+    [Theory]
+    [InlineData("counter.Increment()")]
+    [InlineData("order.Items.Clear()")]
+    [InlineData("items.Remove(1)")]
+    [InlineData("order.ComputeSubtotal()")]
+    [InlineData("order.Items.Count(x => x.Qty == 5)")]
+    [InlineData("items.Where(x => x.Id > 0).Count()")]
+    public async Task Evaluate_rejects_invocations_as_invalid_expression(string expression)
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            InspectionTools.EvaluateAsync(bridge, sessionId, expression, 5000, CancellationToken.None));
+        Assert.Contains("invalid-expression", ex.Message);
+    }
+
+    [Fact]
+    public async Task Mixed_and_null_expressions_keep_the_first_gate_code()
+    {
+        var (bridge, sessionId) = await BrokenAsync();
+
+        var mixed = await Assert.ThrowsAsync<McpException>(() =>
+            InspectionTools.EvaluateAsync(bridge, sessionId, "a; foo()", 5000, CancellationToken.None));
+        Assert.Contains("invalid-argument", mixed.Message);
+
+        var nil = await Assert.ThrowsAsync<McpException>(() =>
+            InspectionTools.EvaluateAsync(bridge, sessionId, null!, 5000, CancellationToken.None));
+        Assert.Contains("invalid-argument", nil.Message);
     }
 
     [Theory]
