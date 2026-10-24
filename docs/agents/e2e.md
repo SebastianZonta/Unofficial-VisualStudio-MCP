@@ -1,7 +1,7 @@
 # E2E: every tool against a real VS, on the Sandbox
 
 The unit tests prove the tool contracts against `FakeDebugBridge`. This pass
-proves them against real VS 2026: every one of the 17 tools, every reachable
+proves them against real VS 2026: every one of the 18 tools, every reachable
 error code, and the situations the fake can't produce (COM identity, real
 frames, the evaluator, threads, exceptions, two VS instances). The target is
 `Sandbox/`, a .NET console app built for this pass. The pass starts its own VS
