@@ -362,7 +362,7 @@ tests: attaching to a foreign-owned process isn't safe to try here.
 | Id | Step | Expected |
 |---|---|---|
 | M0 | Start VS B on `%TEMP%\SandboxB\Sandbox.slnx` (as in S2/S3); record `vsPidB` and display name `B` | reachable |
-| M1 | `attach()` with no override | binds the newest instance: `list_sessions` shows the new session on `B`. Record it as SB |
+| M1 | `attach()` with no override | binds the newest instance: `list_sessions` shows the new session on `B`. Record it as SB. Parallel run: the newest instance belongs to another runner — detach immediately with no calls under it and record M1 PASS-with-note (the contract held) |
 | M2 | `attach(B)` | same SB |
 | M3 | `list_sessions` | S on `A` and SB on `B` |
 | M4 | S: breakpoint at `STACK_BOTTOM`, launch `stack` → `break`. SB: breakpoint at the copy's `INSPECT`, launch the copy's exe `inspect` → `break` | both break |

@@ -14,7 +14,16 @@ runs rather than a code fix.
 
 **Blocked by:** None.
 
-**Status:** needs-triage
+**Disposition (doc caveat, no code):** the contract held — no-override
+`attach()` binds the *newest* instance, and R1's instance (max pid) was the
+newest on the box. Under 3 concurrent runners "newest" is another runner's
+instance by design; no code can prefer "mine" without breaking the
+single-runner newest-wins promise from 04. R2 handled it exactly right (stray
+session detached immediately, no calls under it, M2–M9 green). `e2e.md` M1 now
+says so: in a parallel run, detach immediately and record PASS-with-note.
+Single-runner M1 is unchanged.
+
+**Status:** resolved
 
 ## Comments
 
