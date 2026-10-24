@@ -10,7 +10,17 @@ generic-arity syntax. `counter.Value` side-effect checks still held elsewhere.
 
 **Blocked by:** None.
 
-**Status:** needs-triage
+**Update:** no gate hole — current code refuses it. `ContainsInvocation`
+already counts `>` before `(` as a call when a `<` precedes it
+(generic-arity), and UT `foo<T>(x)` + lambda-invocation rows pin it. R2 ran
+I18 pre-fix (generic-arity branch landed in `32b8370`, after the R2 binary
+was published). Added the exact R2 string
+`order.Items.ConvertAll<string>(x => x.Sku)` as a UT row (41/41 green) and
+re-ran I18 live on standalone-v8: `invalid-expression: expression must be
+read-only (method calls are not supported)`. No new E2E case — I18 already
+covers it. No VS running, `Sandbox/.vs` cleaned.
+
+**Status:** resolved
 
 ## Comments
 

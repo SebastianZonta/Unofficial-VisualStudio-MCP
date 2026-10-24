@@ -57,6 +57,7 @@ public sealed class ReadOnlyGateTests
     [Theory]
     [InlineData("counter.Increment()")]
     [InlineData("foo<T>(x)")]
+    [InlineData("order.Items.ConvertAll<string>(x => x.Sku)")]
     [InlineData("order.Items.Clear()")]
     [InlineData("items.Remove(1)")]
     [InlineData("order.ComputeSubtotal()")]
