@@ -39,6 +39,16 @@ public sealed class ComPlumbingTests
     }
 
     [Fact]
+    public void Disconnected_hresults_count_as_dead_vs_not_busy()
+    {
+        // Per-session death (vs-not-running downstream) vs busy server (vs-busy).
+        foreach (var hr in new[] { unchecked((int)0x80010108), unchecked((int)0x800706BA), unchecked((int)0x800706B5), unchecked((int)0x8001010A) })
+            Assert.True(ComErrorMapper.IsDisconnected(new COMException("gone", hr)), $"0x{hr:X8}");
+        Assert.False(ComErrorMapper.IsDisconnected(new COMException("rejected", unchecked((int)0x80010001))));
+        Assert.False(ComErrorMapper.IsDisconnected(new COMException("denied", unchecked((int)0x80070005))));
+    }
+
+    [Fact]
     public void ToDomain_preserves_inner()
     {
         var com = new COMException("boom", unchecked((int)0x80004005));

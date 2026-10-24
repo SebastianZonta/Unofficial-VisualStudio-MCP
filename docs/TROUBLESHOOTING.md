@@ -26,6 +26,10 @@ install path matches none. Fix: build from a VS Developer prompt (sets
 `VSINSTALLDIR`) or set it yourself. The references are build-time only
 (embedded interop); the runtime binds DTE from the ROT.
 
+No VS installed at all fails fast with an explicit `No Visual Studio 2026
+EnvDTE found` build error (not unknown-type errors) — install VS 2026 or point
+the `HintPath`s at its `PublicAssemblies`.
+
 ### Exe locked on republish
 
 Symptom: publish/overwrite fails while the client runs. Cause: the MCP host

@@ -53,4 +53,10 @@
     </Reference>
   </ItemGroup>
 
+  <!-- Clear no-VS message: without EnvDTE the Reference items above vanish and
+       the build would fail with confusing unknown-type errors instead. -->
+  <Target Name="CheckVsInstall" BeforeTargets="BeforeBuild" Condition="!Exists('$(VsPublicAssemblies)EnvDTE.dll')">
+    <Error Text="No Visual Studio 2026 EnvDTE found at '$(VsPublicAssemblies)'. Build from a VS Developer prompt (sets VSINSTALLDIR) or retarget the HintPaths above; see docs/TROUBLESHOOTING.md (EnvDTE HintPath misses). Runtime binds DTE from the ROT, never a hardcoded ProgID." />
+  </Target>
+
 </Project>

@@ -9,8 +9,17 @@ or build from source. All docs: [docs/README.md](docs/README.md).
 not have it). Build it first:
 
 ```powershell
-dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o standalone
+dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o standalone-vNext
 ```
+
+Publish to a fresh empty folder, never over an existing one: `dotnet publish`
+does not clean the output dir, so a stale `System.Management.dll` placeholder
+can survive and shadow the real Windows implementation (see
+[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#stale-publish-dir-wmi-tools-throw-platformnotsupportedexception)).
+After publishing, verify the fresh folder's `System.Management.dll` is ~314 KB
+(not ~74 KB), then repoint the client config at the new folder and restart the
+client. The client locks the exe while running — stop it before publishing
+([Exe locked on republish](docs/TROUBLESHOOTING.md#exe-locked-on-republish)).
 
 Requirements on the target PC: 64-bit Windows, Visual Studio 2026 (running, same user as the
 MCP host). No .NET install needed — the runtime is bundled (~85 MB).
@@ -41,7 +50,7 @@ set ([TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#build-envdte-hintpath-misses))
 ```powershell
 dotnet build                                    # Debug, for development
 dotnet test                                     # no VS required (fake bridge)
-dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o standalone
+dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o standalone-vNext  # fresh empty folder; see above
 ```
 
 ## Debug-time notes
