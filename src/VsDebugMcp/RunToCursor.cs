@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+
 namespace VsDebugMcp;
 
 /// <summary>Shared temporary-breakpoint lifecycle for run_to_cursor: place a temporary breakpoint,
@@ -6,6 +8,11 @@ internal static class RunToCursor
 {
     private const int RemoveAttempts = 4;
     private const int RemoveRetryDelayMs = 250;
+
+    // VS rejects a Go issued while another resume's Go is landing (seen live as
+    // HRESULT 0x89711007, "Unable to execute method at this time"). Narrow to
+    // this HResult so genuine automation failures still surface.
+    private const int GoConflictHResult = unchecked((int)0x89711007);
 
     /// <param name="cont">Continues from the given mode (break: resume; run: wait for the next stop).</param>
     public static async Task<ExecutionResult> RunAsync(IDebugBridge bridge, string sessionId, string file, int line,
@@ -26,7 +33,7 @@ internal static class RunToCursor
                 throw new DebugDomainException(
                     ErrorCodes.UnboundLocation, $"{file}:{line} did not bind: {reuse.Warning}",
                     "check the file path and line, or list_modules for the module's symbol state");
-            return await ContinueAsync(cont, existing.Mode);
+            return await ContinueAsync(bridge, sessionId, cont, existing.Mode, ct);
         }
         var set = await bridge.SetBreakpointAsync(sessionId, file, line, ct);
         // Removal is conditional on creation, decided before the run: only what
@@ -38,7 +45,7 @@ internal static class RunToCursor
                 throw new DebugDomainException(
                     ErrorCodes.UnboundLocation, $"{file}:{line} did not bind: {set.Breakpoint.Warning}",
                     "check the file path and line, or list_modules for the module's symbol state");
-            return await ContinueAsync(cont, set.Mode);
+            return await ContinueAsync(bridge, sessionId, cont, set.Mode, ct);
         }
         finally
         {
@@ -70,9 +77,11 @@ internal static class RunToCursor
 
     /// <summary>A resume that lands while the target already runs joins the run
     /// instead of failing: a concurrent resume between placement and continue
-    /// is not this call's error.</summary>
+    /// is not this call's error. A Go rejected because the concurrent resume's
+    /// Go won the race joins the same way, after re-reading state.</summary>
     private static async Task<ExecutionResult> ContinueAsync(
-        Func<string, Task<ExecutionResult>> cont, string mode)
+        IDebugBridge bridge, string sessionId,
+        Func<string, Task<ExecutionResult>> cont, string mode, CancellationToken ct)
     {
         try
         {
@@ -82,7 +91,19 @@ internal static class RunToCursor
         {
             return await cont("run");
         }
+        catch (DebugDomainException ex) when (IsLostGoRace(ex))
+        {
+            var current = await bridge.ListBreakpointsAsync(sessionId, ct);
+            if (current.Mode is "break" or "run")
+                return await cont("run");
+            throw;
+        }
     }
+
+    private static bool IsLostGoRace(DebugDomainException ex) =>
+        ex.Code == "automation-failed"
+        && ex.InnerException is COMException com
+        && com.HResult == GoConflictHResult;
 
     /// <summary>Exact file identity for destination reuse: same matching as the
     /// shared suffix rule but without the suffix, so a same-named file elsewhere

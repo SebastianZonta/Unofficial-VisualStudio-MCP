@@ -17,7 +17,8 @@ to match live, never the reverse.
 Pre-audit gate: a bridge-behavior change must add or extend a case in
 `tests/VsDebugMcp.E2E/AuditE2ETests.cs`, and the author runs it live
 (`VSDEBUG_E2E=1`) before the manual 3-runner pass. Reject a bridge diff with
-no E2E case and no live run.
+no E2E case and no live run. On any bug fix, state UT vs AuditE2E coverage
+and add the missing case, or justify why neither fits.
 
 ## Shared rules, one home
 

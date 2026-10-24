@@ -100,6 +100,11 @@ removed) when the destination does not bind. Live VS only reports this when it
 rejects the location; a pending one runs to the timeout, so on a still-running
 result check the path and `list_modules` as above.
 
+`run_to_cursor` fails with `automation-failed` (HRESULT 0x89711007) when a
+concurrent `resume` (or F5) lands first: the loser's `Go` is rejected because
+the debugger already runs. Current binaries re-read state and join the run
+instead of failing; on an older binary retry the call.
+
 ## Evaluation and results
 
 ### Side-effect refusal (`invalid-expression`)

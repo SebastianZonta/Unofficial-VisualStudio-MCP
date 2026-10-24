@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using ModelContextProtocol;
 using VsDebugMcp;
 
@@ -142,6 +143,43 @@ public sealed class RunToCursorTests
     }
 
     [Fact]
+    public async Task RunToCursor_joins_run_on_go_conflict()
+    {
+        var inner = new FakeDebugBridge();
+        var sessionId = (await SessionTools.AttachAsync(inner, instanceOverride: null, CancellationToken.None)).SessionId;
+        await BreakpointTools.SetBreakpointAsync(inner, sessionId, "Program.cs", 10, CancellationToken.None);
+        await ExecutionTools.ResumeAsync(inner, sessionId, 5000, CancellationToken.None);
+        await BreakpointTools.RemoveBreakpointAsync(inner, sessionId, "bp1", CancellationToken.None);
+        var bridge = new GoConflictOnceBridge(inner, unchecked((int)0x89711007));
+
+        // Temp is placed in break mode; the concurrent resume's Go wins before
+        // the continue lands, so Go is rejected with 0x89711007. The run
+        // re-reads state and joins the wait instead of failing (E27).
+        var run = await ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None);
+
+        Assert.Equal("break", run.Mode);
+        Assert.Equal("ok", run.Status);
+        Assert.Contains("Order.cs:20", run.LastHit);
+        Assert.Empty((await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None)).Breakpoints);
+    }
+
+    [Fact]
+    public async Task RunToCursor_does_not_join_other_automation_failures()
+    {
+        var inner = new FakeDebugBridge();
+        var sessionId = (await SessionTools.AttachAsync(inner, instanceOverride: null, CancellationToken.None)).SessionId;
+        await BreakpointTools.SetBreakpointAsync(inner, sessionId, "Program.cs", 10, CancellationToken.None);
+        await ExecutionTools.ResumeAsync(inner, sessionId, 5000, CancellationToken.None);
+        await BreakpointTools.RemoveBreakpointAsync(inner, sessionId, "bp1", CancellationToken.None);
+        var bridge = new GoConflictOnceBridge(inner, unchecked((int)0x80004005));
+
+        var ex = await Assert.ThrowsAsync<McpException>(() =>
+            ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None));
+
+        Assert.Contains("automation-failed", ex.Message);
+        Assert.Equal(0, await BreakpointCountAsync(inner, sessionId));
+    }
+    [Fact]
     public async Task RunToCursor_joins_run_when_started_after_set()
     {
         var inner = new FakeDebugBridge();
@@ -268,6 +306,28 @@ internal sealed class AlreadyRunningOnceBridge(FakeDebugBridge inner) : Delegati
         {
             _raced = true;
             throw new DebugDomainException("already-running", "debuggee is already running", "pause first to inspect");
+        }
+        return Inner.ResumeAsync(sessionId, timeoutMs, ct);
+    }
+}
+
+/// <summary>Simulates the concurrent resume's Go winning between temp placement
+/// and continue: the first resume is rejected with the live Go-conflict
+/// HRESULT, like VS does (E27).</summary>
+internal sealed class GoConflictOnceBridge(FakeDebugBridge inner, int hresult) : DelegatingBridge(inner)
+{
+    private readonly int _hresult = hresult;
+    private bool _raced;
+
+    public override Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct)
+    {
+        if (!_raced)
+        {
+            _raced = true;
+            throw new DebugDomainException("automation-failed",
+                $"VS automation call failed (HRESULT 0x{_hresult:X8}): Unable to execute method at this time",
+                "dismiss any modal dialog in VS and retry",
+                new COMException("Unable to execute method at this time", _hresult));
         }
         return Inner.ResumeAsync(sessionId, timeoutMs, ct);
     }
