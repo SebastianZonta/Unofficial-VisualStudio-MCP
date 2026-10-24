@@ -16,7 +16,16 @@ public sealed class VsDiscoveryTests
     public void Newest_version_wins_without_override()
     {
         var picked = VsDiscovery.SelectCandidate(RotNames, instanceOverride: null);
-        Assert.Equal("!VisualStudio.DTE.18.0:222", picked);
+        Assert.Equal("!VisualStudio.DTE.18.0:444", picked);
+    }
+
+    [Fact]
+    public void Same_version_resolves_to_highest_pid_newest_instance()
+    {
+        var picked = VsDiscovery.SelectCandidate(
+            ["!VisualStudio.DTE.18.0:100", "!VisualStudio.DTE.18.0:900"],
+            instanceOverride: null);
+        Assert.Equal("!VisualStudio.DTE.18.0:900", picked);
     }
 
     [Fact]
@@ -75,8 +84,8 @@ public sealed class VsDiscoveryTests
         var ordered = VsDiscovery.OrderForListing(RotNames);
         Assert.Equal(
         [
-            "!VisualStudio.DTE.18.0:222",
             "!VisualStudio.DTE.18.0:444",
+            "!VisualStudio.DTE.18.0:222",
             "!VisualStudio.DTE.17.0:111",
         ], ordered);
     }

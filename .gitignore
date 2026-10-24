@@ -1,6 +1,7 @@
 [Bb]in/
 [Oo]bj/
 standalone/
+standalone-v*/
 .vs/
 *.user
 TestResults/

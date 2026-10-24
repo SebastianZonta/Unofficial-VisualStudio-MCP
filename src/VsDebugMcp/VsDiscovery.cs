@@ -14,7 +14,10 @@ internal static class VsDiscovery
             var wanted = instanceOverride.StartsWith('!') ? instanceOverride : "!" + instanceOverride;
             return names.FirstOrDefault(n => n == wanted || n.StartsWith(wanted + ":", StringComparison.Ordinal));
         }
-        return names.OrderByDescending(VersionOf).ThenBy(n => n, StringComparer.Ordinal).FirstOrDefault();
+        // No override: highest version wins; same version resolves to the highest
+        // pid, which rises with start order, so this is the newest running instance.
+        return names.OrderByDescending(VersionOf).ThenByDescending(TryParsePid)
+            .ThenBy(n => n, StringComparer.Ordinal).FirstOrDefault();
     }
 
     public static bool IsDteEntry(string displayName)
@@ -39,7 +42,8 @@ internal static class VsDiscovery
     /// <summary>DTE entries only, newest-version-first (same order as the attach default).</summary>
     public static IReadOnlyList<string> OrderForListing(IEnumerable<string> displayNames)
         => displayNames.Where(IsDteEntry)
-            .OrderByDescending(VersionOf).ThenBy(n => n, StringComparer.Ordinal).ToList();
+            .OrderByDescending(VersionOf).ThenByDescending(TryParsePid)
+            .ThenBy(n => n, StringComparer.Ordinal).ToList();
 
     private static Version VersionOf(string displayName)
         => Version.TryParse(VersionTextOf(displayName), out var v) ? v : new Version(0, 0);

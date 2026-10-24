@@ -41,7 +41,7 @@ suite. The manual pass below remains the authority for everything the suite skip
    host is the user's action; ask, don't work around it.
 3. Check the host: the vs-debug toolset must list all 21 tools (`run_to_cursor`,
    `list_exception_settings`, `set_exception_setting` included). If any tool is missing, the host runs a stale binary: stop.
-4. Fan out exactly one subagent on **Sonnet 5.5**, using the prompt below.
+4. Fan out exactly one subagent on **muse-spark-1.3-contributor** (opencode) / **sonnet** (Claude Code), using the prompt below.
 5. After it returns, run phase **H** (human-assisted) yourself with the user.
 6. Read the report. Triage every FAIL and BLOCKED into `.scratch/` issues, and
    relay the verdict to the user. A FAIL is never "fixed" by editing this doc
@@ -51,7 +51,7 @@ suite. The manual pass below remains the authority for everything the suite skip
 Agent(
   description: "E2E against Sandbox",
   subagent_type: "general-purpose",
-  model: "sonnet",            # resolves to Sonnet 5.5
+  model: "opencode-go/muse-spark-1.3-contributor",  # Claude Code: model: "sonnet"
   prompt: """
     You are the E2E runner for the VS debug MCP at <repo root>.
     Read docs/agents/e2e.md fully, then run phases P0-P11 in order, exactly as written.

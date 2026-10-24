@@ -33,6 +33,21 @@ locks the exe. Fix: stop the host (close/restart the client) before
 republishing, then restart the client to load the new binary. Or publish to a
 fresh folder and repoint the client config.
 
+### Stale publish dir: WMI tools throw `PlatformNotSupportedException`
+
+Symptom: `list_processes` and consent:true `attach_process` fail with a bare
+`An error occurred invoking '<tool>'` (server stderr:
+`System.Management.ManagementObjectSearcher..ctor` throws
+`PlatformNotSupportedException: System.Management currently is only supported
+for Windows desktop applications`), while every other tool works. Cause:
+`dotnet publish` does not clean the output dir, so a stale 74 KB
+`System.Management.dll` placeholder (NuGet `lib/net10.0` asset) can survive
+and shadow the real 314 KB Windows implementation (`runtimes/win` asset):
+check the published `System.Management.dll` size. Fix: publish to a clean
+(empty) folder and repoint the client config, then restart the client. Verify:
+the fresh folder's `System.Management.dll` is ~314 KB and a direct-stdio
+`list_processes` call returns `IsError = False`.
+
 ## VS state
 
 ### VS busy / modal dialog (`vs-busy`, `timeout`)
