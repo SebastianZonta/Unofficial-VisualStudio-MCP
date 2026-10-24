@@ -24,6 +24,8 @@ public static class ErrorCodes
     public const string UnboundLocation = "unbound-location";
     public const string BreakpointExists = "breakpoint-exists";
     public const string ExceptionNotFound = "exception-not-found";
+    public const string TypeMismatch = "type-mismatch";
+    public const string ReadOnlyTarget = "read-only-target";
 
     /// <summary>Key under which <see cref="DebugDomainException.Code"/> is preserved
     /// in <c>McpException.Data</c> by <see cref="ToolErrors"/>.</summary>

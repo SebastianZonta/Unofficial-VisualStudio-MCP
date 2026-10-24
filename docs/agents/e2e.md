@@ -1,7 +1,7 @@
 # E2E: every tool against a real VS, on the Sandbox
 
 The unit tests prove the tool contracts against `FakeDebugBridge`. This pass
-proves them against real VS 2026: every one of the 20 tools, every reachable
+proves them against real VS 2026: every one of the 21 tools, every reachable
 error code, and the situations the fake can't produce (COM identity, real
 frames, the evaluator, threads, exceptions, two VS instances). The target is
 `Sandbox/`, a .NET console app built for this pass. The pass starts its own VS
@@ -39,7 +39,7 @@ suite. The manual pass below remains the authority for everything the suite skip
    default; `--live` is accepted as a no-op)
    (stop the clients first: the exe is locked while hosts run). Restarting the
    host is the user's action; ask, don't work around it.
-3. Check the host: the vs-debug toolset must list all 20 tools (`run_to_cursor`,
+3. Check the host: the vs-debug toolset must list all 21 tools (`run_to_cursor`,
    `list_exception_settings`, `set_exception_setting` included). If any tool is missing, the host runs a stale binary: stop.
 4. Fan out exactly one subagent on **Sonnet 5.5**, using the prompt below.
 5. After it returns, run phase **H** (human-assisted) yourself with the user.
@@ -186,7 +186,7 @@ before the next case.
 ## P5: inspection (`inspect`)
 
 Set a breakpoint at `INSPECT`, launch `inspect` → `break`. Keep this target
-stopped through I16. Then remove the breakpoint and run to end.
+stopped through W8 (writes run last: they change values the I cases read). Then remove the breakpoint and run to end.
 
 | Id | Step | Expected |
 |---|---|---|
@@ -206,6 +206,16 @@ stopped through I16. Then remove the breakpoint and run to end.
 | I14 | `evaluate("order.ComputeSubtotal()")`; `evaluate("order.Items.Count(x => x.Qty == 5)")` | OBS each (record value or error) |
 | I15 | `evaluate` each of: `counter.Value++`, `--x`, `order.Id = 0`, `a <<= 1`, `a >>= 1`, `a; b`, two-line text | `invalid-argument` each; then `counter.Value` still 0 |
 | I16 | `read_variables(f0, path: ...)` with each of `order.Id = 0`, `total++`, `a; b` | `invalid-argument` each |
+| W1 | `set_variable(f0, "subtotal", "1.5")` (consent omitted); then `evaluate("subtotal")` | `consent-required`; still 5625.00 |
+| W2 | `set_variable(f0, "subtotal", "1.5", consent: true)`; `read_variables(f0)` | echoes `frameId` f0, `path` subtotal, `type` decimal, `mode: break`, value 1.5; `subtotal` reads 1.5 |
+| W3 | `set_variable` `note` = `"short"`; `missing` = `7`, then `missing` = `null` (consent each) | each echoes the new value; `evaluate("note.Length")` = 5, `evaluate("missing")` null |
+| W4 | `set_variable(f0, "order.Id", "42", consent: true)`; `evaluate("order.Id")` | OBS (init-only: record value or `read-only-target`); if it errors, still 1001 |
+| W5 | `set_variable(f0, "order.Items.Count", "1", consent: true)`; `evaluate("order.Items.Count")` | `read-only-target`; still 1500 |
+| W6 | `set_variable` `subtotal` = `"abc"`; `1,5`; `order.Id` = `1.5`; `order` = `null` (consent each) | `type-mismatch` each naming expected vs provided; values unchanged |
+| W7 | `set_variable(f0, "nope", "1", consent: true)`; `set_variable(f99, "subtotal", "1", consent: true)`; `set_variable` path `subtotal = 0` | `path-not-found` naming f0 and `nope`; `frame-not-found`; `invalid-argument` |
+| W8 | `evaluate("subtotal = 0")` | `invalid-argument` (evaluate stays read-only) |
+| W9 | `loop`: breakpoint at `TICK` with `condition: "i == 5"`, launch → `break`; `set_variable(f0, "total", "1000", consent: true)`; remove the breakpoint; `run_to_cursor` `AFTER_LOOP`; `evaluate("total")`; `resume` | write echoes 1000; at `AFTER_LOOP` `total` = 1200 (the write took effect in the running code); run ends `design` |
+| W10 | design mode (no target): `set_variable(f0, "total", "1", consent: true)` | `not-in-break-mode` |
 
 ## P6: frames (`stack`)
 

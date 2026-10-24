@@ -53,6 +53,20 @@ public static class ArgumentValidator
             throw new McpException($"{ErrorCodes.InvalidArgument}: path {reason.Value.Detail}; remediation: pass an expandable path returned by read_variables");
     }
 
+    /// <summary>A write target is a path too, so it gets the same read-only rule; it is never optional.</summary>
+    public static void ValidateWritePath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            throw new McpException($"{ErrorCodes.InvalidArgument}: path must not be empty; remediation: pass a variable name or path returned by read_variables");
+        ValidatePath(path);
+    }
+
+    public static void ValidateWriteValue(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            throw new McpException($"{ErrorCodes.InvalidArgument}: value must not be empty; remediation: pass the new value as read_variables shows it");
+    }
+
     public static void ValidateDirection(string direction)
     {
         if (direction is not ("over" or "into" or "out"))

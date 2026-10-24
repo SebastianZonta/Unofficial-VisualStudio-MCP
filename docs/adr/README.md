@@ -15,3 +15,4 @@ Architecture decisions, oldest first. Bodies are historical: a superseded ADR st
 | 0009 | [Launch needs no consent flag](0009-launch-without-consent.md) | accepted | `launch_process` creates its target, so consent (0004) applies only to attach. |
 | 0010 | [No-side-effects evaluation](0010-no-side-effects-eval.md) | accepted (supersedes 0005) | One read-only rule for every expression: text rule first, then live `, nse`. |
 | 0011 | [Exception settings in the VS instance](0011-exception-settings-in-vs-instance.md) | accepted | Exception-break settings live in the VS instance's table; breaks carry an `exception` payload. |
+| 0012 | [Consent-gated `set_variable`](0012-consent-gated-set-variable.md) | accepted | One write per call with its own consent; strict typed literals; refined 0010's read-only rule to cover reads only. |

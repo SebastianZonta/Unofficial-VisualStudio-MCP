@@ -4,8 +4,8 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] Write with consent reflects on subsequent fake read; without consent fails closed with state unchanged.
-- [ ] Wrong mode, type mismatch, read-only target, and unknown path each fail with their structured error and no mutation.
-- [ ] Cross-session frame ids are rejected; `evaluate` stays read-only.
+- [x] Write with consent reflects on subsequent fake read; without consent fails closed with state unchanged.
+- [x] Wrong mode, type mismatch, read-only target, and unknown path each fail with their structured error and no mutation.
+- [x] Cross-session frame ids are rejected; `evaluate` stays read-only.

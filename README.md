@@ -1,6 +1,6 @@
 # VsDebugMcp
 
-Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 20 tools over stdio.
+Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 21 tools over stdio.
 
 > **Unofficial project. Not affiliated with, sponsored, or endorsed by Microsoft.**
 > Visual Studio, EnvDTE, and .NET are trademarks of the Microsoft group of companies.
@@ -23,7 +23,7 @@ An agent workflow looks like this:
 4. `attach_process` — aim the debugger at it (`consent: true`, same-user only). Or skip steps 3–4: `launch_process` starts the program with the debugger attached from birth, so startup breakpoints hit.
 5. `set_breakpoint` → `resume` → `read_stack` / `read_variables` / `evaluate` → `resume`.
 
-## Tools (20)
+## Tools (21)
 
 | Tool | One line |
 |---|---|
@@ -46,6 +46,7 @@ An agent workflow looks like this:
 | `set_exception_setting` | Break first-chance, unhandled-only, or reset one exception type. Break or design mode. Exception breaks carry type, `$exception` path, and message. |
 | `read_stack` | Call stack, newest first. Requires break mode. |
 | `read_variables` | Frame locals/args; expandable paths drill into members. Requires break mode. |
+| `set_variable` | Write one variable (frame + `read_variables` path). Needs `consent: true` on every call; strict typing. Requires break mode. |
 | `evaluate` | Read-only expression. No assignments, no statements. Requires break mode. |
 
 Failures are structured: `code: detail; remediation: …` (e.g. `consent-required`,
@@ -90,7 +91,8 @@ STA dispatcher thread and are snapshotted to plain DTOs; live handles never esca
 
 Safety is fail-closed throughout: process attach requires explicit consent plus a
 same-user WMI owner check; unknown owners are excluded by default and flagged when
-listed unfiltered; `evaluate` is read-only by construction; listing never attaches
+listed unfiltered; `evaluate` is read-only by construction; the only write, `set_variable`, needs its own
+`consent: true` on every call and rejects lossy or mistyped values; listing never attaches
 to or disturbs anything.
 
 ## Known limits

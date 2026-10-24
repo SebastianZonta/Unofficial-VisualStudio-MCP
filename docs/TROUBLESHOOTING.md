@@ -6,7 +6,7 @@ Failure playbook, by symptom. Error codes are defined in the
 - Setup and environment: [elevation mismatch](#elevation-mismatch-elevation-mismatch), [EnvDTE `HintPath` misses](#build-envdte-hintpath-misses), [exe locked on republish](#exe-locked-on-republish)
 - VS state: [busy / modal dialog](#vs-busy--modal-dialog-vs-busy-timeout), [dead VS instance](#dead-vs-instance-vs-not-running-per-session)
 - Targets and breakpoints: [PID recycle](#pid-recycle-process-not-found), [wrong process attached](#wrong-process-attached), [breakpoint stays unbound](#breakpoint-stays-unbound)
-- Evaluation and results: [side-effect refusal](#side-effect-refusal-invalid-expression), [empty `lastHit`](#empty-lasthit), [null exception `message`](#exception-break-with-a-null-message), [exception setting did not stop](#exception-settings-did-not-stop-the-target)
+- Evaluation and results: [side-effect refusal](#side-effect-refusal-invalid-expression), [empty `lastHit`](#empty-lasthit), [null exception `message`](#exception-break-with-a-null-message), [exception setting did not stop](#exception-settings-did-not-stop-the-target), [write refused](#write-refused-read-only-target-type-mismatch)
 
 ## Setup and environment
 
@@ -118,3 +118,16 @@ did not break. Check `list_exception_settings(nameFilter: <type>)` shows
 has its own entry). Changes need break or design mode: a change attempted while
 running fails with `already-running`. Settings live in the VS instance and may
 persist with the solution: reset with `default` when done.
+
+### Write refused (`read-only-target`, `type-mismatch`)
+
+Symptom: `set_variable` fails and the value is unchanged. `type-mismatch`
+means the value does not convert exactly to the type `read_variables` shows
+(e.g. `1.5` into an `int`, `1,5` with a comma, an unquoted string), or the
+target is not a primitive, `string` or nullable; pass it as `read_variables`
+prints it. `read-only-target` means the evaluator refused the assignment or
+the re-read showed the old value: constants, get-only properties and
+optimized-away locals cannot change. Rewriting a value in a different
+non-numeric spelling than VS shows (an escaped string written another way)
+can also read as unchanged; write the exact shown form. Fix: write the
+backing field or the local instead, or rebuild Debug for optimized code.

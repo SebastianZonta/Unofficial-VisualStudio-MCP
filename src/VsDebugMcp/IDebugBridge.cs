@@ -20,6 +20,7 @@ public interface IDebugBridge
     Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct);
     Task<ReadStackResult> ReadStackAsync(string sessionId, int maxFrames, CancellationToken ct);
     Task<ReadVariablesResult> ReadVariablesAsync(string sessionId, string frameId, string? path, int maxVariables, CancellationToken ct);
+    Task<SetVariableResult> SetVariableAsync(string sessionId, string frameId, string path, string value, bool consent, CancellationToken ct);
     Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct);
     Task<ExecutionResult> AttachProcessAsync(string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct);
     Task<LaunchProcessResult> LaunchProcessAsync(string sessionId, string executablePath, string? arguments,

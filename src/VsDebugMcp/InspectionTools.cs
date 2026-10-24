@@ -38,6 +38,24 @@ public sealed class InspectionTools
         return ToolErrors.MapAsync(() => bridge.ReadVariablesAsync(sessionId, frameId, path, maxVariables, cancellationToken));
     }
 
+    [McpServerTool(Name = "set_variable")]
+    [Description("Write one variable in a frame of the active session. Requires break mode and consent:true on every call. Address it by its read_variables path (or its name at top level); value uses the read_variables representation.")]
+    public static Task<SetVariableResult> SetVariableAsync(
+        IDebugBridge bridge,
+        [Description("Session id returned by attach.")] string sessionId,
+        [Description("Frame id returned by read_stack.")] string frameId,
+        [Description("Variable to write: its read_variables path, or its name for a top-level local or argument.")] string path,
+        [Description("New value as read_variables shows it: number, true/false, 'c', \"quoted string\", or null.")] string value,
+        [Description("Explicit consent to mutate target state. Must be true on every call; attach_process consent never counts.")] bool consent = false,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        ArgumentValidator.ValidateFrameId(frameId);
+        ArgumentValidator.ValidateWritePath(path);
+        ArgumentValidator.ValidateWriteValue(value);
+        return ToolErrors.MapAsync(() => bridge.SetVariableAsync(sessionId, frameId, path, value, consent, cancellationToken));
+    }
+
     [McpServerTool(Name = "evaluate")]
     [Description("Evaluate a read-only expression in the top frame (f0) of the active session. Requires break mode. Assignment, ++/--, and statements are rejected; calls with side effects are refused.")]
     public static Task<EvaluateResult> EvaluateAsync(

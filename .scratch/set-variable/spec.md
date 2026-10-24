@@ -1,6 +1,6 @@
 # set_variable (gated variable writes)
 
-Status: ready-for-agent
+Status: in-progress (live E2E W1–W10 pending)
 
 ## Problem Statement
 
@@ -35,7 +35,7 @@ Add a session-scoped `set_variable` tool that writes one variable per call (fram
 - Mode gate: writes are accepted only when the session mode is break; any other mode yields a structured mode error and no mutation, consistent with the existing rule that inspection tools need break mode.
 - Path resolution reuses the `read_variables` resolution semantics (frame-relative drill-down via expandable paths); unknown paths, stale frame ids, and ambiguous paths are resolution errors, never partial writes.
 - Value coercion is strict: the bridge attempts conversion to the target type and rejects mismatches with a structured error carrying expected versus provided type information; no silent truncation or locale-dependent parsing.
-- Read-only targets (constants, read-only properties, optimized-away locals, out-of-scope symbols) are detected before mutation and reported with a structured read-only error; the debugger state is untouched.
+- Read-only targets (constants, read-only properties, optimized-away locals, out-of-scope symbols) are detected before mutation (deviation: live detects them by a refused or unchanged write, out-of-scope symbols surface as `path-not-found`, and coercion covers primitives, string and nullable only; see ADR-0012) and reported with a structured read-only error; the debugger state is untouched.
 - Session isolation: the write resolves the frame within the calling debug session only; cross-session frame ids are invalid, so a write can never affect a sibling debug session or a different VS instance.
 - Glossary vocabulary governs naming and errors: debug session versus VS instance versus target process, mode versus lastHit, and consent in the Mine/consent sense.
 - `evaluate` semantics are unchanged: assignments, statements, and compound expressions stay rejected; the only supported mutation path is the new consent-gated tool.

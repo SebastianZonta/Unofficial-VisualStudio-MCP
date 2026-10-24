@@ -1077,6 +1077,65 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             }
         }, ct);
 
+    public async Task<SetVariableResult> SetVariableAsync(
+        string sessionId, string frameId, string path, string value, bool consent, CancellationToken ct)
+    {
+        await RequireSessionAsync(sessionId, ct);
+        // Consent first: no debugger state read or written without it.
+        VariableWrite.RequireConsent(consent, frameId, path);
+        return await RunSnapshotAsync(sessionId, debugger =>
+        {
+            RequireBreak(debugger);
+            var frame = FindFrame(debugger, frameId);
+            if (frame is null)
+                throw new DebugDomainException(
+                    "frame-not-found", $"no frame {frameId}", "call read_stack for valid frame ids");
+            debugger.CurrentStackFrame = frame;
+            try
+            {
+                // Resolve under nse first: a path whose read alone has side effects never reaches the write.
+                var probe = debugger.GetExpression(NoSideEffects(path), false, 5000);
+                if (!probe.IsValidValue)
+                {
+                    if (SafeGet(() => probe.Value)?.Contains("optimized", StringComparison.OrdinalIgnoreCase) == true)
+                        throw VariableWrite.ReadOnly(frameId, path, "optimized away");
+                    throw VariableWrite.PathNotFound(frameId, path);
+                }
+                var type = SafeGet(() => probe.Type) ?? "(unknown)";
+                var literal = VariableWrite.Coerce(type, value);
+                var before = SafeGet(() => probe.Value);
+                // The write itself drops nse (an assignment is a side effect); the nse probe above gated the path.
+                var target = debugger.GetExpression(path, false, 5000);
+                try
+                {
+                    target.Value = literal;
+                }
+                catch (COMException ex) when (!ComErrorMapper.IsDisconnected(ex) && ComErrorMapper.ToDomain(ex).Code == "automation-failed")
+                {
+                    // Busy, denied and gone keep their own codes; a plain evaluator refusal is a read-only target.
+                    throw VariableWrite.ReadOnly(frameId, path, "the evaluator refused the assignment");
+                }
+                var after = debugger.GetExpression(NoSideEffects(path), false, 5000);
+                var now = after.IsValidValue ? SafeGet(() => after.Value) : null;
+                if (now is null)
+                    throw new DebugDomainException(
+                        "automation-failed", $"wrote {path} in frame {frameId} but could not re-read it; the write may have applied",
+                        "re-read the frame with read_variables before writing again");
+                // A silently ignored assignment (const, get-only) leaves the old value in place.
+                if (now == before && !VariableWrite.IsSameShownValue(before, literal))
+                    throw VariableWrite.ReadOnly(frameId, path, "the value did not change");
+                return new SetVariableResult(frameId, path,
+                    now.Length > MaxValueLength ? now[..MaxValueLength] + " [truncated]" : now, SafeGet(() => after.Type) ?? type,
+                    ModeOf(debugger), LastHitOf(debugger));
+            }
+            finally
+            {
+                // A write in any frame never moves evaluate off the top frame.
+                SelectTopFrame(debugger);
+            }
+        }, ct);
+    }
+
     public async Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
         {

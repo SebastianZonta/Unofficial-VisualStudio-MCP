@@ -1,6 +1,6 @@
 # Tools reference
 
-20 tools over stdio. Session id comes from `attach` — one live session per VS
+21 tools over stdio. Session id comes from `attach` — one live session per VS
 instance. `list_instances`, `list_processes`, and `list_sessions` are
 session-less. See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) when a call fails.
 
@@ -46,6 +46,7 @@ When `resume`, `step`, `run_to_cursor` or `launch_process` stops on an exception
 |---|---|---|
 | `read_stack` | `sessionId`, `maxFrames` = 20 | Newest frame first. Frames carry function + module only (no file/line — EnvDTE exposes none). |
 | `read_variables` | `sessionId`, `frameId`, `path?` = null, `maxVariables` = 50 | Omit `path` for top level; pass an expandable `path` to drill into members. Both resolve in the frame named by `frameId` (unknown frame is `frame-not-found`, with or without `path`). `path` gets the same read-only rule as `evaluate`. Reading any frame leaves `evaluate` in `f0`. |
+| `set_variable` | `sessionId`, `frameId`, `path`, `value`, `consent` = false | Writes one variable per call; the only mutation path ([ADR-0012](adr/0012-consent-gated-set-variable.md)). `consent: true` is required on every call and is never taken from `attach_process` (missing is `consent-required`, checked before mode or debugger state). Break mode only. `path` is the variable's `read_variables` `path`, or its name for a top-level local or argument, and gets the same read-only rule as `evaluate`. `value` is written as `read_variables` shows it: integral, `float`/`double`/`decimal` (invariant `.` decimal point, no separators or exponent for `decimal`), `true`/`false`, `'c'`, `"quoted string"`, or `null` for `string` and `T?`. Other types, out-of-range or lossy values are `type-mismatch` (expected vs provided); constants, get-only properties and optimized-away locals are `read-only-target`. Failed writes change nothing. The result echoes `frameId`, `path`, and the re-read `value` and `type`. Writing any frame leaves `evaluate` in `f0`. |
 | `evaluate` | `sessionId`, `expression`, `timeoutMs` = 5000 | Read-only, always in the top frame (`f0`). Empty, `;` (statements), multiline, assignment, `++`/`--` and `<<=`/`>>=` are rejected client-side; `==`, `!=`, `<=`, `>=`, `=>` are fine. The live evaluator runs in no-side-effects mode, so a call that would mutate state is refused with `invalid-expression` ([ADR-0010](adr/0010-no-side-effects-eval.md)). |
 
 ## Result envelope
@@ -73,7 +74,7 @@ Failures are structured `code: detail; remediation: …`:
 | `elevation-mismatch` | access denied talking to VS (integrity-level mismatch) | run bridge at the same elevation as VS (both elevated or both not) |
 | `automation-failed` | other COM failure | dismiss dialogs and retry; restart VS if it persists |
 | `timeout` | automation call exceeded its budget | dismiss dialogs and retry (with larger `timeoutMs` for waits) |
-| `consent-required` | `attach_process` without `consent: true` | re-call with `consent: true` |
+| `consent-required` | `attach_process` or `set_variable` without `consent: true` (each tool's own flag; attach consent never authorizes a write) | re-call with `consent: true` |
 | `user-mismatch` | target process owned by another user (or owner unknowable — fails closed) | only attach to your own processes |
 | `process-not-found` | no local process with that pid (exited or recycled) | re-list and retry promptly |
 | `executable-not-found` | `launch_process` path has no file | pass the full path to a built target executable |
@@ -83,13 +84,15 @@ Failures are structured `code: detail; remediation: …`:
 | `not-running` | `pause` while not running, or `list_modules`/`run_to_cursor` in design mode (not debugging) | resume first, then pause while running; for `list_modules`/`run_to_cursor`, `attach_process` or `launch_process` first |
 | `unbound-location` | `run_to_cursor` destination did not bind (the temporary breakpoint is already removed) | check the file path and line, or `list_modules` for the module's symbol state |
 | `already-running` | `resume` while already running, or `set_exception_setting` while running | pause first to inspect; change exception settings in break or design mode |
-| `invalid-argument` | empty file/breakpointId/expression, bad line, bad step direction, `;`, newline, assignment, `++`/`--` or `<<=`/`>>=` in an expression or `read_variables` `path`, write-like/multiline `condition`, bad `hitCount`/`hitCountMode`, empty `exceptionType` or unknown exception `mode`, bad `logMessage` (empty, unbalanced braces, write-like hole, or combined with stopping options), relative, `devenv`, or non-.NET (no `.runtimeconfig.json` beside it) `executablePath`, missing `workingDirectory` | follow the per-field guidance in the message |
+| `invalid-argument` | empty file/breakpointId/expression, bad line, bad step direction, `;`, newline, assignment, `++`/`--` or `<<=`/`>>=` in an expression, `read_variables` `path` or `set_variable` `path`, empty `set_variable` `path`/`value`, write-like/multiline `condition`, bad `hitCount`/`hitCountMode`, empty `exceptionType` or unknown exception `mode`, bad `logMessage` (empty, unbalanced braces, write-like hole, or combined with stopping options), relative, `devenv`, or non-.NET (no `.runtimeconfig.json` beside it) `executablePath`, missing `workingDirectory` | follow the per-field guidance in the message |
 | `invalid-expression` | expression did not evaluate, or would have side effects (no-side-effects mode refused it) | pass a read-only expression valid in the top frame; prefer fields and property reads over method calls |
 | `exception-not-found` | `set_exception_setting` with a type name that is not an exact CLR exception type in the session's settings (including short names) | pass a fully qualified CLR type name as listed by `list_exception_settings` |
 | `breakpoint-exists` | `set_breakpoint` on a location that already holds a breakpoint this debug session did not create (set by hand or by another session) | use it as is (it still stops the target), or remove it in VS and set again |
 | `breakpoint-not-found` | unknown or already-removed breakpoint id, or an `other<N>` id (not created by this debug session) | call `list_breakpoints` for valid ids; remove `other<N>` breakpoints in VS |
 | `frame-not-found` | unknown frame id | call `read_stack` for valid frame ids |
-| `path-not-found` | unknown expandable path | drill down only via paths returned by `read_variables` |
+| `path-not-found` | unknown expandable path, or `set_variable` target that does not resolve in the frame (detail names frame and path) | drill down only via paths returned by `read_variables`; re-read the frame before writing |
+| `type-mismatch` | `set_variable` value that does not convert exactly to the target's type, or a target type it cannot write (detail names expected vs provided) | pass the value as `read_variables` shows it for that type |
+| `read-only-target` | `set_variable` on a constant, get-only property or optimized-away local, or an assignment the evaluator refused or ignored | write a field or local instead |
 
 `list_instances` never fails wholesale: unreachable/busy instances come back as
 `reachable: false` entries with error text. `list_processes` skips processes

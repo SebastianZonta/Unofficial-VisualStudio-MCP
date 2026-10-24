@@ -50,7 +50,8 @@ _Avoid_: unauthenticated, detached
 **Mine / consent**:
 `mine` flags a target process the same-user gate will accept. `consent` is the
 explicit `attach_process: true` confirmation for arbitrary-process attach.
-Unknown owners fail closed (not mine).
+`set_variable` carries its own per-call `consent` to mutate target state; it is
+never shared with, or implied by, attach consent. Unknown owners fail closed (not mine).
 _Avoid_: owned, permission (when meaning these two gates)
 
 **Mode / last-hit**:

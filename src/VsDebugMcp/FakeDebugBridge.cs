@@ -27,6 +27,8 @@ public sealed class FakeDebugBridge : IDebugBridge
         public FakeThrow? PendingThrow { get; set; }
         /// <summary>Exception the session is stopped on; null on every other stop.</summary>
         public FakeThrow? CurrentException { get; set; }
+        /// <summary>Values written via set_variable, keyed by (frameId, variable name): per session, never shared.</summary>
+        public Dictionary<(string FrameId, string Name), (string Value, string Type)> Writes { get; } = new();
     }
 
     private sealed record FakeThrow(string Type, string? Message, bool Handled);
@@ -392,7 +394,7 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "frame-not-found", $"no frame {frameId}", "call read_stack for valid frame ids");
         if (path is null)
-            return new ReadVariablesResult(frameId, Path: null, CannedTopLevel(frameId).Take(maxVariables).ToList(), session.Mode, session.LastHit);
+            return new ReadVariablesResult(frameId, Path: null, Written(session, frameId, CannedTopLevel(frameId)).Take(maxVariables).ToList(), session.Mode, session.LastHit);
         if (path == ExceptionConfig.ExceptionPath && session.CurrentException is { } current)
             return new ReadVariablesResult(frameId, path,
             [
@@ -402,7 +404,34 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "path-not-found", $"no expandable path {path} on frame {frameId}",
                 "drill down only via expandable paths returned by read_variables");
-        return new ReadVariablesResult(frameId, path, CannedChildren(frameId).Take(maxVariables).ToList(), session.Mode, session.LastHit);
+        return new ReadVariablesResult(frameId, path, Written(session, frameId, CannedChildren(frameId)).Take(maxVariables).ToList(), session.Mode, session.LastHit);
+    }
+
+    private static IEnumerable<ValueInfo> Written(FakeSession session, string frameId, IEnumerable<ValueInfo> canned) =>
+        canned.Select(v => session.Writes.TryGetValue((frameId, v.Name), out var w) ? v with { Value = w.Value, Type = w.Type } : v);
+
+    // Get-only in the fake's model (List<T>.Count), so writes to it are read-only targets.
+    private static readonly HashSet<string> ReadOnlyNames = new(StringComparer.Ordinal) { "items.Count" };
+
+    public async Task<SetVariableResult> SetVariableAsync(
+        string sessionId, string frameId, string path, string value, bool consent, CancellationToken ct)
+    {
+        var session = await RequireAsync(sessionId, ct);
+        // Same order as the live bridge: consent before any debugger state is read.
+        VariableWrite.RequireConsent(consent, frameId, path);
+        RequireBreak(session);
+        if (CannedFrames().All(f => f.Id != frameId))
+            throw new DebugDomainException(
+                "frame-not-found", $"no frame {frameId}", "call read_stack for valid frame ids");
+        var target = Written(session, frameId, CannedTopLevel(frameId).Concat(CannedChildren(frameId)))
+            .FirstOrDefault(v => v.Name == path.Trim())
+            ?? throw VariableWrite.PathNotFound(frameId, path);
+        if (ReadOnlyNames.Contains(target.Name))
+            throw VariableWrite.ReadOnly(frameId, path, "get-only property");
+        // Echo what VS would re-read: the coerced value as displayed, not the agent's spelling.
+        var shown = VariableWrite.Shown(VariableWrite.Coerce(target.Type, value));
+        session.Writes[(frameId, target.Name)] = (shown, target.Type);
+        return new SetVariableResult(frameId, path, shown, target.Type, session.Mode, session.LastHit);
     }
 
     public async Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct)
