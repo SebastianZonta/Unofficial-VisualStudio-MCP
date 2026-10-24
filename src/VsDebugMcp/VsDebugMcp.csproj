@@ -26,10 +26,12 @@
   <!-- Build-time only: embedded interop types, no runtime PIA dependency.
        Runtime binds the DTE object from the ROT (never a hardcoded ProgID).
        Prefer $(VSINSTALLDIR) (VS Developer prompt, or CI vswhere step that exports it);
-       fall back to the local Community install. Exists conditions keep this working
+       fall back to the local Enterprise, Professional, then Community install. Exists conditions keep this working
        across VS editions (Enterprise/Professional/Community). -->
   <PropertyGroup>
     <VsPublicAssemblies Condition="Exists('$(VSINSTALLDIR)Common7\IDE\PublicAssemblies\EnvDTE.dll')">$(VSINSTALLDIR)Common7\IDE\PublicAssemblies\</VsPublicAssemblies>
+    <VsPublicAssemblies Condition="'$(VsPublicAssemblies)' == '' And Exists('C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\IDE\PublicAssemblies\EnvDTE.dll')">C:\Program Files\Microsoft Visual Studio\18\Enterprise\Common7\IDE\PublicAssemblies\</VsPublicAssemblies>
+    <VsPublicAssemblies Condition="'$(VsPublicAssemblies)' == '' And Exists('C:\Program Files\Microsoft Visual Studio\18\Professional\Common7\IDE\PublicAssemblies\EnvDTE.dll')">C:\Program Files\Microsoft Visual Studio\18\Professional\Common7\IDE\PublicAssemblies\</VsPublicAssemblies>
     <VsPublicAssemblies Condition="'$(VsPublicAssemblies)' == ''">C:\Program Files\Microsoft Visual Studio\18\Community\Common7\IDE\PublicAssemblies\</VsPublicAssemblies>
   </PropertyGroup>
 

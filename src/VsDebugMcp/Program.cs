@@ -19,6 +19,9 @@ if (args.Contains("--live-check-run-to", StringComparer.Ordinal))
 if (args.Contains("--live-check-audit", StringComparer.Ordinal))
     return await LiveCheck.RunAuditAsync(args);
 
+if (args.Contains("--live-check-exception", StringComparer.Ordinal))
+    return await LiveCheck.RunExceptionAsync(args);
+
 if (args.Contains("--live-check", StringComparer.Ordinal))
     return await LiveCheck.RunAsync(args);
 

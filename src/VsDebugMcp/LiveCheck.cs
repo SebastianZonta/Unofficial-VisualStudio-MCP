@@ -371,6 +371,82 @@ internal static class LiveCheck
         }
     }
 
+    /// <summary>exception-config manual check against the Sandbox: settings list/set/reject, a
+    /// first-chance break carrying type, path and message (matching the $exception.Message probe),
+    /// then the setting is restored with default.</summary>
+    public static async Task<int> RunExceptionAsync(string[] args)
+    {
+        var exe = args.SkipWhile(a => a != "--live-check-exception").Skip(1).FirstOrDefault();
+        if (exe is null)
+        {
+            Console.Error.WriteLine("usage: VsDebugMcp --live-check-exception <Sandbox.exe>");
+            return 2;
+        }
+        const string type = "System.InvalidOperationException";
+        using var bridge = new DteDebugBridge();
+        using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        string? sessionId = null;
+        var changed = false;
+        var failures = 0;
+        void Check(bool ok, string what)
+        {
+            Console.WriteLine($"{(ok ? "PASS" : "FAIL")} {what}");
+            if (!ok) failures++;
+        }
+        try
+        {
+            sessionId = (await bridge.AttachAsync(null, cts.Token)).SessionId;
+            var all = await bridge.ListExceptionSettingsAsync(sessionId, null, cts.Token);
+            Console.WriteLine($"list: count={all.Settings.Count} mode={all.Mode}");
+            var found = all.Settings.FirstOrDefault(s => s.Name == type);
+            Check(found is not null, $"{type} listed (found mode {found?.Mode})");
+            Check(await FailsWith(() => bridge.SetExceptionSettingAsync(sessionId, "InvalidOperationException", ExceptionBreakModes.FirstChance, cts.Token), ErrorCodes.ExceptionNotFound), "short name is exception-not-found");
+            Check(await FailsWith(() => bridge.SetExceptionSettingAsync(sessionId, "System.NoSuchException", ExceptionBreakModes.FirstChance, cts.Token), ErrorCodes.ExceptionNotFound), "unknown name is exception-not-found");
+            var set = await bridge.SetExceptionSettingAsync(sessionId, type, ExceptionBreakModes.FirstChance, cts.Token);
+            changed = true;
+            Check(set.Setting.Mode == ExceptionBreakModes.FirstChance, "set first-chance echoes first-chance");
+
+            var launch = await bridge.LaunchProcessAsync(sessionId, exe, "throw", null, null, 30_000, cts.Token);
+            Console.WriteLine($"launch: mode={launch.Mode} lastHit={launch.LastHit} note={launch.Note}");
+            Console.WriteLine($"  exception: type={launch.Exception?.Type} path={launch.Exception?.Path} message={launch.Exception?.Message ?? "(null)"}");
+            Check(launch.Mode == "break" && launch.LastHit is null, "first-chance break with no lastHit");
+            Check(launch.Exception?.Type.Contains(type, StringComparison.Ordinal) == true, "payload type");
+            Check(launch.Exception?.Path == "$exception", "payload path");
+            if (launch.Exception is { Message: { } message })
+            {
+                var probe = await bridge.EvaluateAsync(sessionId, "$exception.Message", 10_000, cts.Token);
+                Check(probe.Value == message, $"message matches probe ({probe.Value})");
+            }
+            else
+            {
+                Console.WriteLine("OBS message null: nse refused the getter; record in TROUBLESHOOTING.md");
+            }
+            for (var i = 0; i < 3; i++)
+            {
+                var next = await bridge.ResumeAsync(sessionId, 30_000, cts.Token);
+                Console.WriteLine($"resume: mode={next.Mode} note={next.Note}");
+                if (next.Mode != "break") break;
+            }
+            Console.WriteLine(failures == 0 ? "exception live check: all passed" : $"exception live check: {failures} failed");
+            return failures == 0 ? 0 : 1;
+        }
+        catch (DebugDomainException ex)
+        {
+            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
+            return 1;
+        }
+        finally
+        {
+            // Settings live in the VS instance (ADR-0011): restore what this check changed.
+            if (sessionId is not null)
+            {
+                if (changed)
+                    await bridge.SetExceptionSettingAsync(sessionId, type, ExceptionBreakModes.Default, CancellationToken.None);
+                await bridge.DetachAsync(sessionId, CancellationToken.None);
+            }
+        }
+    }
+
     private static async Task<bool> FailsWith(Func<Task> call, string code)
     {
         try
