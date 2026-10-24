@@ -36,6 +36,8 @@ jobs:
           # PlatformNotSupportedException, breaks list_processes/attach_process)
           # once shadowed a good publish (see TROUBLESHOOTING stale-dir entry).
           # Publish to an empty dir and trip if the placeholder is on top.
+          # Probe below exits 2 by design; keep native non-zero from aborting so $LASTEXITCODE is checked manually.
+          $PSNativeCommandUseErrorActionPreference = $false
           $out = Join-Path $env:RUNNER_TEMP 'publish-check'
           if (Test-Path $out) { Remove-Item -Recurse -Force $out }
           dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Release -r win-x64 --self-contained -o $out
