@@ -26,7 +26,11 @@ the fake. New test pins the no-throw shape; positive case is E26 live.
 scoped live E26 (`attach_process(<devenv pid>)` → `invalid-argument`) to
 close.
 
-**Status:** needs-triage
+**Update (live E26 on standalone-v7):** `attach_process(<devenv pid>)` →
+`invalid-argument: devenv (PID …) is a VS instance, never a target process`.
+Verbatim the contract. Issue closed.
+
+**Status:** resolved
 
 ## Comments
 
