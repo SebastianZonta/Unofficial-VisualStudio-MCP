@@ -117,6 +117,62 @@ public sealed class ConditionalBreakpointTests
     }
 
     [Fact]
+    public async Task Logpoint_only_loop_runs_twenty_hits_without_stopping()
+    {
+        // Seam pin for E2E C6 (loop scenario, 20 TICK hits): a logpoint-only run
+        // never stops, buffers exactly the 20 entries in order with hitCount 1-20.
+        var (bridge, sessionId) = await AttachedAsync();
+        var set = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "Scenarios.cs", 19, CancellationToken.None,
+            logMessage: "i={i} total={total}");
+
+        for (var i = 0; i < 20; i++)
+        {
+            var resumed = await ExecutionTools.ResumeAsync(bridge, sessionId, 5000, CancellationToken.None);
+            Assert.Equal("run", resumed.Mode);
+            Assert.Null(resumed.LastHit);
+            if (i < 19)
+                await ExecutionTools.PauseAsync(bridge, sessionId, CancellationToken.None);
+        }
+
+        var list = await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None);
+        Assert.Equal("run", list.Mode);
+        Assert.NotNull(list.Log);
+        var log = list.Log ?? [];
+        Assert.Equal(20, log.Count);
+        for (var i = 0; i < 20; i++)
+        {
+            Assert.Equal(set.Breakpoint.Id, log[i].BreakpointId);
+            Assert.Equal(i + 1, log[i].HitCount);
+        }
+        Assert.All(log, e => Assert.Equal("i=41.80 total=41.80", e.Message));
+    }
+
+    [Theory]
+    // run observed: the Go landed.
+    [InlineData("run", 1, 5, 1, 5, true)]
+    [InlineData("design", 1, 5, 1, 5, true)]
+    // Unreadable snapshot: poll loop re-reads rather than settling forever.
+    [InlineData("unknown", -1, -1, 1, 5, true)]
+    // Another thread's hit: genuinely new, stop settling.
+    [InlineData("break", 2, 5, 1, 5, true)]
+    // Same thread, count advanced: the resume landed and the tight loop
+    // already re-hit (the C6 spurious-stop shape). Settle, let the poll log it.
+    [InlineData("break", 1, 6, 1, 5, true)]
+    [InlineData("break", 1, 6, 1, 6, false)]
+    // Same thread, same count: the Go hasn't landed yet. Keep waiting so the
+    // outer poll never buffers the same hit twice.
+    [InlineData("break", 1, 5, 1, 5, false)]
+    // Same thread, unreadable count: a failed read is not progress. Keep
+    // waiting rather than risk a duplicate log entry.
+    [InlineData("break", 1, -1, 1, 5, false)]
+    public void Logpoint_settle_exits_only_once_the_resume_took_effect(
+        string mode, int settleThread, int settleHits, int loggedThread, int loggedHits, bool expected)
+    {
+        Assert.Equal(expected,
+            DteDebugBridge.LogpointResumeSettled(mode, settleThread, settleHits, loggedThread, loggedHits));
+    }
+
+    [Fact]
     public async Task Logpoints_are_isolated_per_session_and_released_on_detach()
     {
         var bridge = new FakeDebugBridge();

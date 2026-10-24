@@ -743,19 +743,34 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         // The Go is non-blocking: the mode still reads break until the resumed
         // thread actually runs, and the poll loop would re-log the same hit.
         // Settle (bounded) until the resume takes effect or another thread's hit
-        // surfaces; any later break is then genuinely new.
+        // surfaces; any later break is then genuinely new. A re-hit on the same
+        // thread shows up as an advanced hit count: without that check a tight
+        // single-threaded loop never observes run mode, burns the full 2s per
+        // hit, and a 30s launch budget expires mid-run as a spurious stop.
         var settled = System.Diagnostics.Stopwatch.StartNew();
         while (settled.Elapsed < TimeSpan.FromSeconds(2))
         {
             await Task.Delay(100, ct);
-            var (settleMode, _, settleThread) = await TrySnapshotThreadAsync(sessionId, ct);
-            if (settleMode != "break" || settleThread != logged.Value.ThreadId)
+            var (settleMode, _, settleThread, settleHits) = await TrySnapshotThreadAsync(sessionId, owner, ct);
+            if (LogpointResumeSettled(settleMode, settleThread, settleHits, logged.Value.ThreadId, logged.Value.Hits))
                 break;
         }
         return true;
     }
 
-    private async Task<(string Mode, string? LastHit, int ThreadId)> TrySnapshotThreadAsync(string sessionId, CancellationToken ct)
+    /// <summary>Settle exit for an emulated logpoint Go: done when the resume
+    /// observably took effect (running, another thread's hit, or the same thread
+    /// already re-hit with an advanced count, so the pending break is new).
+    /// A same-thread/same-count break means the Go hasn't landed yet: keep
+    /// waiting so the outer poll never re-logs the hit just buffered. A failed
+    /// hit-count read (-1) is not progress: keep waiting rather than risk a
+    /// duplicate log entry.</summary>
+    internal static bool LogpointResumeSettled(string settleMode, int settleThread, int settleHits, int loggedThread, int loggedHits) =>
+        settleMode != "break" || settleThread != loggedThread
+        || (settleHits >= 0 && settleHits != loggedHits);
+
+    private async Task<(string Mode, string? LastHit, int ThreadId, int Hits)> TrySnapshotThreadAsync(
+        string sessionId, OwnedBreakpoint owner, CancellationToken ct)
     {
         var dte = SessionDte(sessionId);
         try
@@ -765,19 +780,22 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 var debugger = DebuggerOf(dte);
                 var mode = ModeOf(debugger);
                 if (mode != "break")
-                    return (mode, (string?)null, -1);
+                    return (mode, (string?)null, -1, -1);
                 var tid = -1;
                 try { tid = debugger.CurrentThread?.ID ?? -1; } catch (COMException) { }
-                return (mode, LastHitOf(debugger), tid);
+                var hits = -1;
+                try { hits = HitsOf(owner.Breakpoint); }
+                catch (Exception ex) when (ex is COMException or InvalidComObjectException) { }
+                return (mode, LastHitOf(debugger), tid, hits);
             }, 10_000, ct);
         }
         catch (TimeoutException)
         {
-            return ("unknown", null, -1);
+            return ("unknown", null, -1, -1);
         }
         catch (COMException)
         {
-            return ("unknown", null, -1);
+            return ("unknown", null, -1, -1);
         }
     }
 
