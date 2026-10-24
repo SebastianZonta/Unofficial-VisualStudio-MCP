@@ -15,7 +15,21 @@ form.
 
 **Blocked by:** None.
 
-**Status:** needs-triage
+**Update (live on v7 pre-fix):** top-level `order` DOES carry
+`"path":"order"` — half (a) does not reproduce; the R2 reading was wrong.
+Real bug is emitter-only, half (b).
+
+**Fix (done, unit-green, live-verified on v8):**
+`DteDebugBridge.JoinMemberPath` (internal static): no dot when the child
+starts with `[` — drill paths are fed back to the C# evaluator and must be
+valid C#. `SnapshotMembers` uses it; the fake's canned paths already used the
+no-dot form, which is why unit tests never caught it. New UT
+`Drill_path_join_is_valid_csharp`; I17 live re-run: emitted
+`order.Items[0]`, round-trips, Sku `"SKU-0001"`. 310/310 green. Published to
+`standalone-v8/`, host repointed + restarted. Cleaned the orphaned bp the
+server kill left behind (`Sandbox/.vs` deleted again, no VS running).
+
+**Status:** resolved
 
 ## Comments
 

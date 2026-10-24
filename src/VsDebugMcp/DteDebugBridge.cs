@@ -1622,6 +1622,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private const int MaxValueLength = 500;
 
+    // Drill paths are fed straight back to the C# evaluator, so they must be
+    // valid C#: an indexer attaches without a dot (order.Items[0], never
+    // order.Items.[0]).
+    internal static string JoinMemberPath(string parent, string childName)
+        => childName.StartsWith('[') ? parent + childName : parent + "." + childName;
+
     private ValueInfo SnapshotValue(Expression e, string? path)
     {
         var raw = SafeGet(() => e.Value) ?? "(unavailable)";
@@ -1651,7 +1657,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             foreach (Expression child in parent.DataMembers)
             {
                 if (items.Count >= max) break;
-                items.Add(SnapshotValue(child, $"{path}.{child.Name}"));
+                items.Add(SnapshotValue(child, JoinMemberPath(path, child.Name)));
             }
         }
         catch (COMException)

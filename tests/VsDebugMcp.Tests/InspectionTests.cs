@@ -191,6 +191,15 @@ public sealed class InspectionTests
     }
 
     [Fact]
+    public void Drill_path_join_is_valid_csharp()
+    {
+        // Emitted paths are fed back to the C# evaluator: indexers attach
+        // without a dot (I17: order.Items.[0] never resolved).
+        Assert.Equal("order.Items", DteDebugBridge.JoinMemberPath("order", "Items"));
+        Assert.Equal("order.Items[0]", DteDebugBridge.JoinMemberPath("order.Items", "[0]"));
+    }
+
+    [Fact]
     public async Task Evaluate_unknown_fails_like_live()
     {
         var (bridge, sessionId) = await BrokenAsync();
