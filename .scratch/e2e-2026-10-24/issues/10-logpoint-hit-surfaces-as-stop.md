@@ -22,7 +22,22 @@ twin until the owned id is removed.
 
 **Blocked by:** None.
 
-**Status:** needs-triage
+**Update (solo re-run, same binary, repo Sandbox):** launch went straight to
+`design` with no stop — C10 behavior PASS this time, Log complete. So the
+R1R launch-stop is a timing flake (1 stop in 2 runs), not deterministic. The
+post-run-end phantom `other1` twin at :83 reproduced deterministically AND
+cleared with the owned `remove_breakpoint` (list empty after) — that half is
+real, benign, and already handled. Reclassify: keep open for the PollResume
+race only if it recurs; the twin needs no fix.
+
+**Triage (watch canary, no code):** 1 stop in 2 runs with identical binary —
+timing flake, not deterministic. The phantom post-run-end twin is
+deterministic but benign (clears with the owned `remove_breakpoint`, already
+handled). Next full E2E decides it: another C10 launch-stop → full
+PollResume-race investigation; clean pass → close. Until then this stays open
+as the canary.
+
+**Status:** needs-info
 
 ## Comments
 
