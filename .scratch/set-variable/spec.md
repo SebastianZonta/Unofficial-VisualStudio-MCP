@@ -1,6 +1,6 @@
 # set_variable (gated variable writes)
 
-Status: in-progress (live E2E W1–W10 pending)
+Status: done
 
 ## Problem Statement
 
