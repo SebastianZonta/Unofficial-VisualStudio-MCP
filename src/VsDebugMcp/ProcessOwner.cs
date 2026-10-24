@@ -14,7 +14,21 @@ internal static class ProcessOwner
     private static Dictionary<int, string?>? _cache;
     private static DateTime _cacheAt = DateTime.MinValue;
 
-    public static string CurrentUserName() => WindowsIdentity.GetCurrent().Name;
+    public static string CurrentUserName()
+    {
+        try
+        {
+            return WindowsIdentity.GetCurrent().Name;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Identity/SID resolution varies by token and elevation: surface a mapped
+            // code, never a bare host error, so both process tools stay named.
+            throw new DebugDomainException(
+                "automation-failed", $"could not determine the bridge user: {ex.Message}",
+                "retry; if it persists, run the MCP host as the same user and elevation as the target processes");
+        }
+    }
 
     /// <summary>One WMI query for every local process (2s cache): prefer this over
     /// per-pid <see cref="OwnerOf"/> when listing. Missing pids mean unknown owner.</summary>
@@ -55,7 +69,7 @@ internal static class ProcessOwner
             }
             return null;
         }
-        catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException or InvalidOperationException)
+        catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException or InvalidOperationException or InvalidComObjectException)
         {
             return null;
         }
@@ -80,14 +94,14 @@ internal static class ProcessOwner
                         owners[pid] = ReadOwner(mo);
                     }
                     catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException
-                        or InvalidOperationException or FormatException or InvalidCastException or OverflowException)
+                        or InvalidOperationException or InvalidComObjectException or FormatException or InvalidCastException or OverflowException)
                     {
                         // One unreadable entry must not poison the whole snapshot.
                     }
                 }
             }
         }
-        catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException)
+        catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException or InvalidOperationException or InvalidComObjectException)
         {
             // Fail closed: empty map means every owner reads unknown downstream.
         }
