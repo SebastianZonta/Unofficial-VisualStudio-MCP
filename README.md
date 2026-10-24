@@ -1,6 +1,6 @@
 # VsDebugMcp
 
-Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 17 tools over stdio.
+Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 18 tools over stdio.
 
 > **Unofficial project. Not affiliated with, sponsored, or endorsed by Microsoft.**
 > Visual Studio, EnvDTE, and .NET are trademarks of the Microsoft group of companies.

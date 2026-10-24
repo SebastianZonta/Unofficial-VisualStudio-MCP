@@ -37,7 +37,7 @@ suite. The manual pass below remains the authority for everything the suite skip
    default; `--live` is accepted as a no-op)
    (stop the clients first: the exe is locked while hosts run). Restarting the
    host is the user's action; ask, don't work around it.
-3. Check the host: the vs-debug toolset must list all 17 tools (`list_modules`
+3. Check the host: the vs-debug toolset must list all 18 tools (`run_to_cursor`
    included). If any tool is missing, the host runs a stale binary: stop.
 4. Fan out exactly one subagent on **Sonnet 5.5**, using the prompt below.
 5. After it returns, run phase **H** (human-assisted) yourself with the user.
@@ -243,9 +243,14 @@ Remove the breakpoint and run to end.
 | E5 | `pause`; `set_breakpoint` at `HEARTBEAT`; `resume` | `break`, `lastHit` ends `Scenarios.cs:<HEARTBEAT>`; `evaluate("beat")` ≥ 0 |
 | E15 | still in E5's break: `list_modules(nameFilter: "SANDBOX")`; then `list_modules()` | `mode: break`; exactly one entry `Sandbox.dll`, `loaded: true`, `symbolState: loaded`, `symbolDetail` ends `Sandbox.pdb`. Unfiltered: also contains `System.Private.CoreLib.dll`, names sorted ascending |
 | E6 | remove it; `resume(timeoutMs: 1000)`; `list_modules(nameFilter: "sandbox")` | `status: ok`, `mode: run` (still running is success); re-list works in run mode: `mode: run`, `Sandbox.dll` still `symbolState: loaded` |
+| E16 | E1's target still running, no breakpoints: `run_to_cursor` at `HEARTBEAT`; `list_breakpoints` | `break`, `lastHit` ends `Scenarios.cs:<HEARTBEAT>`; no breakpoints listed (the temporary one is gone) |
+| E17 | `set_breakpoint` at `HEARTBEAT` (id H); `run_to_cursor` at `HEARTBEAT`; `list_breakpoints` | `break` at `HEARTBEAT`; exactly one entry, id H (reused, not deleted). Remove H |
+| E18 | `run_to_cursor` at `AFTER_LOOP` (never runs in `wait`), `timeoutMs: 1000`; `list_breakpoints` | `status: ok`, `mode: run`, `lastHit` null; no breakpoints listed |
+| E19 | `run_to_cursor` with `line: 0`; with `file: ""` | `invalid-argument` both; nothing created |
 | E7 | `resume(timeoutMs: 999)`; `resume(timeoutMs: 60001)` | `invalid-argument` both |
 | E8 | `launch_process` again while E1's target runs | `already-bound` |
 | E9 | `Stop-Process` the E1 target; `list_breakpoints`; `list_modules` | `mode: design`; `not-running` (not debugging) |
+| E20 | still in design after E9: `run_to_cursor` at `HEARTBEAT`; `list_breakpoints` | `not-running`; no breakpoints listed |
 | E10 | `launch_process(Sandbox.exe, "exit")` | ends `mode: design` (note says the run ended) |
 | E11 | Breakpoint at `ECHO`; `launch_process(Sandbox.exe, arguments: "echo a1 \"two words\"", workingDirectory: %TEMP% (absolute), environment: {SANDBOX_E2E: "yes"})` | `break`; `argsJoined` = "a1\|two words"; `cwd` = %TEMP% (case-insensitive, no trailing slash); `envValue` = "yes". Remove it, run to end |
 | E12 | Breakpoint at `ASYNC`; launch `async` | `break`; `f0.function` contains `AsyncFlow`; `before`, `after` are integers. Remove it, run to end |
