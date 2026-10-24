@@ -24,4 +24,6 @@ public interface IDebugBridge
     Task<ExecutionResult> AttachProcessAsync(string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct);
     Task<LaunchProcessResult> LaunchProcessAsync(string sessionId, string executablePath, string? arguments,
         string? workingDirectory, IReadOnlyDictionary<string, string>? environment, int timeoutMs, CancellationToken ct);
+    Task<ListExceptionSettingsResult> ListExceptionSettingsAsync(string sessionId, string? nameFilter, CancellationToken ct);
+    Task<SetExceptionSettingResult> SetExceptionSettingAsync(string sessionId, string exceptionType, string mode, CancellationToken ct);
 }

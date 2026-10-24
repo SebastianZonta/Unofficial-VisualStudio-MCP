@@ -99,6 +99,14 @@ information, never "fine"). An unbound breakpoint whose module is absent or
 not `loaded` explains itself.
 _Avoid_: assembly, DLL (when meaning module); PDB status (when meaning symbolState)
 
+**Exception setting / exception break**:
+An exception setting is one CLR exception type's break mode in a debug
+session's VS instance: `first-chance` (break when thrown) or `unhandled-only`.
+An exception break is a stop caused by an exception; its result carries the
+`exception` payload (`type`, `path` `$exception`, `message`) and no `lastHit`.
+`[Exception]` frames in `read_stack` stay the after-the-fact view.
+_Avoid_: exception filter, catch point (when meaning exception setting)
+
 **Truncation / expandable**:
 Values over 500 chars are cut with a `[truncated]` marker. `expandable`
 marks drillable values; its `path` feeds back into `read_variables`.

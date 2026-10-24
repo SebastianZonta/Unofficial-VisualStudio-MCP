@@ -14,4 +14,5 @@ public sealed record ListProcessesResult(IReadOnlyList<TargetProcessInfo> Proces
 
 /// <summary>launch_process result: the new target PID plus the attach_process envelope
 /// (mode/lastHit/status/note), so follow-up tools behave exactly as after an attach.</summary>
-public sealed record LaunchProcessResult(int ProcessId, string Mode, string? LastHit, string Status, string? Note);
+public sealed record LaunchProcessResult(int ProcessId, string Mode, string? LastHit, string Status, string? Note,
+    ExceptionBreakInfo? Exception = null);

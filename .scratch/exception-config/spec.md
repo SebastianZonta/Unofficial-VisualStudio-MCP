@@ -8,7 +8,7 @@ Today exceptions surface only after the fact as `[Exception]` frames with no `la
 
 ## Solution
 
-Add session-scoped tooling to configure first-chance versus unhandled-only breaking per exception type plus a listing of current settings. When an exception break fires, the result carries the exception object path so `read_variables` / `evaluate` (the `$exception.Message` pattern) work immediately. Reading settings is allowed in any mode; changing settings requires break or design mode, never while running.
+Add session-scoped tooling to configure first-chance versus unhandled-only breaking per exception type plus a listing of current settings. When an exception break fires, the result carries the exception object path so `read_variables` / `evaluate` (the `$exception.Message` pattern) work immediately, and it also carries the exception message itself, so the agent can triage the throw from the break result alone without an extra `evaluate` round trip. Reading settings is allowed in any mode; changing settings requires break or design mode, never while running.
 
 ## User Stories
 
@@ -26,6 +26,13 @@ Add session-scoped tooling to configure first-chance versus unhandled-only break
 12. As an agent, I want the break result to echo the mode plus the exception type name, so that the transcript shows exactly what stopped execution.
 13. As an agent, I want `[Exception]` frames without `lastHit` to remain the after-the-fact view, so that existing stack reading keeps working alongside the new pre-configuration.
 14. As a builder, I want exception settings verified without a live VS instance, so that configuration logic is testable in CI.
+15. As an agent, I want the exception message included in the exception-break result, so that I can decide whether this is the throw I am hunting without an extra `evaluate` call.
+16. As an agent, I want the message to come with the type name and object path in one result, so that type, message, and drill-down handle arrive together.
+17. As an agent, I want a long message truncated at the same limit as other values, so that one huge message cannot flood my context.
+18. As an agent, I want the break still reported when the message cannot be read, so that a failed message read never hides that execution stopped on an exception.
+19. As an agent, I want an unreadable message reported as absent with a note pointing at the object path, so that I know to probe it myself instead of trusting an empty string.
+20. As an agent, I want breaks that are not exception breaks to carry no message, so that the field never suggests an exception where there was none.
+21. As a builder, I want the message read to obey the no-side-effects rule, so that reporting a break never changes state in the target process.
 
 ## Implementation Decisions
 
@@ -34,6 +41,8 @@ Add session-scoped tooling to configure first-chance versus unhandled-only break
 - Change operations take session id, exception type name, and desired breaking mode (or reset-to-default); the bridge validates the type name and rejects unknown names before touching debugger state.
 - Mode gate: listing is allowed in any session mode (design, run, break) and never mutates state; changes require break or design mode and are rejected while running, consistent with the fail-closed execution-control posture.
 - Break payload: when an exception break fires, the execution result carries the exception object path in the same path language `read_variables` consumes, so the existing `$exception`-style probes resolve immediately.
+- Break message: the exception-break result also carries the exception message, read by the bridge at break time from the exception object, alongside the type name and object path. It is absent (not empty) on non-exception breaks and when the read fails or is refused; in that case the break is still reported and a note points the agent at the object path. The message is truncated at the same 500-character value limit as other inspection values.
+- The bridge's message read is sent with the no-side-effects specifier (ADR-0010), even though it is not agent-supplied: reporting a break must never change state in the target process.
 - Session isolation: settings and break payloads resolve within the calling debug session only; one session's tuning never affects a sibling debug session or a different VS instance.
 - Glossary vocabulary governs naming and results: debug session versus VS instance versus target process, mode versus lastHit (exception frames still carry no `lastHit`), and session-less stays reserved for pure discovery tools.
 - Existing `[Exception]` frame rendering and `read_stack` semantics are unchanged; this spec adds pre-configuration plus the break-time object path, not a new stack format.
@@ -41,9 +50,9 @@ Add session-scoped tooling to configure first-chance versus unhandled-only break
 ## Testing Decisions
 
 - Good tests assert external behavior through public seams only: tool output envelopes, bridge interface results, and error shapes. No assertions on COM internals, call order, or private state.
-- Tested surface: list returns seeded settings in any mode; enable-first-chance and restrict-to-unhandled-only round-trip through list; reset restores default; change-while-running rejected with mode named; unknown type name rejected; exception-break payload carries a usable object path; cross-session isolation.
+- Tested surface: list returns seeded settings in any mode; enable-first-chance and restrict-to-unhandled-only round-trip through list; reset restores default; change-while-running rejected with mode named; unknown type name rejected; exception-break payload carries a usable object path; exception-break payload carries the seeded message, truncated past the value limit, absent when the fake's message read fails (break still reported, note present), and absent on non-exception breaks; cross-session isolation.
 - Prior art: FakeDebugBridge as the in-memory test double, in the style of the existing execution-control and inspection tool-boundary tests — seed fake exception settings and breaks, drive the tool boundary, assert envelopes and state, no VS needed.
-- Live coverage stays manual: configure first-chance for a test exception type, run the target process, confirm the break carries the object path, probe the message, reset to default.
+- Live coverage stays manual: configure first-chance for a test exception type, run the target process, confirm the break carries the object path and the message (matching a `$exception.Message` probe), reset to default.
 
 ## Out of Scope
 
@@ -51,6 +60,7 @@ Add session-scoped tooling to configure first-chance versus unhandled-only break
 - Group toggles (whole CLR category on/off) beyond per-type settings; bulk operations are repeated single-type calls.
 - Exception filters by module, condition expressions, or break-when-thrown counts.
 - Custom exception visualizations or new stack frame formats.
+- Inner exceptions, stack-trace text, `Data`, or `HResult` in the break result; only the top-level message is carried, the rest stays reachable through the object path.
 - Session-less exception configuration; a debug session is always required.
 - Changing settings while running (queued-apply on next break is explicitly not supported).
 
@@ -58,3 +68,4 @@ Add session-scoped tooling to configure first-chance versus unhandled-only break
 
 - Type names should be fully qualified CLR names; short names risk collisions across assemblies and should be rejected or resolved deterministically by the bridge.
 - Agents should prefer unhandled-only for noisy framework exceptions and reserve first-chance for the one or two types under investigation, to avoid break storms.
+- `Exception.Message` getters often build text from resources, so under `nse` the evaluator may refuse some of them; verify live which common types read cleanly. If refusals are frequent, a fallback to the backing message field (still under `nse`) is the next step, not dropping `nse`.

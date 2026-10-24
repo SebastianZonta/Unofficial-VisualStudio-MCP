@@ -38,6 +38,8 @@ An agent workflow looks like this:
 | `resume` | Run until a breakpoint or the timeout. Over-budget waits return a timeout status, never a hang. |
 | `run_to_cursor` | Run to a file/line in one call via a temporary breakpoint that is always removed. Break or run mode. |
 | `step` | Step `over`, `into`, or `out`. Requires break mode. |
+| `list_exception_settings` | CLR exception types and their break mode (`first-chance`/`unhandled-only`). Any mode. |
+| `set_exception_setting` | Break first-chance, unhandled-only, or reset one exception type. Break or design mode. Exception breaks carry type, `$exception` path, and message. |
 | `read_stack` | Call stack, newest first. Requires break mode. |
 | `read_variables` | Frame locals/args; expandable paths drill into members. Requires break mode. |
 | `evaluate` | Read-only expression. No assignments, no statements. Requires break mode. |

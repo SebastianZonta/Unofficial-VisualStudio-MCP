@@ -4,8 +4,9 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] List works in any mode; enable, restrict, and reset round-trip through list.
-- [ ] Change-while-running is rejected naming the mode; unknown type names are rejected.
-- [ ] Break payloads carry a usable exception object path; settings never leak across sessions.
+- [x] List works in any mode; enable, restrict, and reset round-trip through list.
+- [x] Change-while-running is rejected naming the mode; unknown type names are rejected.
+- [x] Break payloads carry a usable exception object path; settings never leak across sessions.
+- [x] Exception-break payloads carry the message (truncated at the value limit); it is absent on non-exception breaks and when the read fails, with the break still reported plus a note.

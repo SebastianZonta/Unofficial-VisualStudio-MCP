@@ -36,6 +36,9 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         /// the template per breakpoint id. Guarded by _gate.</summary>
         public List<LogpointSpec> Logpoints { get; } = new();
         public List<BreakpointLogEntry> Log { get; } = new();
+        /// <summary>Break-when-thrown value per exception type as this session first found it,
+        /// so a reset to default restores it. Guarded by _gate.</summary>
+        public Dictionary<string, bool> FoundExceptionModes { get; } = new(StringComparer.Ordinal);
     }
 
     private sealed record OwnedBreakpoint(string Id, Breakpoint Breakpoint);
@@ -361,8 +364,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             throw SessionComError(sessionId, dte, ex);
         }
         // Same wait as resume: an entry-point hit (or logpoint) surfaces here, still-running is ok.
-        var run = await PollResumeAsync(sessionId, deadline, timeoutMs, 0, ct);
-        return new LaunchProcessResult(pid, run.Mode, run.LastHit, run.Status, $"launched target process {pid}; {run.Note}");
+        var run = await WithExceptionAsync(sessionId, await PollResumeAsync(sessionId, deadline, timeoutMs, 0, ct), ct);
+        return new LaunchProcessResult(pid, run.Mode, run.LastHit, run.Status, $"launched target process {pid}; {run.Note}", run.Exception);
     }
 
     private static bool Abandon(ref int flag)
@@ -689,7 +692,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
     }
 
-    public async Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct)
+    public async Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct) =>
+        await WithExceptionAsync(sessionId, await ResumeCoreAsync(sessionId, timeoutMs, ct), ct);
+
+    private async Task<ExecutionResult> ResumeCoreAsync(string sessionId, int timeoutMs, CancellationToken ct)
     {
         string currentMode;
         try
@@ -922,12 +928,16 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     }
 
     public Task<ExecutionResult> RunToCursorAsync(string sessionId, string file, int line, int timeoutMs, CancellationToken ct) =>
-        RunToCursor.RunAsync(this, sessionId, file, line, mode => mode == "break"
-            ? ResumeAsync(sessionId, timeoutMs, ct)
+        RunToCursor.RunAsync(this, sessionId, file, line, async mode => mode == "break"
+            ? await ResumeAsync(sessionId, timeoutMs, ct)
             // Already running: no Go, just the resume wait for the next stop.
-            : PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 0, ct), ct);
+            : await WithExceptionAsync(sessionId,
+                await PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 0, ct), ct), ct);
 
-    public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)
+    public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct) =>
+        await WithExceptionAsync(sessionId, await StepCoreAsync(sessionId, direction, timeoutMs, ct), ct);
+
+    private async Task<ExecutionResult> StepCoreAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)
     {
         string currentMode;
         try
@@ -1081,6 +1091,110 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             // Echo the agent's expression, never the evaluator's ",nse" form.
             return SnapshotEvaluation(evaluated, expression, ModeOf(debugger), LastHitOf(debugger));
         }, ct, timeoutMs + EvaluateMarginMs);
+
+    private const string ClrExceptionGroup = "Common Language Runtime Exceptions";
+
+    public async Task<ListExceptionSettingsResult> ListExceptionSettingsAsync(string sessionId, string? nameFilter, CancellationToken ct)
+        => await RunSnapshotAsync(sessionId, debugger =>
+        {
+            // Read-only in any mode: enumerates the CLR group, never writes a setting.
+            var settings = new List<ExceptionSettingInfo>();
+            foreach (EnvDTE90.ExceptionSetting setting in ClrExceptionSettings(debugger))
+                settings.Add(SnapshotExceptionSetting(setting));
+            return new ListExceptionSettingsResult(ExceptionConfig.FilterAndOrder(settings, nameFilter),
+                ModeOf(debugger), LastHitOf(debugger));
+        }, ct);
+
+    public async Task<SetExceptionSettingResult> SetExceptionSettingAsync(string sessionId, string exceptionType, string mode, CancellationToken ct)
+        => await RunSnapshotAsync(sessionId, debugger =>
+        {
+            ExceptionConfig.RequireNotRunning(ModeOf(debugger));
+            var group = ClrExceptionSettings(debugger);
+            EnvDTE90.ExceptionSetting setting;
+            try
+            {
+                setting = group.Item(exceptionType);
+            }
+            catch (COMException ex) when (!ComErrorMapper.IsDisconnected(ex))
+            {
+                throw ExceptionConfig.NotFound(exceptionType);
+            }
+            // Exact name only: a short or differently cased name never configures a lookalike.
+            if (!string.Equals(setting.Name, exceptionType, StringComparison.Ordinal))
+                throw ExceptionConfig.NotFound(exceptionType);
+            bool found;
+            lock (_gate)
+            {
+                var modes = _sessions[sessionId].FoundExceptionModes;
+                if (!modes.TryGetValue(exceptionType, out found))
+                    modes[exceptionType] = found = setting.BreakWhenThrown;
+            }
+            group.SetBreakWhenThrown(mode switch
+            {
+                ExceptionBreakModes.FirstChance => true,
+                ExceptionBreakModes.UnhandledOnly => false,
+                _ => found,
+            }, setting);
+            return new SetExceptionSettingResult(SnapshotExceptionSetting(setting), ModeOf(debugger), LastHitOf(debugger));
+        }, ct);
+
+    private static EnvDTE90.ExceptionSettings ClrExceptionSettings(Debugger debugger) =>
+        ((EnvDTE90.Debugger3)debugger).ExceptionGroups.Item(ClrExceptionGroup);
+
+    private static ExceptionSettingInfo SnapshotExceptionSetting(EnvDTE90.ExceptionSetting setting) =>
+        new(setting.Name, setting.BreakWhenThrown ? ExceptionBreakModes.FirstChance : ExceptionBreakModes.UnhandledOnly);
+
+    /// <summary>Adds the exception payload to a break caused by an exception. Best effort:
+    /// an unreadable payload leaves the break reported as it was, never failed.</summary>
+    private async Task<ExecutionResult> WithExceptionAsync(string sessionId, ExecutionResult result, CancellationToken ct)
+    {
+        if (result.Mode != "break")
+            return result;
+        var dte = SessionDte(sessionId);
+        try
+        {
+            var snapshot = await _dispatcher.InvokeAsync(() => SnapshotException(DebuggerOf(dte)), 10_000, ct);
+            // lastHit is for breakpoint hits only; BreakpointLastHit may still name an earlier one.
+            return snapshot is not { } s ? result
+                : result with { LastHit = null, Note = ExceptionConfig.BreakNote(s.Reason, s.Info), Exception = s.Info };
+        }
+        catch (Exception ex) when (ex is COMException or TimeoutException)
+        {
+            TraceFallback(ex, "exception payload unreadable; break reported without it");
+            return result;
+        }
+    }
+
+    private (string Reason, ExceptionBreakInfo Info)? SnapshotException(Debugger debugger)
+    {
+        var reason = debugger.LastBreakReason switch
+        {
+            dbgEventReason.dbgEventReasonExceptionThrown => "first-chance",
+            dbgEventReason.dbgEventReasonExceptionNotHandled => "unhandled",
+            _ => null,
+        };
+        if (reason is null)
+            return null;
+        // Not agent-supplied, still nse (ADR-0010): reporting a break never runs target code with side effects.
+        var exception = debugger.GetExpression(NoSideEffects(ExceptionConfig.ExceptionPath), false, 3000);
+        var type = exception.IsValidValue ? SafeGet(() => exception.Type) ?? "(unknown)" : "(unknown)";
+        return (reason, new ExceptionBreakInfo(type, ExceptionConfig.ExceptionPath, ReadExceptionMessage(debugger)));
+    }
+
+    /// <summary>Null when refused or failed: the payload keeps type and path, the note points at $exception.</summary>
+    private string? ReadExceptionMessage(Debugger debugger)
+    {
+        try
+        {
+            var message = debugger.GetExpression(NoSideEffects($"{ExceptionConfig.ExceptionPath}.Message"), false, 3000);
+            return message.IsValidValue ? ExceptionConfig.Truncate(SafeGet(() => message.Value)) : null;
+        }
+        catch (COMException ex) when (!ComErrorMapper.IsDisconnected(ex))
+        {
+            TraceFallback(ex, "exception message unreadable; reported absent");
+            return null;
+        }
+    }
 
     // ---- helpers (all run on the dispatcher thread) ----
 

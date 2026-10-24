@@ -21,7 +21,15 @@ public sealed class FakeDebugBridge : IDebugBridge
         public int? TargetPid { get; set; }
         /// <summary>Seeded module table of the session's target process.</summary>
         public List<ModuleInfo> Modules { get; } = new();
+        /// <summary>Exception-break settings, copied from the catalog at attach: per session, never shared.</summary>
+        public Dictionary<string, string> ExceptionModes { get; } = new(StringComparer.Ordinal);
+        /// <summary>Throw armed for the next run; a null Message simulates a read refused under nse.</summary>
+        public FakeThrow? PendingThrow { get; set; }
+        /// <summary>Exception the session is stopped on; null on every other stop.</summary>
+        public FakeThrow? CurrentException { get; set; }
     }
+
+    private sealed record FakeThrow(string Type, string? Message, bool Handled);
 
     private sealed record FakeBreakpoint(
         string File, int Line, string? Condition, int? HitCountTarget, string? HitCountMode,
@@ -55,6 +63,14 @@ public sealed class FakeDebugBridge : IDebugBridge
 
     public List<VsInstanceInfo> Instances { get; } = new();
 
+    /// <summary>Exception types every new session starts with, and their default break mode.</summary>
+    public Dictionary<string, string> ExceptionCatalog { get; } = new(StringComparer.Ordinal)
+    {
+        ["System.ArgumentException"] = ExceptionBreakModes.UnhandledOnly,
+        ["System.InvalidOperationException"] = ExceptionBreakModes.UnhandledOnly,
+        ["System.NullReferenceException"] = ExceptionBreakModes.UnhandledOnly,
+    };
+
     /// <summary>Known local target processes. Empty by default: every pid is unknown.</summary>
     public List<TargetProcessInfo> Processes { get; } = new();
 
@@ -68,7 +84,10 @@ public sealed class FakeDebugBridge : IDebugBridge
                 return Task.FromResult(new AttachResult(kv.Key, kv.Value.Mode, kv.Value.LastHit));
         }
         var sessionId = Guid.NewGuid().ToString("N");
-        _sessions[sessionId] = new FakeSession { InstanceKey = key };
+        var session = new FakeSession { InstanceKey = key };
+        foreach (var (name, mode) in ExceptionCatalog)
+            session.ExceptionModes[name] = mode;
+        _sessions[sessionId] = session;
         return Task.FromResult(new AttachResult(sessionId, "design", LastHit: null));
     }
 
@@ -235,6 +254,21 @@ public sealed class FakeDebugBridge : IDebugBridge
     {
         session.Mode = "run";
         session.LastHit = null;
+        session.CurrentException = null;
+        // An armed throw fires first: it breaks when its type is first-chance or nothing handles it.
+        if (session.PendingThrow is { } thrown)
+        {
+            session.PendingThrow = null;
+            var firstChance = session.ExceptionModes.GetValueOrDefault(thrown.Type) == ExceptionBreakModes.FirstChance;
+            if (firstChance || !thrown.Handled)
+            {
+                session.Mode = "break";
+                session.CurrentException = thrown;
+                var info = new ExceptionBreakInfo(thrown.Type, ExceptionConfig.ExceptionPath, ExceptionConfig.Truncate(thrown.Message));
+                return new ExecutionResult(session.Mode, LastHit: null, Status: "ok",
+                    ExceptionConfig.BreakNote(firstChance ? "first-chance" : "unhandled", info), info);
+            }
+        }
         // Evaluate-then-decide per hit, in creation order: the counter advances on
         // every evaluation pass; a logpoint appends and never stops; a stopping
         // breakpoint fires only when its hit-count mode and condition both agree.
@@ -359,6 +393,11 @@ public sealed class FakeDebugBridge : IDebugBridge
                 "frame-not-found", $"no frame {frameId}", "call read_stack for valid frame ids");
         if (path is null)
             return new ReadVariablesResult(frameId, Path: null, CannedTopLevel(frameId).Take(maxVariables).ToList(), session.Mode, session.LastHit);
+        if (path == ExceptionConfig.ExceptionPath && session.CurrentException is { } current)
+            return new ReadVariablesResult(frameId, path,
+            [
+                new ValueInfo("Message", "string", current.Message ?? "(unavailable)", Expandable: false, Path: null),
+            ], session.Mode, session.LastHit);
         if (path != "items")
             throw new DebugDomainException(
                 "path-not-found", $"no expandable path {path} on frame {frameId}",
@@ -379,6 +418,8 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "invalid-expression", $"expression did not evaluate without side effects: {expression}",
                 "pass a read-only expression valid in the top frame; prefer fields and property reads over method calls");
+        if (expression.Trim() == $"{ExceptionConfig.ExceptionPath}.Message" && session.CurrentException is { Message: { } message })
+            return new EvaluateResult(expression, message, "string", Expandable: false, session.Mode, session.LastHit);
         // Read-only by construction: the fake holds no live handles and this path never mutates state.
         // Evaluate always runs in the top frame (f0), whatever frame was inspected before.
         var top = CannedTopLevel("f0").FirstOrDefault(v => v.Name == expression.Trim());
@@ -422,6 +463,35 @@ public sealed class FakeDebugBridge : IDebugBridge
         session.TargetPid = pid;
         // Attached from birth: the phantom run starts like a resume from design mode.
         var run = await ResumeAsync(sessionId, timeoutMs, ct);
-        return new LaunchProcessResult(pid, run.Mode, run.LastHit, run.Status, $"launched target process {pid}; {run.Note}");
+        return new LaunchProcessResult(pid, run.Mode, run.LastHit, run.Status, $"launched target process {pid}; {run.Note}", run.Exception);
+    }
+
+    /// <summary>Test hook: the next run throws <paramref name="type"/>. Handled throws break only when
+    /// the type is first-chance; a null message simulates a message read refused under nse.</summary>
+    public void ThrowOnNextRun(string sessionId, string type, string? message, bool handled = true)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+            session.PendingThrow = new FakeThrow(type, message, handled);
+    }
+
+    public async Task<ListExceptionSettingsResult> ListExceptionSettingsAsync(string sessionId, string? nameFilter, CancellationToken ct)
+    {
+        var session = await RequireAsync(sessionId, ct);
+        return new ListExceptionSettingsResult(ExceptionConfig.FilterAndOrder(
+            session.ExceptionModes.Select(kv => new ExceptionSettingInfo(kv.Key, kv.Value)), nameFilter),
+            session.Mode, session.LastHit);
+    }
+
+    public async Task<SetExceptionSettingResult> SetExceptionSettingAsync(string sessionId, string exceptionType, string mode, CancellationToken ct)
+    {
+        var session = await RequireAsync(sessionId, ct);
+        ExceptionConfig.RequireNotRunning(session.Mode);
+        if (!session.ExceptionModes.ContainsKey(exceptionType))
+            throw ExceptionConfig.NotFound(exceptionType);
+        session.ExceptionModes[exceptionType] = mode == ExceptionBreakModes.Default
+            ? ExceptionCatalog.GetValueOrDefault(exceptionType, ExceptionBreakModes.UnhandledOnly)
+            : mode;
+        return new SetExceptionSettingResult(
+            new ExceptionSettingInfo(exceptionType, session.ExceptionModes[exceptionType]), session.Mode, session.LastHit);
     }
 }

@@ -1,7 +1,7 @@
 # E2E: every tool against a real VS, on the Sandbox
 
 The unit tests prove the tool contracts against `FakeDebugBridge`. This pass
-proves them against real VS 2026: every one of the 18 tools, every reachable
+proves them against real VS 2026: every tool (exception-config cases are not written yet), every reachable
 error code, and the situations the fake can't produce (COM identity, real
 frames, the evaluator, threads, exceptions, two VS instances). The target is
 `Sandbox/`, a .NET console app built for this pass. The pass starts its own VS
@@ -37,7 +37,7 @@ suite. The manual pass below remains the authority for everything the suite skip
    default; `--live` is accepted as a no-op)
    (stop the clients first: the exe is locked while hosts run). Restarting the
    host is the user's action; ask, don't work around it.
-3. Check the host: the vs-debug toolset must list all 18 tools (`run_to_cursor`
+3. Check the host: the vs-debug toolset must list all 20 tools (`run_to_cursor`
    included). If any tool is missing, the host runs a stale binary: stop.
 4. Fan out exactly one subagent on **Sonnet 5.5**, using the prompt below.
 5. After it returns, run phase **H** (human-assisted) yourself with the user.

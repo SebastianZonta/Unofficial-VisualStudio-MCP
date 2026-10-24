@@ -99,4 +99,16 @@ public static class ArgumentValidator
         if (string.IsNullOrWhiteSpace(executablePath) || !Path.IsPathFullyQualified(executablePath))
             throw new McpException($"{ErrorCodes.InvalidArgument}: executablePath must be an absolute path; remediation: pass the full path to the target executable");
     }
+
+    public static void ValidateExceptionType(string exceptionType)
+    {
+        if (string.IsNullOrWhiteSpace(exceptionType))
+            throw new McpException($"{ErrorCodes.InvalidArgument}: exceptionType must not be empty; remediation: pass a fully qualified CLR exception type name");
+    }
+
+    public static void ValidateExceptionMode(string mode)
+    {
+        if (mode is not (ExceptionBreakModes.FirstChance or ExceptionBreakModes.UnhandledOnly or ExceptionBreakModes.Default))
+            throw new McpException($"{ErrorCodes.InvalidArgument}: unknown exception break mode {mode}; remediation: pass first-chance, unhandled-only, or default");
+    }
 }

@@ -63,4 +63,31 @@ public sealed class ExecutionTools
         ArgumentValidator.ValidateTimeoutMs(timeoutMs);
         return ToolErrors.MapAsync(() => bridge.StepAsync(sessionId, direction, timeoutMs, cancellationToken));
     }
+
+    [McpServerTool(Name = "list_exception_settings")]
+    [Description("List the session's CLR exception-break settings: first-chance (break when thrown) or unhandled-only. Read-only; any mode, including run.")]
+    public static Task<ListExceptionSettingsResult> ListExceptionSettingsAsync(
+        IDebugBridge bridge,
+        [Description("Session id returned by attach.")] string sessionId,
+        [Description("Optional case-insensitive substring filter on the exception type name.")] string? nameFilter = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        return ToolErrors.MapAsync(() => bridge.ListExceptionSettingsAsync(sessionId, nameFilter, cancellationToken));
+    }
+
+    [McpServerTool(Name = "set_exception_setting")]
+    [Description("Set one CLR exception type's break mode: first-chance, unhandled-only, or default (restores the setting this session found). Requires break or design mode, never run.")]
+    public static Task<SetExceptionSettingResult> SetExceptionSettingAsync(
+        IDebugBridge bridge,
+        [Description("Session id returned by attach.")] string sessionId,
+        [Description("Fully qualified CLR exception type name, e.g. System.NullReferenceException.")] string exceptionType,
+        [Description("Break mode: first-chance, unhandled-only, or default.")] string mode,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentValidator.ValidateSessionId(sessionId);
+        ArgumentValidator.ValidateExceptionType(exceptionType);
+        ArgumentValidator.ValidateExceptionMode(mode);
+        return ToolErrors.MapAsync(() => bridge.SetExceptionSettingAsync(sessionId, exceptionType.Trim(), mode, cancellationToken));
+    }
 }
