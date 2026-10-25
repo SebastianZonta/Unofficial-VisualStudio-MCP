@@ -49,8 +49,11 @@ jobs:
       - name: Smoke-test single-file bundle
         shell: pwsh
         run: |
-          & ./publish/win-x64/VsDebugMcp.exe --live-check  # expect usage printout (exit 2), proves the shipped bundle loads
-          if ($LASTEXITCODE -ne 2) { throw "Smoke test failed: exit $LASTEXITCODE, want 2 (usage line)." }
+          Get-ChildItem ./publish/win-x64  # what the bundle actually contains
+          $p = Start-Process -FilePath ./publish/win-x64/VsDebugMcp.exe -ArgumentList '--live-check' -NoNewWindow -Wait -PassThru -RedirectStandardOutput smoke-out.txt -RedirectStandardError smoke-err.txt
+          Get-Content smoke-out.txt, smoke-err.txt  # usage line goes to stderr by design; show both in the log
+          Write-Host "exit=$($p.ExitCode)"
+          if ($p.ExitCode -ne 2) { throw "Smoke test failed: exit $($p.ExitCode), want 2 (usage line)." }
 
       - name: Create release
         shell: pwsh
