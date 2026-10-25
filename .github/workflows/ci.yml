@@ -32,9 +32,7 @@ jobs:
 
       - name: CRAP gate (changed methods only)
         shell: pwsh
-        continue-on-error: true
         run: |
-          # Non-blocking for one week, then enforce (remove continue-on-error).
           # Scoped to changed methods: repo-wide 8.0 is unpassable (live-VS
           # code scores Cov 0% without coverage). Full-coverage gate only
           # after a trial `dotnet test --collect:"XPlat Code Coverage"` proves fast/green.
