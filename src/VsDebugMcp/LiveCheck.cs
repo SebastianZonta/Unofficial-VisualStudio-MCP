@@ -450,8 +450,13 @@ internal static class LiveCheck
 
     private static void Check(ref int failures, bool ok, string what)
     {
-        Console.WriteLine($"{(ok ? "PASS" : "FAIL")} {what}");
-        if (!ok) failures++;
+        if (ok)
+            Console.WriteLine($"PASS {what}");
+        else
+        {
+            Console.WriteLine($"FAIL {what}");
+            failures++;
+        }
     }
 
     private static async Task<bool> FailsWith(Func<Task> call, string code)

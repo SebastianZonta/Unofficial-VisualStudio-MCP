@@ -1,4 +1,5 @@
 using System.Globalization;
+using System.Numerics;
 
 namespace VsDebugMcp;
 
@@ -37,35 +38,104 @@ internal static class VariableWrite
         if (nullable)
             t = t[..^1];
         if (raw == "null")
-            return nullable || t is "string" or "System.String"
-                ? "null"
-                : throw Mismatch(type, value, "a non-null value (the target is not nullable)");
-        const NumberStyles integer = NumberStyles.AllowLeadingSign;
-        const NumberStyles real = NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
+            return nullable || t is "string" or "System.String" ? "null" : throw Mismatch(type, value, "a non-null value (the target is not nullable)");
+        return Coercers.TryGetValue(t, out var coerce)
+            ? coerce(raw, type, value)
+            : throw Mismatch(type, value, "a supported type (bool, char, string, integral, float, double or decimal, or null for a nullable)");
+    }
+
+    private const NumberStyles IntegerStyle = NumberStyles.AllowLeadingSign;
+    private const NumberStyles RealStyle = NumberStyles.AllowLeadingSign | NumberStyles.AllowDecimalPoint | NumberStyles.AllowExponent;
+    private const NumberStyles DecimalStyle = RealStyle & ~NumberStyles.AllowExponent;
+    private const NumberStyles UnsignedStyle = NumberStyles.None;
+
+    private static readonly Dictionary<string, Func<string, string, string, string>> Coercers = new(StringComparer.Ordinal)
+    {
+        ["bool"] = CoerceBool,
+        ["System.Boolean"] = CoerceBool,
+        ["int"] = CoerceInt,
+        ["System.Int32"] = CoerceInt,
+        ["long"] = CoerceLong,
+        ["System.Int64"] = CoerceLong,
+        ["short"] = CoerceShort,
+        ["System.Int16"] = CoerceShort,
+        ["byte"] = CoerceByte,
+        ["System.Byte"] = CoerceByte,
+        ["sbyte"] = CoerceSByte,
+        ["System.SByte"] = CoerceSByte,
+        ["uint"] = CoerceUInt,
+        ["System.UInt32"] = CoerceUInt,
+        ["ulong"] = CoerceULong,
+        ["System.UInt64"] = CoerceULong,
+        ["ushort"] = CoerceUShort,
+        ["System.UInt16"] = CoerceUShort,
+        ["double"] = CoerceDouble,
+        ["System.Double"] = CoerceDouble,
+        ["float"] = CoerceFloat,
+        ["System.Single"] = CoerceFloat,
+        ["decimal"] = CoerceDecimal,
+        ["System.Decimal"] = CoerceDecimal,
+        ["char"] = CoerceChar,
+        ["System.Char"] = CoerceChar,
+        ["string"] = CoerceString,
+        ["System.String"] = CoerceString,
+    };
+
+    private static string CoerceBool(string raw, string type, string value) => raw switch
+    {
+        "true" or "True" => "true",
+        "false" or "False" => "false",
+        _ => throw Mismatch(type, value, "true or false"),
+    };
+
+    private static string CoerceInt(string raw, string type, string value) =>
+        CoerceNumber<int>(raw, type, value, IntegerStyle, static v => v.ToString(CultureInfo.InvariantCulture), "an int in range");
+
+    private static string CoerceLong(string raw, string type, string value) =>
+        CoerceNumber<long>(raw, type, value, IntegerStyle, static v => v.ToString(CultureInfo.InvariantCulture) + "L", "a long in range");
+
+    private static string CoerceShort(string raw, string type, string value) =>
+        CoerceNumber<short>(raw, type, value, IntegerStyle, static v => "(short)" + v.ToString(CultureInfo.InvariantCulture), "a short in range");
+
+    private static string CoerceByte(string raw, string type, string value) =>
+        CoerceNumber<byte>(raw, type, value, UnsignedStyle, static v => "(byte)" + v.ToString(CultureInfo.InvariantCulture), "a byte 0-255");
+
+    private static string CoerceSByte(string raw, string type, string value) =>
+        CoerceNumber<sbyte>(raw, type, value, IntegerStyle, static v => "(sbyte)" + v.ToString(CultureInfo.InvariantCulture), "an sbyte in range");
+
+    private static string CoerceUInt(string raw, string type, string value) =>
+        CoerceNumber<uint>(raw, type, value, UnsignedStyle, static v => v.ToString(CultureInfo.InvariantCulture) + "U", "a uint in range");
+
+    private static string CoerceULong(string raw, string type, string value) =>
+        CoerceNumber<ulong>(raw, type, value, UnsignedStyle, static v => v.ToString(CultureInfo.InvariantCulture) + "UL", "a ulong in range");
+
+    private static string CoerceUShort(string raw, string type, string value) =>
+        CoerceNumber<ushort>(raw, type, value, UnsignedStyle, static v => "(ushort)" + v.ToString(CultureInfo.InvariantCulture), "a ushort in range");
+
+    private static string CoerceDouble(string raw, string type, string value) =>
+        CoerceNumber<double>(raw, type, value, RealStyle, static v => v.ToString("R", CultureInfo.InvariantCulture) + "D", static v => double.IsFinite(v), "a finite double");
+
+    private static string CoerceFloat(string raw, string type, string value) =>
+        CoerceNumber<float>(raw, type, value, RealStyle, static v => v.ToString("R", CultureInfo.InvariantCulture) + "F", static v => float.IsFinite(v), "a finite float");
+
+    private static string CoerceDecimal(string raw, string type, string value) =>
+        CoerceNumber<decimal>(raw, type, value, DecimalStyle, static v => v.ToString(CultureInfo.InvariantCulture) + "M", "a decimal in range");
+
+    private static string CoerceChar(string raw, string type, string value) =>
+        CharLiteral(raw) ?? throw Mismatch(type, value, "a single-character literal like 'a' (or 97 'a' as shown)");
+
+    private static string CoerceString(string raw, string type, string value) =>
+        IsStringLiteral(raw) ? raw : throw Mismatch(type, value, "a double-quoted string literal or null");
+
+    private static string CoerceNumber<T>(string raw, string type, string value, NumberStyles style, Func<T, string> format, string expected)
+        where T : INumberBase<T> =>
+        CoerceNumber(raw, type, value, style, format, static _ => true, expected);
+
+    private static string CoerceNumber<T>(string raw, string type, string value, NumberStyles style, Func<T, string> format, Func<T, bool> ok, string expected)
+        where T : INumberBase<T>
+    {
         var inv = CultureInfo.InvariantCulture;
-        return t switch
-        {
-            "bool" or "System.Boolean" => raw switch
-            {
-                "true" or "True" => "true",
-                "false" or "False" => "false",
-                _ => throw Mismatch(type, value, "true or false"),
-            },
-            "int" or "System.Int32" => int.TryParse(raw, integer, inv, out var i) ? i.ToString(inv) : throw Mismatch(type, value, "an int in range"),
-            "long" or "System.Int64" => long.TryParse(raw, integer, inv, out var l) ? l.ToString(inv) + "L" : throw Mismatch(type, value, "a long in range"),
-            "short" or "System.Int16" => short.TryParse(raw, integer, inv, out var s) ? $"(short){s.ToString(inv)}" : throw Mismatch(type, value, "a short in range"),
-            "byte" or "System.Byte" => byte.TryParse(raw, NumberStyles.None, inv, out var b) ? $"(byte){b.ToString(inv)}" : throw Mismatch(type, value, "a byte 0-255"),
-            "sbyte" or "System.SByte" => sbyte.TryParse(raw, integer, inv, out var sb) ? $"(sbyte){sb.ToString(inv)}" : throw Mismatch(type, value, "an sbyte in range"),
-            "uint" or "System.UInt32" => uint.TryParse(raw, NumberStyles.None, inv, out var ui) ? ui.ToString(inv) + "U" : throw Mismatch(type, value, "a uint in range"),
-            "ulong" or "System.UInt64" => ulong.TryParse(raw, NumberStyles.None, inv, out var ul) ? ul.ToString(inv) + "UL" : throw Mismatch(type, value, "a ulong in range"),
-            "ushort" or "System.UInt16" => ushort.TryParse(raw, NumberStyles.None, inv, out var us) ? $"(ushort){us.ToString(inv)}" : throw Mismatch(type, value, "a ushort in range"),
-            "double" or "System.Double" => double.TryParse(raw, real, inv, out var d) && double.IsFinite(d) ? d.ToString("R", inv) + "D" : throw Mismatch(type, value, "a finite double"),
-            "float" or "System.Single" => float.TryParse(raw, real, inv, out var f) && float.IsFinite(f) ? f.ToString("R", inv) + "F" : throw Mismatch(type, value, "a finite float"),
-            "decimal" or "System.Decimal" => decimal.TryParse(raw, real & ~NumberStyles.AllowExponent, inv, out var m) ? m.ToString(inv) + "M" : throw Mismatch(type, value, "a decimal in range"),
-            "char" or "System.Char" => CharLiteral(raw) ?? throw Mismatch(type, value, "a single-character literal like 'a' (or 97 'a' as shown)"),
-            "string" or "System.String" => IsStringLiteral(raw) ? raw : throw Mismatch(type, value, "a double-quoted string literal or null"),
-            _ => throw Mismatch(type, value, "a supported type (bool, char, string, integral, float, double or decimal, or null for a nullable)"),
-        };
+        return T.TryParse(raw, style, inv, out var parsed) && ok(parsed) ? format(parsed) : throw Mismatch(type, value, expected);
     }
 
     /// <summary>A coerced literal as VS displays it: narrowing cast and type suffix dropped ("41.80M" to "41.80").</summary>

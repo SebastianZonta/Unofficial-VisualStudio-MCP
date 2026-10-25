@@ -267,44 +267,60 @@ public sealed class FakeDebugBridge : IDebugBridge
         session.LastHit = null;
         session.CurrentException = null;
         // An armed throw fires first: it breaks when its type is first-chance or nothing handles it.
-        if (session.PendingThrow is { } thrown)
-        {
-            session.PendingThrow = null;
-            var firstChance = session.ExceptionModes.GetValueOrDefault(thrown.Type) == ExceptionBreakModes.FirstChance;
-            if (firstChance || !thrown.Handled)
-            {
-                session.Mode = "break";
-                session.CurrentException = thrown;
-                var info = new ExceptionBreakInfo(thrown.Type, ExceptionConfig.ExceptionPath, ExceptionConfig.Truncate(thrown.Message));
-                return new ExecutionResult(session.Mode, LastHit: null, Status: "ok",
-                    ExceptionConfig.BreakNote(firstChance ? "first-chance" : "unhandled", info), info);
-            }
-        }
+        if (TryBreakOnThrow(session) is { } throwHit)
+            return throwHit;
+        if (ScanBreakpoints(session) is { } bpHit)
+            return bpHit;
+        return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: "running; no bound breakpoints armed");
+    }
+
+    private static ExecutionResult? TryBreakOnThrow(FakeSession session)
+    {
+        if (session.PendingThrow is not { } thrown)
+            return null;
+        session.PendingThrow = null;
+        var firstChance = session.ExceptionModes.GetValueOrDefault(thrown.Type) == ExceptionBreakModes.FirstChance;
+        if (!firstChance && thrown.Handled)
+            return null;
+        session.Mode = "break";
+        session.CurrentException = thrown;
+        var info = new ExceptionBreakInfo(thrown.Type, ExceptionConfig.ExceptionPath, ExceptionConfig.Truncate(thrown.Message));
+        return new ExecutionResult(session.Mode, LastHit: null, Status: "ok",
+            ExceptionConfig.BreakNote(firstChance ? "first-chance" : "unhandled", info), info);
+    }
+
+    private ExecutionResult? ScanBreakpoints(FakeSession session)
+    {
         // Evaluate-then-decide per hit, in creation order: the counter advances on
         // every evaluation pass; a logpoint appends and never stops; a stopping
         // breakpoint fires only when its hit-count mode and condition both agree.
-        if (SymbolsLoaded)
+        if (!SymbolsLoaded)
+            return null;
+        foreach (var id in session.Breakpoints.Keys.OrderBy(BpIndex).ToList())
         {
-            foreach (var id in session.Breakpoints.Keys.OrderBy(BpIndex).ToList())
-            {
-                var bp = session.Breakpoints[id];
-                session.Breakpoints[id] = bp.WithHitCount(bp.HitCount + 1);
-                var updated = session.Breakpoints[id];
-                if (updated.LogMessage is not null)
-                {
-                    BreakpointOptions.AppendLog(session.Log, new BreakpointLogEntry(id,
-                        BreakpointOptions.FormatLogMessage(updated.LogMessage, _ => "41.80"), updated.HitCount));
-                    continue;
-                }
-                if (!HitCountGate(updated) || !ConditionGate(updated))
-                    continue;
-                var rendered = Render(id, session);
-                session.Mode = "break";
-                session.LastHit = $"{rendered.File}:{rendered.Line}";
-                return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"hit {rendered.Id}");
-            }
+            if (EvalBreakpoint(session, id) is { } hit)
+                return hit;
         }
-        return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: "running; no bound breakpoints armed");
+        return null;
+    }
+
+    private ExecutionResult? EvalBreakpoint(FakeSession session, string id)
+    {
+        var bp = session.Breakpoints[id];
+        session.Breakpoints[id] = bp.WithHitCount(bp.HitCount + 1);
+        var updated = session.Breakpoints[id];
+        if (updated.LogMessage is not null)
+        {
+            BreakpointOptions.AppendLog(session.Log, new BreakpointLogEntry(id,
+                BreakpointOptions.FormatLogMessage(updated.LogMessage, _ => "41.80"), updated.HitCount));
+            return null;
+        }
+        if (!HitCountGate(updated) || !ConditionGate(updated))
+            return null;
+        var rendered = Render(id, session);
+        session.Mode = "break";
+        session.LastHit = $"{rendered.File}:{rendered.Line}";
+        return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"hit {rendered.Id}");
     }
 
     public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)

@@ -83,6 +83,21 @@ internal static class ProcessLaunch
         IReadOnlyDictionary<string, string> inherited, IReadOnlyDictionary<string, string>? extra)
     {
         var extras = extra ?? new Dictionary<string, string>();
+        ValidateExtraEntries(extras);
+        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in inherited)
+            merged[kv.Key] = kv.Value;
+        foreach (var kv in extras)
+        {
+            merged.Remove(kv.Key);
+            merged[kv.Key] = kv.Value;
+        }
+        var entries = merged.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).Select(kv => $"{kv.Key}={kv.Value}\0");
+        return string.Concat(entries) + "\0";
+    }
+
+    private static void ValidateExtraEntries(IReadOnlyDictionary<string, string> extras)
+    {
         foreach (var kv in extras)
         {
             if (string.IsNullOrEmpty(kv.Key) || kv.Key.Contains('=') || kv.Key.Contains('\0'))
@@ -94,16 +109,6 @@ internal static class ProcessLaunch
                     ErrorCodes.InvalidArgument, $"invalid environment value for {kv.Key}",
                     "pass values without NUL");
         }
-        var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var kv in inherited)
-            merged[kv.Key] = kv.Value;
-        foreach (var kv in extras)
-        {
-            merged.Remove(kv.Key);
-            merged[kv.Key] = kv.Value;
-        }
-        var entries = merged.OrderBy(kv => kv.Key, StringComparer.OrdinalIgnoreCase).Select(kv => $"{kv.Key}={kv.Value}\0");
-        return string.Concat(entries) + "\0";
     }
 
     public static IReadOnlyDictionary<string, string> InheritedEnvironment()
@@ -118,7 +123,7 @@ internal static class ProcessLaunch
     /// stdio pipe), so the debugger attaches before any user code runs.</summary>
     public static SuspendedProcess StartSuspended(string executablePath, string? arguments, string workingDirectory, string environmentBlock)
     {
-        var commandLine = string.IsNullOrWhiteSpace(arguments) ? $"\"{executablePath}\"" : $"\"{executablePath}\" {arguments}";
+        var commandLine = BuildCommandLine(executablePath, arguments);
         var cmd = Marshal.StringToHGlobalUni(commandLine);
         var env = Marshal.StringToHGlobalUni(environmentBlock);
         try
@@ -141,6 +146,9 @@ internal static class ProcessLaunch
             Marshal.FreeHGlobal(env);
         }
     }
+
+    private static string BuildCommandLine(string executablePath, string? arguments) =>
+        string.IsNullOrWhiteSpace(arguments) ? $"\"{executablePath}\"" : $"\"{executablePath}\" {arguments}";
 
     /// <summary>OS handles of a just-started target process; closed on dispose, never escaping the bridge.</summary>
     internal sealed class SuspendedProcess(int pid, IntPtr process, IntPtr thread) : IDisposable

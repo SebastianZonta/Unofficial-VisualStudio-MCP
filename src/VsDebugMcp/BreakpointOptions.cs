@@ -19,34 +19,64 @@ internal static class BreakpointOptions
     {
         var cond = string.IsNullOrWhiteSpace(condition) ? null : condition;
         var hasLog = !string.IsNullOrWhiteSpace(logMessage);
-        if (logMessage is not null && !hasLog)
-            return ("logMessage must not be empty", "pass a message template with optional {expression} holes");
-        if (hasLog && (cond is not null || hitCount is not null || !string.IsNullOrWhiteSpace(hitCountMode)))
-            return ("logMessage is incompatible with condition/hitCount", "set a logpoint or a stopping breakpoint, not both");
-        if (cond is not null)
-        {
-            var reason = CheckExpression(cond);
-            if (reason is not null)
-                return ($"condition {reason.Value.Detail}", reason.Value.Remediation);
-        }
-        if (hitCount is not null && hitCount < 1)
-            return ("hitCount must be >= 1", "pass a positive hit count");
+        return CheckLogNotBlank(logMessage, hasLog)
+            ?? CheckLogCompatibility(cond, hitCount, hitCountMode, hasLog)
+            ?? CheckCondition(cond)
+            ?? CheckHitCount(hitCount)
+            ?? CheckHitCountMode(hitCount, hitCountMode)
+            ?? CheckLogTemplate(logMessage, hasLog);
+    }
+
+    private static (string Detail, string Remediation)? CheckLogNotBlank(string? logMessage, bool hasLog) =>
+        logMessage is not null && !hasLog
+            ? ("logMessage must not be empty", "pass a message template with optional {expression} holes")
+            : null;
+
+    private static (string Detail, string Remediation)? CheckLogCompatibility(string? cond, int? hitCount, string? hitCountMode, bool hasLog) =>
+        hasLog && (cond is not null || hitCount is not null || !string.IsNullOrWhiteSpace(hitCountMode))
+            ? ("logMessage is incompatible with condition/hitCount", "set a logpoint or a stopping breakpoint, not both")
+            : null;
+
+    private static (string Detail, string Remediation)? CheckCondition(string? cond)
+    {
+        if (cond is null)
+            return null;
+        var reason = CheckExpression(cond);
+        return reason is null ? null : ($"condition {reason.Value.Detail}", reason.Value.Remediation);
+    }
+
+    private static (string Detail, string Remediation)? CheckHitCount(int? hitCount) =>
+        hitCount is not null && hitCount < 1
+            ? ("hitCount must be >= 1", "pass a positive hit count")
+            : null;
+
+    private static (string Detail, string Remediation)? CheckHitCountMode(int? hitCount, string? hitCountMode)
+    {
         if (!string.IsNullOrWhiteSpace(hitCountMode) && hitCountMode is not (HitCountModes.Exact or HitCountModes.Every))
             return ("hitCountMode must be exact or every", "pass one of the two modes");
         if (hitCount is null && !string.IsNullOrWhiteSpace(hitCountMode))
             return ("hitCountMode needs hitCount", "pass hitCount together with the mode");
-        if (hasLog && !BracesBalanced(logMessage!))
+        return null;
+    }
+
+    private static (string Detail, string Remediation)? CheckLogTemplate(string? logMessage, bool hasLog)
+    {
+        if (!hasLog)
+            return null;
+        if (!BracesBalanced(logMessage!))
             return ("logMessage has unbalanced braces", "pair every { with a } around a read-only expression");
-        if (hasLog)
+        return CheckLogHoles(logMessage!);
+    }
+
+    private static (string Detail, string Remediation)? CheckLogHoles(string template)
+    {
+        foreach (var hole in Holes(template))
         {
-            foreach (var hole in Holes(logMessage!))
-            {
-                if (string.IsNullOrWhiteSpace(hole))
-                    return ("logMessage has an empty {expression} hole", "put a read-only expression inside every pair of braces");
-                var reason = CheckExpression(hole);
-                if (reason is not null)
-                    return ($"logMessage expression {reason.Value.Detail}", reason.Value.Remediation);
-            }
+            if (string.IsNullOrWhiteSpace(hole))
+                return ("logMessage has an empty {expression} hole", "put a read-only expression inside every pair of braces");
+            var reason = CheckExpression(hole);
+            if (reason is not null)
+                return ($"logMessage expression {reason.Value.Detail}", reason.Value.Remediation);
         }
         return null;
     }
@@ -81,24 +111,47 @@ internal static class BreakpointOptions
         CheckTextRules(expression) is null ? ErrorCodes.InvalidExpression : ErrorCodes.InvalidArgument;
 
     /// <summary>Empty/statement/line/assignment gates: everything before the invocation gate.</summary>
-    internal static (string Detail, string Remediation)? CheckTextRules(string expression)
-    {
-        if (string.IsNullOrWhiteSpace(expression))
-            return ("must not be empty", "pass a read-only expression");
-        if (expression.Contains(';'))
-            return ("must not contain ';' (statements are not supported)", "pass a single read-only expression");
-        if (expression.Contains('\r') || expression.Contains('\n')
+    internal static (string Detail, string Remediation)? CheckTextRules(string expression) =>
+        CheckEmpty(expression)
+            ?? CheckStatement(expression)
+            ?? CheckSingleLine(expression)
+            ?? CheckComment(expression)
+            ?? CheckReadOnly(expression);
+
+    private static (string Detail, string Remediation)? CheckEmpty(string expression) =>
+        string.IsNullOrWhiteSpace(expression)
+            ? ("must not be empty", "pass a read-only expression")
+            : null;
+
+    private static (string Detail, string Remediation)? CheckStatement(string expression) =>
+        expression.Contains(';')
+            ? ("must not contain ';' (statements are not supported)", "pass a single read-only expression")
+            : null;
+
+    private static (string Detail, string Remediation)? CheckSingleLine(string expression) =>
+        ContainsLineBreak(expression)
+            ? ("must be single-line", "pass a single read-only expression")
+            : null;
+
+    private static bool ContainsLineBreak(string expression) =>
+        expression.Contains('\r') || expression.Contains('\n')
             || expression.Contains('\v') || expression.Contains('\f')
-            || expression.Contains('\u0085') || expression.Contains('\u2028') || expression.Contains('\u2029'))
-            return ("must be single-line", "pass a single read-only expression");
-        if (expression.Contains("/*", StringComparison.Ordinal) || expression.Contains("*/", StringComparison.Ordinal)
-            || expression.Contains("//", StringComparison.Ordinal))
-            return ("must not contain comments", "pass a read-only expression without /* */ or // comments");
-        var code = StripBlockComments(expression);
-        if (ContainsAssignment(code))
-            return ("must be read-only (assignment, ++ and -- are not supported)", "pass an expression without '=', '++' or '--'");
-        return null;
-    }
+            || expression.Contains('\u0085') || expression.Contains('\u2028') || expression.Contains('\u2029');
+
+    private static (string Detail, string Remediation)? CheckComment(string expression) =>
+        HasComment(expression)
+            ? ("must not contain comments", "pass a read-only expression without /* */ or // comments")
+            : null;
+
+    private static bool HasComment(string expression) =>
+        expression.Contains("/*", StringComparison.Ordinal)
+            || expression.Contains("*/", StringComparison.Ordinal)
+            || expression.Contains("//", StringComparison.Ordinal);
+
+    private static (string Detail, string Remediation)? CheckReadOnly(string expression) =>
+        ContainsAssignment(StripBlockComments(expression))
+            ? ("must be read-only (assignment, ++ and -- are not supported)", "pass an expression without '=', '++' or '--'")
+            : null;
 
     internal static (string Detail, string Remediation)? CheckInvocationRule(string expression) =>
         ContainsInvocation(StripBlockComments(expression))
@@ -250,25 +303,41 @@ internal static class BreakpointOptions
     internal static bool ContainsAssignment(string expression)
     {
         // Increment/decrement mutate as surely as '=': x++, ++x, x--, --x.
-        if (expression.Contains("++", StringComparison.Ordinal) || expression.Contains("--", StringComparison.Ordinal))
+        if (HasMutatingOperator(expression))
             return true;
         for (var i = 0; i < expression.Length; i++)
         {
-            if (expression[i] != '=')
-                continue;
-            var prev = i > 0 ? expression[i - 1] : '\0';
-            var prevPrev = i > 1 ? expression[i - 2] : '\0';
-            var next = i + 1 < expression.Length ? expression[i + 1] : '\0';
-            // Compound shift-assignment (<<=, >>=, >>>=) is not a <= / >= comparison.
-            if ((prev == '<' || prev == '>') && prevPrev == prev)
+            if (expression[i] == '=' && IsAssignmentAt(expression, i))
                 return true;
-            // Allow ==, !=, <=, >=, => comparisons/lambdas; anything else is assignment.
-            if (next == '=' || prev == '=' || prev == '!' || prev == '<' || prev == '>' || next == '>')
-                continue;
-            return true;
         }
         return false;
     }
+
+    private static bool HasMutatingOperator(string expression) =>
+        expression.Contains("++", StringComparison.Ordinal)
+            || expression.Contains("--", StringComparison.Ordinal);
+
+    private static bool IsAssignmentAt(string expression, int i) =>
+        // Compound shift-assignment (<<=, >>=, >>>=) is not a <= / >= comparison.
+        IsShiftAssignment(expression, i) || !IsEqualityOrRelational(expression, i);
+
+    private static bool IsShiftAssignment(string expression, int i)
+    {
+        var prev = i > 0 ? expression[i - 1] : '\0';
+        var prevPrev = i > 1 ? expression[i - 2] : '\0';
+        return IsShiftChar(prev) && prevPrev == prev;
+    }
+
+    private static bool IsShiftChar(char c) => c is '<' or '>';
+
+    // Allow ==, !=, <=, >=, => comparisons/lambdas; anything else is assignment.
+    private static bool IsEqualityOrRelational(string expression, int i) =>
+        IsComparisonPrev(i > 0 ? expression[i - 1] : '\0')
+            || IsComparisonNext(i + 1 < expression.Length ? expression[i + 1] : '\0');
+
+    private static bool IsComparisonPrev(char prev) => prev is '=' or '!' or '<' or '>';
+
+    private static bool IsComparisonNext(char next) => next is '=' or '>';
 
     // Any invocation can run code, and the text gate cannot judge purity, so a
     // call-looking '(' (word char, ')', ']' or quote before it) is refused. Bare
@@ -282,19 +351,32 @@ internal static class BreakpointOptions
     {
         for (var i = 0; i < expression.Length; i++)
         {
-            if (expression[i] != '(')
-                continue;
-            var j = i - 1;
-            while (j >= 0 && char.IsWhiteSpace(expression[j]))
-                j--;
-            if (j < 0)
-                continue; // leading '(' groups or casts; it calls nothing
-            var prev = expression[j];
-            if (prev == '_' || prev == ')' || prev == ']' || prev == '"' || prev == '\'' || char.IsLetterOrDigit(prev))
-                return true;
-            if (prev == '>' && expression.AsSpan(0, j).Contains('<'))
+            if (expression[i] == '(' && IsCallParen(expression, i))
                 return true;
         }
         return false;
     }
+
+    private static bool IsCallParen(string expression, int i)
+    {
+        var j = PrevNonWhite(expression, i - 1);
+        if (j < 0)
+            return false; // leading '(' groups or casts; it calls nothing
+        var prev = expression[j];
+        if (IsCallCloser(prev) || char.IsLetterOrDigit(prev))
+            return true;
+        return IsGenericCall(expression, j);
+    }
+
+    private static int PrevNonWhite(string expression, int j)
+    {
+        while (j >= 0 && char.IsWhiteSpace(expression[j]))
+            j--;
+        return j;
+    }
+
+    private static bool IsCallCloser(char c) => c is '_' or ')' or ']' or '"' or '\'';
+
+    private static bool IsGenericCall(string expression, int j) =>
+        expression[j] == '>' && expression.AsSpan(0, j).Contains('<');
 }

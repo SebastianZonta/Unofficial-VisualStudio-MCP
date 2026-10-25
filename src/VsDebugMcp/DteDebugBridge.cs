@@ -1,7 +1,8 @@
-using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.ComTypes;
 using EnvDTE;
 using Microsoft.Extensions.Logging;
+using System.Linq;
+using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 
 namespace VsDebugMcp;
 
@@ -57,7 +58,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     public async Task<AttachResult> AttachAsync(string? instanceOverride, CancellationToken cancellationToken)
     {
-        string? picked = await InvokeDomainAsync(
+        var picked = await InvokeDomainAsync(
             () => VsDiscovery.SelectCandidate(EnumRotNames(null), instanceOverride), 10_000,
             ErrorCodes.Timeout, "attaching to the VS instance exceeded its budget", "dismiss any modal dialog in VS and retry", cancellationToken);
         if (picked is null)
@@ -139,33 +140,52 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         lock (_gate)
         {
-            if (!_sessions.TryGetValue(sessionId, out var entry))
-                throw NoSession();
-            if (entry.Dead || entry.Dte is null)
-                throw VsGone(sessionId);
-            return entry.Dte;
+            return RequireAlive(LookupEntryLocked(sessionId), sessionId);
         }
+    }
+
+    // Call under _gate; single TryGetValue so the lookup stays atomic with the caller.
+    private SessionEntry LookupEntryLocked(string sessionId)
+    {
+        if (!_sessions.TryGetValue(sessionId, out var entry))
+            throw NoSession();
+        return entry;
+    }
+
+    private static DTE RequireAlive(SessionEntry entry, string sessionId)
+    {
+        if (entry is { Dead: true } or { Dte: null })
+            throw VsGone(sessionId);
+        return entry.Dte!;
     }
 
     private (string Id, SessionEntry Entry)? FindByDisplayName(string displayName)
     {
         lock (_gate)
         {
-            foreach (var kv in _sessions)
-            {
-                if (kv.Value.DisplayName == displayName)
-                    return (kv.Key, kv.Value);
-            }
-            return null;
+            return ScanByDisplayName(displayName);
         }
+    }
+
+    private (string Id, SessionEntry Entry)? ScanByDisplayName(string displayName)
+    {
+        var hit = _sessions.FirstOrDefault(kv => kv.Value.DisplayName == displayName);
+        return hit.Key is null ? null : (hit.Key, hit.Value);
     }
 
     private static bool ProbeAlive(DTE? dte)
     {
         if (dte is null) return false;
-        try { _ = dte.Name; return true; }
-        catch (Exception ex) when (ex is COMException or InvalidComObjectException) { return false; }
+        return IsResponsive(dte);
     }
+
+    private static bool IsResponsive(DTE dte)
+    {
+        try { _ = dte.Name; return true; }
+        catch (Exception ex) when (IsComOrGone(ex)) { return false; }
+    }
+
+    private static bool IsComOrGone(Exception ex) => ex is COMException or InvalidComObjectException;
 
     /// <summary>Marks one session dead on a disconnect HResult (releasing its RCW
     /// on the dispatcher, never the caller thread) and reports per-session vs-not-running.</summary>
@@ -200,11 +220,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         try
         {
-            return work(DebuggerOf(dte));
-        }
-        catch (COMException ex)
-        {
-            throw SessionComError(sessionId, dte, ex);
+            return TryWithSessionMap(sessionId, dte, work);
         }
         catch (InvalidComObjectException)
         {
@@ -212,17 +228,33 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
     }
 
+    private T TryWithSessionMap<T>(string sessionId, DTE dte, Func<Debugger, T> work)
+    {
+        try
+        {
+            return work(DebuggerOf(dte));
+        }
+        catch (COMException ex)
+        {
+            throw SessionComError(sessionId, dte, ex);
+        }
+    }
+
     private void MarkDead(string sessionId, DTE dte)
     {
         lock (_gate)
         {
-            if (_sessions.TryGetValue(sessionId, out var entry) && ReferenceEquals(entry.Dte, dte))
-            {
-                entry.Dte = null;
-                entry.Dead = true;
-            }
+            if (_sessions.TryGetValue(sessionId, out var entry))
+                ClearIfOwned(entry, dte);
         }
         ReleaseOnDispatcher(dte);
+    }
+
+    private static void ClearIfOwned(SessionEntry entry, DTE dte)
+    {
+        if (!ReferenceEquals(entry.Dte, dte)) return;
+        entry.Dte = null;
+        entry.Dead = true;
     }
 
     /// <summary>Best-effort RCW release; failures are ignored by design.</summary>
@@ -329,46 +361,46 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             return WithSessionMap(sessionId, dte, debugger =>
             {
                 EnvDTE.Process? target = null;
-                    foreach (EnvDTE.Process candidate in debugger.LocalProcesses)
-                    {
-                        if (candidate.ProcessID == processId) { target = candidate; break; }
-                    }
-                    if (target is null)
-                    {
-                        if (IsDevenvPid(processId))
-                            throw new DebugDomainException(
-                                ErrorCodes.InvalidArgument, $"devenv (PID {processId}) is a VS instance, never a target process",
-                                "pass the program under test, not Visual Studio itself");
-                        throw new DebugDomainException(
-                            "process-not-found", $"no local process {processId}", "list local processes and retry");
-                    }
-                    // A VS PID (devenv) is never an attach target: it would bind the IDE to itself.
-                    if (Path.GetFileNameWithoutExtension(target.Name).Equals("devenv", StringComparison.OrdinalIgnoreCase))
+                foreach (EnvDTE.Process candidate in debugger.LocalProcesses)
+                {
+                    if (candidate.ProcessID == processId) { target = candidate; break; }
+                }
+                if (target is null)
+                {
+                    if (IsDevenvPid(processId))
                         throw new DebugDomainException(
                             ErrorCodes.InvalidArgument, $"devenv (PID {processId}) is a VS instance, never a target process",
                             "pass the program under test, not Visual Studio itself");
-                    ProcessLaunch.CheckExpectedName(target.Name, expectedProcessName, processId);
-                    var owner = ProcessOwner.OwnerOf(processId);
-                    var me = ProcessOwner.CurrentUserName();
-                    if (owner is null)
-                        throw new DebugDomainException(
-                            "user-mismatch", $"could not determine the owner of process {processId}; failing closed",
-                            "only attach to processes you own");
-                    if (!owner.Equals(me, StringComparison.OrdinalIgnoreCase))
-                        throw new DebugDomainException(
-                            "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {me}",
-                            "only attach to your own processes");
-                    if (debugger.DebuggedProcesses.Count > 0)
-                        throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
-                    // Same managed engine as launch, so breakpoints bind after attach.
-                    if (target is EnvDTE80.Process2 p2)
-                        p2.Attach2(CoreClrEngine);
-                    else
-                        target.Attach();
-                    return new ExecutionResult(ModeOf(debugger), LastHitOf(debugger),
-                        "ok", $"attached to process {processId} ({target.Name})");
-                });
-            }, timeoutMs, "timeout", $"attaching to process {processId} exceeded timeoutMs", "retry with a larger timeoutMs", ct);
+                    throw new DebugDomainException(
+                        "process-not-found", $"no local process {processId}", "list local processes and retry");
+                }
+                // A VS PID (devenv) is never an attach target: it would bind the IDE to itself.
+                if (Path.GetFileNameWithoutExtension(target.Name).Equals("devenv", StringComparison.OrdinalIgnoreCase))
+                    throw new DebugDomainException(
+                        ErrorCodes.InvalidArgument, $"devenv (PID {processId}) is a VS instance, never a target process",
+                        "pass the program under test, not Visual Studio itself");
+                ProcessLaunch.CheckExpectedName(target.Name, expectedProcessName, processId);
+                var owner = ProcessOwner.OwnerOf(processId);
+                var me = ProcessOwner.CurrentUserName();
+                if (owner is null)
+                    throw new DebugDomainException(
+                        "user-mismatch", $"could not determine the owner of process {processId}; failing closed",
+                        "only attach to processes you own");
+                if (!owner.Equals(me, StringComparison.OrdinalIgnoreCase))
+                    throw new DebugDomainException(
+                        "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {me}",
+                        "only attach to your own processes");
+                if (debugger.DebuggedProcesses.Count > 0)
+                    throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
+                // Same managed engine as launch, so breakpoints bind after attach.
+                if (target is EnvDTE80.Process2 p2)
+                    p2.Attach2(CoreClrEngine);
+                else
+                    target.Attach();
+                return new ExecutionResult(ModeOf(debugger), LastHitOf(debugger),
+                    "ok", $"attached to process {processId} ({target.Name})");
+            });
+        }, timeoutMs, "timeout", $"attaching to process {processId} exceeded timeoutMs", "retry with a larger timeoutMs", ct);
     }
 
     // shortcut: CoreCLR engine only (.NET 5+ targets), add an engine parameter when native/.NET Framework launch is needed.
@@ -455,7 +487,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         // (equal = exact Nth, multiple = every Nth). Logpoints stay stopping at
         // the VS level and are emulated evaluate-then-decide by the Resume loop,
         // because native log output (VS Output window) is not automation-readable.
-        var added = await RunSnapshotAsync(sessionId, debugger =>
+        var (Info, Mode, LastHit, Created) = await RunSnapshotAsync(sessionId, debugger =>
         {
             // VS hands back the existing breakpoint for an occupied location, so owning what Add
             // returns would let remove/detach delete the user's. Check first: an own repeat
@@ -501,7 +533,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 // Mint ownership inside the dispatch: the live handle never crosses
                 // threads, and a detach racing the call leaves nothing behind.
                 DebugDomainException? gone = null;
-                string id = "";
+                var id = "";
                 lock (_gate)
                 {
                     if (!_sessions.TryGetValue(sessionId, out var entry) || entry.Dead || entry.Dte is null)
@@ -534,11 +566,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 throw;
             }
         }, ct);
-        if (!added.Created)
-            return new SetBreakpointResult(added.Info, added.Mode, added.LastHit, Created: false);
+        if (!Created)
+            return new SetBreakpointResult(Info, Mode, LastHit, Created: false);
         // Round-trip the logpoint template on set: the VS-side log action is not
         // automation-readable, so the session spec is the source for LogMessage.
-        return new SetBreakpointResult(added.Info with { LogMessage = log }, added.Mode, added.LastHit, Created: true);
+        return new SetBreakpointResult(Info with { LogMessage = log }, Mode, LastHit, Created: true);
     }
 
     public async Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct)
@@ -572,7 +604,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 if (owned.Any(o => SameBreakpoint(live[i], o.Breakpoint)))
                     continue;
                 items.Add(SnapshotBreakpoint(live[i], BreakpointOptions.ForeignId(i + 1))
-                    with { Warning = BreakpointOptions.ForeignWarning });
+                    with
+                { Warning = BreakpointOptions.ForeignWarning });
             }
             if (gone.Count > 0)
                 Forget(sessionId, gone.Select(g => g.Id));
@@ -606,10 +639,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         {
             name = module.Name;
             path = module.Path;
-            var symbols = module.SymbolFile;
-            return string.IsNullOrEmpty(symbols)
-                ? new ModuleInfo(name, path, Loaded: true, SymbolStates.Missing, "")
-                : new ModuleInfo(name, path, Loaded: true, SymbolStates.Loaded, symbols);
+            return BuildModuleInfo(name, path, module.SymbolFile);
         }
         catch (COMException ex) when (!ComErrorMapper.IsDisconnected(ex))
         {
@@ -617,6 +647,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             return new ModuleInfo(name, path, Loaded: true, SymbolStates.Unknown, $"module unreadable: {ex.Message}");
         }
     }
+
+    private static ModuleInfo BuildModuleInfo(string name, string path, string symbols) =>
+        string.IsNullOrEmpty(symbols)
+            ? new ModuleInfo(name, path, Loaded: true, SymbolStates.Missing, "")
+            : new ModuleInfo(name, path, Loaded: true, SymbolStates.Loaded, symbols);
 
     public async Task<RemoveBreakpointResult> RemoveBreakpointAsync(string sessionId, string breakpointId, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
@@ -697,6 +732,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         if (ReferenceEquals(a, b))
             return true;
+        return HaveSameIUnknown(a, b);
+    }
+
+    private static bool HaveSameIUnknown(Breakpoint a, Breakpoint b)
+    {
         var ua = nint.Zero;
         var ub = nint.Zero;
         try
@@ -705,15 +745,20 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             ub = Marshal.GetIUnknownForObject(b);
             return ua == ub;
         }
-        catch (Exception ex) when (ex is COMException or InvalidComObjectException)
+        catch (Exception ex) when (IsComOrGone(ex))
         {
             return false;
         }
         finally
         {
-            if (ua != nint.Zero) Marshal.Release(ua);
-            if (ub != nint.Zero) Marshal.Release(ub);
+            ReleasePointer(ua);
+            ReleasePointer(ub);
         }
+    }
+
+    private static void ReleasePointer(nint p)
+    {
+        if (p != nint.Zero) Marshal.Release(p);
     }
 
     public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
@@ -880,7 +925,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             {
                 var debugger = DebuggerOf(SessionDte(sessionId));
                 if (ModeOf(debugger) != "break")
-                    return ((string, string, int, int)?)null;
+                    return null;
                 var message = BreakpointOptions.FormatLogMessage(captured.LogMessage, expr =>
                 {
                     try
@@ -1019,8 +1064,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 {
                     var step = direction switch
                     {
-                        "over" => (Action<bool>)debugger.StepOver,
-                        "into" => (Action<bool>)debugger.StepInto,
+                        "over" => debugger.StepOver,
+                        "into" => debugger.StepInto,
                         "out" => (Action<bool>)debugger.StepOut,
                         _ => throw new InvalidOperationException("unreachable: step direction validated before dispatch"),
                     };
@@ -1285,33 +1330,42 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private (string Reason, ExceptionBreakInfo Info)? SnapshotException(Debugger debugger)
     {
-        var reason = debugger.LastBreakReason switch
-        {
-            dbgEventReason.dbgEventReasonExceptionThrown => "first-chance",
-            dbgEventReason.dbgEventReasonExceptionNotHandled => "unhandled",
-            _ => null,
-        };
+        var reason = BreakReasonOf(debugger);
         if (reason is null)
             return null;
         // Not agent-supplied, still nse (ADR-0010): reporting a break never runs target code with side effects.
         var exception = debugger.GetExpression(NoSideEffects(ExceptionConfig.ExceptionPath), false, 3000);
-        var type = exception.IsValidValue ? SafeGet(() => exception.Type) ?? "(unknown)" : "(unknown)";
-        return (reason, new ExceptionBreakInfo(type, ExceptionConfig.ExceptionPath, ReadExceptionMessage(debugger)));
+        return (reason, new ExceptionBreakInfo(ExceptionTypeOf(exception), ExceptionConfig.ExceptionPath, ReadExceptionMessage(debugger)));
     }
+
+    private static string? BreakReasonOf(Debugger debugger) => debugger.LastBreakReason switch
+    {
+        dbgEventReason.dbgEventReasonExceptionThrown => "first-chance",
+        dbgEventReason.dbgEventReasonExceptionNotHandled => "unhandled",
+        _ => null,
+    };
+
+    private string ExceptionTypeOf(Expression exception) =>
+        exception.IsValidValue ? SafeGet(() => exception.Type) ?? "(unknown)" : "(unknown)";
 
     /// <summary>Null when refused or failed: the payload keeps type and path, the note points at $exception.</summary>
     private string? ReadExceptionMessage(Debugger debugger)
     {
         try
         {
-            var message = debugger.GetExpression(NoSideEffects($"{ExceptionConfig.ExceptionPath}.Message"), false, 3000);
-            return message.IsValidValue ? ExceptionConfig.Truncate(SafeGet(() => message.Value)) : null;
+            return TryReadExceptionMessage(debugger);
         }
         catch (COMException ex) when (!ComErrorMapper.IsDisconnected(ex))
         {
             TraceFallback(ex, "exception message unreadable; reported absent");
             return null;
         }
+    }
+
+    private string? TryReadExceptionMessage(Debugger debugger)
+    {
+        var message = debugger.GetExpression(NoSideEffects($"{ExceptionConfig.ExceptionPath}.Message"), false, 3000);
+        return message.IsValidValue ? ExceptionConfig.Truncate(SafeGet(() => message.Value)) : null;
     }
 
     // ---- helpers (all run on the dispatcher thread) ----
@@ -1379,25 +1433,30 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private static void RequireBreak(Debugger debugger) => RequireBreakMode(ModeOf(debugger));
 
-    private static string ModeOf(Debugger debugger) => debugger.CurrentMode switch
+    private static string ModeOf(Debugger debugger) => ModeName(debugger.CurrentMode);
+
+    private static string ModeName(dbgDebugMode mode)
     {
-        dbgDebugMode.dbgBreakMode => "break",
-        dbgDebugMode.dbgRunMode => "run",
-        _ => "design",
-    };
+        if (mode == dbgDebugMode.dbgBreakMode) return "break";
+        return RunOrDesign(mode);
+    }
+
+    private static string RunOrDesign(dbgDebugMode mode) =>
+        mode == dbgDebugMode.dbgRunMode ? "run" : "design";
 
     private static string? LastHitOf(Debugger debugger)
     {
         try
         {
-            var hit = debugger.BreakpointLastHit;
-            return hit is null ? null : $"{hit.File}:{hit.FileLine}";
+            return FormatLastHit(debugger.BreakpointLastHit);
         }
         catch (COMException)
         {
             return null;
         }
     }
+
+    private static string? FormatLastHit(Breakpoint? hit) => hit is null ? null : $"{hit.File}:{hit.FileLine}";
 
     private async Task<(string Mode, string? LastHit)> ReadStateAsync(string sessionId, CancellationToken ct)
     {
@@ -1415,12 +1474,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 {
                     if (ComErrorMapper.IsDisconnected(ex))
                         MarkDead(sessionId, dte);
-                    return ("unknown", (string?)null);
+                    return ("unknown", null);
                 }
                 catch (InvalidComObjectException)
                 {
                     MarkDead(sessionId, dte);
-                    return ("unknown", (string?)null);
+                    return ("unknown", null);
                 }
             }, 10_000, ct);
         }
@@ -1500,13 +1559,13 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     if (ComErrorMapper.IsDisconnected(ex))
                         MarkDead(sessionId, dte);
                     TraceFallback(ex, "transient debugger snapshot failed; polling continues");
-                    return ((string?)null, null);
+                    return (null, null);
                 }
                 catch (InvalidComObjectException ex)
                 {
                     MarkDead(sessionId, dte);
                     TraceFallback(ex, "transient debugger snapshot failed; polling continues");
-                    return ((string?)null, null);
+                    return (null, null);
                 }
             }, 5_000, ct);
         }
@@ -1541,14 +1600,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         var hits = 0;
         try
         {
-            condition = string.IsNullOrWhiteSpace(bp.Condition) ? null : bp.Condition;
-            if (bp.HitCountType != dbgHitCountType.dbgHitCountTypeNone)
-            {
-                target = bp.HitCountTarget;
-                mode = bp.HitCountType == dbgHitCountType.dbgHitCountTypeMultiple
-                    ? HitCountModes.Every : HitCountModes.Exact;
-            }
-            hits = HitsOf(bp);
+            (condition, target, mode, hits) = ReadBreakpointOptions(bp);
         }
         catch (COMException)
         {
@@ -1560,6 +1612,21 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             condition, target, mode, hits, LogMessage: null);
     }
 
+    private static (string? Condition, int? Target, string? Mode, int Hits) ReadBreakpointOptions(Breakpoint bp)
+    {
+        var condition = ReadCondition(bp);
+        var hits = HitsOf(bp);
+        if (bp.HitCountType == dbgHitCountType.dbgHitCountTypeNone)
+            return (condition, null, null, hits);
+        return (condition, bp.HitCountTarget, HitModeValue(bp), hits);
+    }
+
+    private static string? ReadCondition(Breakpoint bp) =>
+        string.IsNullOrWhiteSpace(bp.Condition) ? null : bp.Condition;
+
+    private static string HitModeValue(Breakpoint bp) =>
+        bp.HitCountType == dbgHitCountType.dbgHitCountTypeMultiple ? HitCountModes.Every : HitCountModes.Exact;
+
     /// <summary>Every agent-supplied evaluation runs in the C# evaluator's no-side-effects
     /// mode (ADR-0010): a call that would mutate state is refused, not executed.</summary>
     private static string NoSideEffects(string expression) => $"{expression}, nse";
@@ -1568,8 +1635,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         try
         {
-            if (FindFrame(debugger, "f0") is { } top)
-                debugger.CurrentStackFrame = top;
+            AssignTopFrame(debugger);
         }
         catch (COMException)
         {
@@ -1577,16 +1643,35 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
     }
 
+    private static void AssignTopFrame(Debugger debugger)
+    {
+        if (FindFrame(debugger, "f0") is { } top)
+            debugger.CurrentStackFrame = top;
+    }
+
     private static StackFrame? FindFrame(Debugger debugger, string frameId)
     {
-        if (!frameId.StartsWith('f') || !int.TryParse(frameId[1..], out var n) || n < 0)
+        if (!TryParseFrameIndex(frameId, out var n))
             return null;
+        return FrameAt(debugger, n);
+    }
+
+    private static StackFrame? FrameAt(Debugger debugger, int n)
+    {
         var index = 0;
         foreach (StackFrame frame in debugger.CurrentThread.StackFrames)
         {
             if (index++ == n) return frame;
         }
         return null;
+    }
+
+    private static bool TryParseFrameIndex(string frameId, out int n)
+    {
+        n = -1;
+        if (string.IsNullOrEmpty(frameId) || frameId[0] != 'f')
+            return false;
+        return int.TryParse(frameId[1..], out n) && n >= 0;
     }
 
     private const int MaxValueLength = 500;
@@ -1788,13 +1873,13 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
         finally
         {
-            if (enumMoniker is not null) 
+            if (enumMoniker is not null)
                 Marshal.ReleaseComObject(enumMoniker);
 
-            if (ctx is not null) 
+            if (ctx is not null)
                 Marshal.ReleaseComObject(ctx);
 
-            if (rot is not null) 
+            if (rot is not null)
                 Marshal.ReleaseComObject(rot);
         }
     }
@@ -1863,30 +1948,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             if (GetRotObject(displayName) is not DTE found)
                 return UnreachableInstance(displayName, "vs-not-running: instance left the ROT");
             dte = found;
-            string solutionPath;
-            try { solutionPath = dte.Solution?.FullName ?? ""; }
-            // A modal dialog rejects this call (RPC_E_CALL_REJECTED): report
-            // vs-busy per X1, not automation-failed. Any other failure keeps
-            // the automation-failed mapping with its HRESULT.
-            catch (COMException ex) { return UnreachableInstance(displayName, ComErrorMapper.ToDomain(ex).Message); }
+            // Solution-path read keeps the outer vs-busy/automation-failed mapping.
+            var solutionPath = dte.Solution?.FullName ?? "";
             solutionPath ??= "";
-            string solutionName;
-            try { solutionName = solutionPath.Length == 0 ? "" : (Path.GetFileNameWithoutExtension(solutionPath) ?? ""); }
-            catch (Exception) { solutionName = ""; }
-            var projects = new List<string>();
-            try
-            {
-                var solutionProjects = dte.Solution?.Projects;
-                if (solutionProjects is not null)
-                    CollectProjects(solutionProjects, projects);
-            }
-            catch (COMException) { /* keep what we have; still reachable */ }
-            var capped = projects
-                .Where(p => !string.IsNullOrWhiteSpace(p))
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
-                .Take(50).ToList();
-            return new VsInstanceInfo(displayName, pid, version, solutionName, solutionPath, capped, true, null);
+            var projects = ReadSolutionProjects(dte);
+            return new VsInstanceInfo(displayName, pid, version, SolutionNameOf(solutionPath), solutionPath, CapProjectNames(projects), true, null);
         }
         catch (COMException ex)
         {
@@ -1902,6 +1968,33 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             if (dte is not null) Release(dte);
         }
     }
+
+    private static string SolutionNameOf(string solutionPath)
+    {
+        if (solutionPath.Length == 0)
+            return "";
+        try { return Path.GetFileNameWithoutExtension(solutionPath) ?? ""; }
+        catch (Exception) { return ""; }
+    }
+
+    private List<string> ReadSolutionProjects(DTE dte)
+    {
+        var projects = new List<string>();
+        try
+        {
+            var solutionProjects = dte.Solution?.Projects;
+            if (solutionProjects is not null)
+                CollectProjects(solutionProjects, projects);
+        }
+        catch (COMException) { /* keep what we have; still reachable */ }
+        return projects;
+    }
+
+    private static List<string> CapProjectNames(List<string> projects) => projects
+        .Where(p => !string.IsNullOrWhiteSpace(p))
+        .Distinct(StringComparer.OrdinalIgnoreCase)
+        .OrderBy(p => p, StringComparer.OrdinalIgnoreCase)
+        .Take(50).ToList();
 
     private const string SolutionFolderKind = "{66A26720-8FB5-11D2-AA7E-00C04F688DDE}";
 
@@ -1919,37 +2012,61 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private void CollectProject(Project project, List<string> projectNames)
     {
-        string kind;
+        if (!TryGetProjectKind(project, out var kind))
+            return;
+        if (!kind.Equals(SolutionFolderKind, StringComparison.OrdinalIgnoreCase))
+        {
+            AddProjectName(project, projectNames);
+            return;
+        }
+        var items = TryGetFolderItems(project);
+        if (items is null) return;
+        CollectFolderChildren(items, projectNames);
+    }
+
+    private bool TryGetProjectKind(Project project, out string kind)
+    {
         try { kind = project.Kind ?? ""; }
         catch (COMException ex)
         {
             TraceFallback(ex, "skipping project with unreadable kind");
-            return;
+            kind = "";
+            return false;
         }
-        if (kind.Equals(SolutionFolderKind, StringComparison.OrdinalIgnoreCase))
+        return true;
+    }
+
+    private ProjectItems? TryGetFolderItems(Project project)
+    {
+        try { return project.ProjectItems; }
+        catch (COMException ex)
         {
-            ProjectItems? items;
-            try { items = project.ProjectItems; }
-            catch (COMException ex)
-            {
-                TraceFallback(ex, "skipping solution folder with unreadable items");
-                return;
-            }
-            if (items is null) return;
-            foreach (ProjectItem item in items)
-            {
-                try
-                {
-                    var sub = item.SubProject;
-                    if (sub is not null) CollectProject(sub, projectNames);
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException)
-                {
-                    TraceFallback(ex, "skipping unreadable solution-folder child");
-                }
-            }
-            return;
+            TraceFallback(ex, "skipping solution folder with unreadable items");
+            return null;
         }
+    }
+
+    private void CollectFolderChildren(ProjectItems items, List<string> projectNames)
+    {
+        foreach (ProjectItem item in items)
+            TryCollectChild(item, projectNames);
+    }
+
+    private void TryCollectChild(ProjectItem item, List<string> projectNames)
+    {
+        try
+        {
+            var sub = item.SubProject;
+            if (sub is not null) CollectProject(sub, projectNames);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            TraceFallback(ex, "skipping unreadable solution-folder child");
+        }
+    }
+
+    private void AddProjectName(Project project, List<string> projectNames)
+    {
         try
         {
             var name = project.Name;
