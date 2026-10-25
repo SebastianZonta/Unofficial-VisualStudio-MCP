@@ -133,7 +133,7 @@ fake-only `ComDispatcherTests`, `ComPlumbingTests`, `VsDiscoveryTests` and
 |---|---|---|---|---|
 | C session/process/launch | P1, P2, P9, P10 (+ launch half of P8) | R1 (P1, P2, P9), R2 (P10), R3 (P8) | `AttachTests`, `AttachProcessTests`, `LaunchProcessTests`, `ListInstancesTests`, `ListProcessesTests`, `MultiSessionTests` | `ParallelAttach_SameInstance_SameSession`, `AttachMode_ReportsKnownMode`, `OneTargetRule_BothDirections` |
 | D breakpoints/modules | P3, P4 | R1 | `BreakpointTests`, `ConditionalBreakpointTests`, `OccupiedLocationTests`, `ListModulesTests` | `StableIds_BreakpointIdentity` (conditions/logpoints/symbol-honesty live in the manual P4 cases) |
-| E execution/exceptions | P7, P8 | R2 (P7), R3 (P8) | `ExecutionTests`, `RunToCursorTests`, `ExceptionConfigTests` | manual P8/E13/E21–E25 cases (no automated audit case yet) |
+| E execution/exceptions | P7, P8 | R2 (P7), R3 (P8) | `ExecutionTests`, `RunToCursorTests`, `ExceptionConfigTests` | `MediumAudit_BridgeParity` (step lastHit shape, recycled-PID guard, module states, frameless frames) plus manual P8/E13/E21–E25 cases |
 | F inspection/write | P5, P6 | R2 | `InspectionTests`, `ReadOnlyGateTests`, `SetVariableTests`, `TruncationContractTests` | `ReadOnlyGate_NoSideEffects`, `FrameTrue_StackLevels`, `EvaluateBudget_FullTimeoutMsHonored` |
 
 Skipped live cases (explicit reason, not coverage): `BusyVs_StillSurfacesAfterRetryWindow`
@@ -417,6 +417,21 @@ the main agent runs these with the user. It asks before each manual step
 | H3 | User: delete breakpoint P by hand in VS. Then `list_breakpoints`, `read_stack` | P gone from the list; session healthy (`not-in-break-mode` from `read_stack` is fine; `vs-not-running` is a FAIL) |
 | H4 | `remove_breakpoint(P)` | `breakpoint-not-found` |
 | H5 | SH: `set_breakpoint` at `AFTER_LOOP`; `detach(SH)`. User checks the VS Breakpoints window | only the user's `ECHO` breakpoint remains (detach removed only what the session created). User deletes it, then the main agent stops VS A |
+
+## Audit medium (E29–E31, T6, I19, W11, E25b)
+
+Manual cases for the medium audit (`.scratch/audit-oct24-medium/spec.md`); the automated
+suite covers the bridge parity subset in `MediumAudit_BridgeParity`, the rest stay manual.
+
+| Id | Step | Expected |
+|---|---|---|
+| E29 | `attach` to the Sandbox managed target (P9 `waitPid` with `consent: true`) | breakpoints bind and stop at entry (not ntdll loader); proves managed-engine attach. Native-only is a known limit |
+| T6 | `step(over)` from `STEP_START` landing on a breakpoint | identical `lastHit` file:line on fast and over-budget paths (force the latter once with a tiny `timeoutMs`) |
+| I19 | drill `order.Items[0].Sku` via the returned `path` with no manual edit; `read_variables(f0)` shows no `File`/`Line` on frames; `evaluate("order.Nope")` | drill value equals `evaluate("order.Items[0].Sku")`; `invalid-expression` |
+| W11 | `set_variable(f0, "note", "32 ' '")`-shaped char round-trip on a real char local (or Sandbox `note` string analogue) | echoes the glyph; refused-write and disconnect probes stay UT-only unless reproducible live |
+| E30 | `launch_process` with `workingDirectory: ""` / missing dir / `=` env key | `invalid-argument` each, no process starts; stale-publish placeholder probe stays UT-only |
+| E31 | `list_modules` asserts only `loaded`/`missing`/`unknown`, never `failed`; `list_sessions` omits dead sessions after `Stop-Process vsPid` (M8 pattern) | states hold; recycled-PID guard stays UT-only (`expectedProcessName` path) unless a short-lived target is scripted |
+| E25b | kill the target mid-restore window (extends E25) | restore reports failure, `detach` still runs, no leaked session |
 
 ## Report
 

@@ -2,6 +2,6 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-All agent guidance (build, test, architecture, VS/EnvDTE gotchas, conventions) lives in AGENTS.md. Edit that file, not this one.
+Agent guidance starts in AGENTS.md (index) and fans out to docs/agents/. Edit the canonical detail file, not this one.
 
 @AGENTS.md

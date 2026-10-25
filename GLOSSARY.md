@@ -95,7 +95,7 @@ _Avoid_: cursor (when meaning the editor caret), one-shot (when meaning a hit-co
 **Module / symbol state**:
 A module is a binary loaded into a debug session's target process, listed by
 `list_modules`. `symbolState` is debugger-reported: `loaded` (detail is the
-symbol path), `missing`, `failed` (detail is the reason), or `unknown` (no
+symbol path), `missing`, or `unknown` (no
 information, never "fine"). An unbound breakpoint whose module is absent or
 not `loaded` explains itself.
 _Avoid_: assembly, DLL (when meaning module); PDB status (when meaning symbolState)

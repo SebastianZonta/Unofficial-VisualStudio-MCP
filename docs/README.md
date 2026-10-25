@@ -20,6 +20,9 @@ Root files: [README](../README.md) (what the server is, tool list) · [AGENTS.md
 ## Agent workflow
 
 - [agents/domain.md](agents/domain.md): How skills consume GLOSSARY and ADRs; read when exploring unfamiliar code.
+- [agents/build.md](agents/build.md): Build, test, VS resolution, publish; read before first build or when the binary looks stale.
+- [agents/architecture.md](agents/architecture.md): `IDebugBridge` seam, live vs fake, STA dispatcher; read before changing bridge or tool code.
+- [agents/live-verify.md](agents/live-verify.md): `--live-check*` harnesses and per-tool live verify lines; read before verifying against real VS.
 - [agents/e2e.md](agents/e2e.md): Real-VS test pass against `Sandbox/`: roles, case tables, report format; read after a feature or when a case fails.
 - [agents/issue-tracker.md](agents/issue-tracker.md): The `.scratch/` file conventions (spec, issues, `Status:` values, wayfinding maps); read before creating or claiming work.
 
