@@ -67,13 +67,9 @@ registration, smoke test — lives in [INSTALL.md](INSTALL.md).
 
 ## Develop
 
-```powershell
-dotnet build                                    # Debug
-dotnet test                                     # no VS required
-./scripts/publish-fresh.ps1 -OutDir standalone-vNext  # the single publish path, never raw dotnet publish
-```
-Republishing while the host runs fails: see
-[Exe locked on republish](docs/TROUBLESHOOTING.md#exe-locked-on-republish).
+Build, test, and publish live in [docs/agents/build.md](docs/agents/build.md) —
+`dotnet build` / `dotnet test` need no VS (fake bridge); publish only via
+`scripts/publish-fresh.ps1` to a fresh empty folder with the client stopped.
 
 `--live-check <file> <line>` and `--live-check-full` run builder-only harnesses
 against the real VS and exit; the server itself uses the live bridge by default.

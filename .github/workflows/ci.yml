@@ -5,6 +5,26 @@ on:
   pull_request:
 
 jobs:
+  install-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer syntax
+        run: |
+          bash -n install.sh
+          python3 -c "import re,sys;src=open('install.ps1',encoding='utf-8-sig').read();sys.exit(0 if re.search(r'param\s*\(',src) else 1)"
+
+      - name: Installer/doc drift guard
+        run: |
+          # INSTALL.md must document every user-facing flag the installers accept,
+          # and the opencode config shape they write, or a subagent mistypes it.
+          for flag in --dest --exe --config-only -Dest -Exe -ConfigOnly mcp.servers; do
+            grep -qF -- "$flag" INSTALL.md || { echo "INSTALL.md missing '$flag'"; exit 1; }
+          done
+          grep -qF "mcpServers" install.sh || { echo "install.sh missing mcpServers"; exit 1; }
+          grep -qF "mcpServers" install.ps1 || { echo "install.ps1 missing mcpServers"; exit 1; }
+
   build:
     runs-on: windows-latest
     steps:

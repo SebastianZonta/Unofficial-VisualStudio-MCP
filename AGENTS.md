@@ -3,6 +3,7 @@
 Agent entry point — index only. Canonical detail lives in the linked file; do not restate it here.
 
 - Build, test, publish: [docs/agents/build.md](docs/agents/build.md) (slnx, .NET 10, Fake tests, VS resolution, `publish-fresh.ps1`).
+- Install, register in a client: [INSTALL.md](INSTALL.md) (one-liner vs manual A/B; Windows + VS 2026 only).
 - Architecture: [docs/agents/architecture.md](docs/agents/architecture.md) (`IDebugBridge` seam, live vs fake, STA dispatcher, process helpers).
 - Live VS verification: [docs/agents/live-verify.md](docs/agents/live-verify.md) (`--live-check*` harnesses, per-tool verify lines).
 - Vocabulary: use `GLOSSARY.md` terms (VS instance vs debug session vs target process, mine/consent, mode/lastHit). Surface ADR conflicts explicitly.

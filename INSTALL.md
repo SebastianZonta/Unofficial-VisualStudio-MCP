@@ -1,9 +1,22 @@
-# Install VsDebugMcp on another PC
+# Install VsDebugMcp
+
+> Pick your path first: the server runs only on 64-bit Windows with VS 2026
+> (same user as the MCP host). The one-liner downloads the latest GitHub
+> Release — with no published release yet it has nothing to install, so use
+> Option A/B instead. On Linux/macOS follow [docs/agents/build.md](docs/agents/build.md)
+> (build + test only); the installer there only wires client configs.
+> Close the MCP host first (it locks the exe).
+
+| Situation | Path |
+|---|---|
+| Fresh install on Windows, release exists | One-line install below |
+| No release yet, or local build to copy | Option A — copy a local publish folder |
+| Hack on the server itself | Option B — build from source |
 
 ## One-line install (recommended)
 
 Requires 64-bit Windows + VS 2026 running as the same user as the MCP host.
-Close the MCP host first (it locks the exe). Creating `C:\Tools\VsDebugMcp`
+Creating `C:\Tools\VsDebugMcp`
 normally needs an elevated shell (UAC) — or pass `-Dest`/`--dest` under your profile.
 
 ```powershell
@@ -34,11 +47,13 @@ A plain re-run deletes the install folder, reinstalls it, and re-merges every de
 client config — nothing else is touched.
 Needs a published release —
 push a `vX.Y.Z` tag (semver without the `v`; see `.github/workflows/release.yml`).
-Re-run with `-ConfigOnly`
-(`--config-only`) to re-wire configs without re-downloading (needs the exe already
-in place). `install.sh`-only flags: `--exe PATH` wires a different exe (an explicit
-relative `--exe` resolves against cwd, not `--dest`); `-h`/`--help` lists flags.
-`install.ps1` instead takes `-Exe <path>` for the same rewire job.
+
+| Flag | `install.ps1` | `install.sh` | Meaning |
+|---|---|---|---|
+| dest | `-Dest <folder>` | `--dest <folder>` | Install folder (default `C:\Tools\VsDebugMcp`; `/c/Tools/VsDebugMcp` under Git Bash; `~/.local/share/vs-debug-mcp` elsewhere) |
+| exe | `-Exe <path>` | `--exe PATH` | Wire a different exe (an explicit relative `--exe` resolves against cwd, not `--dest`) |
+| config-only | `-ConfigOnly` | `--config-only` | Re-wire configs without re-downloading (needs the exe already in place) |
+| help (`install.sh` only) | — | `-h` / `--help` | List flags |
 
 ## Manual install
 
@@ -48,18 +63,15 @@ or build from source. All docs: [docs/README.md](docs/README.md).
 ## Option A — copy a local publish folder
 
 `standalone-vNext/` is a local publish artifact (gitignored — a fresh clone does
-not have it). Build it first with the single publish path:
+not have it). Build it first with the single publish path
+(see [docs/agents/build.md](docs/agents/build.md#publish)):
 
 ```powershell
 ./scripts/publish-fresh.ps1 -OutDir standalone-vNext
 ```
 
-Publish to a fresh empty folder, never over an existing one: the script refuses
-locked dirs and trips if a stale `System.Management.dll` placeholder shadows the
-real Windows implementation (see
-[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#stale-publish-dir-wmi-tools-throw-platformnotsupportedexception)).
-The client locks the exe while running — stop it before publishing
-([Exe locked on republish](docs/TROUBLESHOOTING.md#exe-locked-on-republish)).
+Publish to a fresh empty folder and stop the client first (it locks the exe) —
+see `build.md` for why (`System.Management.dll` placeholder, stale-dir poison).
 
 Requirements on the target PC: 64-bit Windows, Visual Studio 2026 (running, same user as the
 MCP host). No .NET install needed — the runtime is bundled (~85 MB).
@@ -89,14 +101,10 @@ MCP host). No .NET install needed — the runtime is bundled (~85 MB).
 
 ## Option B — build from source
 
-Requirements: .NET 10 SDK, VS 2026. A non-default install path needs `VSINSTALLDIR`
-set ([TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#build-envdte-hintpath-misses)).
-
-```powershell
-dotnet build                                    # Debug, for development
-dotnet test                                     # no VS required (fake bridge)
-./scripts/publish-fresh.ps1 -OutDir standalone-vNext  # the single publish path; fresh empty folder, see above
-```
+Requirements and commands live in [docs/agents/build.md](docs/agents/build.md):
+.NET 10 SDK, VS 2026 (`VSINSTALLDIR` for non-default paths),
+`dotnet build` / `dotnet test` (fake bridge, no VS needed), then the same
+`publish-fresh.ps1` publish path as Option A.
 
 ## Debug-time notes
 
