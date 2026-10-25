@@ -1,0 +1,13 @@
+{
+  "version": 1,
+  "isRoot": true,
+  "tools": {
+    "crap4csharp": {
+      "version": "0.5.1",
+      "commands": [
+        "crap4csharp"
+      ],
+      "rollForward": false
+    }
+  }
+}
