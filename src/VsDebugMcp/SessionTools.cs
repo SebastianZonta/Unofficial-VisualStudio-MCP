@@ -36,10 +36,7 @@ public sealed class SessionTools
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,
         CancellationToken cancellationToken)
-    {
-        ArgumentValidator.ValidateSessionId(sessionId);
-        return ToolErrors.MapAsync(() => bridge.DetachAsync(sessionId, cancellationToken));
-    }
+        => ToolPipeline.RunSessionAsync(sessionId, () => bridge.DetachAsync(sessionId, cancellationToken));
 
     [McpServerTool(Name = "list_processes")]
     [Description("List local target processes (program under test candidates). Session-less and read-only; attach with the entry's pid plus consent:true.")]
@@ -58,13 +55,13 @@ public sealed class SessionTools
         [Description("Local process ID to attach to.")] int processId,
         [Description("Explicit consent to attach to an arbitrary process. Must be true.")] bool consent = false,
         [Description("Budget in milliseconds for the attach (default 30000).")] int timeoutMs = 30000,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentValidator.ValidateSessionId(sessionId);
-        ArgumentValidator.ValidateProcessId(processId);
-        ArgumentValidator.ValidateTimeoutMs(timeoutMs);
-        return ToolErrors.MapAsync(() => bridge.AttachProcessAsync(sessionId, processId, consent, timeoutMs, cancellationToken));
-    }
+        [Description("Optional expected process name (from list_processes); recycled PIDs naming something else fail closed.")] string? expectedProcessName = null,
+        CancellationToken cancellationToken = default) =>
+        ToolPipeline.RunSessionAsync(sessionId, () =>
+        {
+            ArgumentValidator.ValidateProcessId(processId);
+            ArgumentValidator.ValidateTimeoutMs(timeoutMs);
+        }, () => bridge.AttachProcessAsync(sessionId, processId, consent, timeoutMs, cancellationToken, expectedProcessName));
 
     [McpServerTool(Name = "launch_process")]
     [Description("Start a .NET target process with the debugger attached from birth, bound to this debug session. Breakpoints set before launch bind at startup. Waits up to timeoutMs for a first break.")]
@@ -76,12 +73,11 @@ public sealed class SessionTools
         [Description("Working directory. Defaults to the executable's directory.")] string? workingDirectory = null,
         [Description("Extra environment variables merged over the inherited environment.")] Dictionary<string, string>? environment = null,
         [Description("Budget in milliseconds for start plus the wait for a first break (default 10000).")] int timeoutMs = 10000,
-        CancellationToken cancellationToken = default)
-    {
-        ArgumentValidator.ValidateSessionId(sessionId);
-        ArgumentValidator.ValidateExecutablePath(executablePath);
-        ArgumentValidator.ValidateTimeoutMs(timeoutMs);
-        return ToolErrors.MapAsync(() => bridge.LaunchProcessAsync(
+        CancellationToken cancellationToken = default) =>
+        ToolPipeline.RunSessionAsync(sessionId, () =>
+        {
+            ArgumentValidator.ValidateExecutablePath(executablePath);
+            ArgumentValidator.ValidateTimeoutMs(timeoutMs);
+        }, () => bridge.LaunchProcessAsync(
             sessionId, executablePath, arguments, workingDirectory, environment, timeoutMs, cancellationToken));
-    }
 }

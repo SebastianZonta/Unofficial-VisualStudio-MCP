@@ -227,7 +227,7 @@ public sealed class ConditionalBreakpointTests
         await ExecutionTools.PauseAsync(bridge, sessionId, CancellationToken.None);
         var second = await ExecutionTools.ResumeAsync(bridge, sessionId, 5000, CancellationToken.None);
         Assert.Equal("break", second.Mode);
-        Assert.Contains(set.Breakpoint.Id, second.LastHit);
+        Assert.Equal("Program.cs:42", second.LastHit);
 
         Assert.Equal("run", (await ExecutionTools.ResumeAsync(bridge, sessionId, 5000, CancellationToken.None)).Mode);
     }
@@ -262,7 +262,7 @@ public sealed class ConditionalBreakpointTests
         await ExecutionTools.PauseAsync(bridge2, sessionId2, CancellationToken.None);
         var second = await ExecutionTools.ResumeAsync(bridge2, sessionId2, 5000, CancellationToken.None);
         Assert.Equal("break", second.Mode);
-        Assert.Contains(set.Breakpoint.Id, second.LastHit);
+        Assert.Equal("Program.cs:42", second.LastHit);
     }
 
     [Fact]
@@ -274,7 +274,7 @@ public sealed class ConditionalBreakpointTests
         var resumed = await ExecutionTools.ResumeAsync(bridge, sessionId, 5000, CancellationToken.None);
 
         Assert.Equal("break", resumed.Mode);
-        Assert.Contains(set.Breakpoint.Id, resumed.LastHit);
+        Assert.Equal("Program.cs:42", resumed.LastHit);
     }
 
     [Fact]

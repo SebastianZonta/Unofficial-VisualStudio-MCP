@@ -30,9 +30,7 @@ internal static class RunToCursor
         if (existing.Breakpoints.FirstOrDefault(b => ExactLocation(b.File, b.Line, file, line)) is { } reuse)
         {
             if (!reuse.Bound)
-                throw new DebugDomainException(
-                    ErrorCodes.UnboundLocation, $"{file}:{line} did not bind: {reuse.Warning}",
-                    "check the file path and line, or list_modules for the module's symbol state");
+                ThrowUnbound(file, line, reuse.Warning);
             return await ContinueAsync(bridge, sessionId, cont, existing.Mode, ct);
         }
         var set = await bridge.SetBreakpointAsync(sessionId, file, line, ct);
@@ -42,9 +40,7 @@ internal static class RunToCursor
         try
         {
             if (!set.Breakpoint.Bound)
-                throw new DebugDomainException(
-                    ErrorCodes.UnboundLocation, $"{file}:{line} did not bind: {set.Breakpoint.Warning}",
-                    "check the file path and line, or list_modules for the module's symbol state");
+                ThrowUnbound(file, line, set.Breakpoint.Warning);
             return await ContinueAsync(bridge, sessionId, cont, set.Mode, ct);
         }
         finally
@@ -105,6 +101,10 @@ internal static class RunToCursor
         && ex.InnerException is COMException com
         && com.HResult == GoConflictHResult;
 
+    private static void ThrowUnbound(string file, int line, string? warning) => throw new DebugDomainException(
+        ErrorCodes.UnboundLocation, $"{file}:{line} did not bind: {warning}",
+        "check the file path and line, or list_modules for the module's symbol state");
+
     /// <summary>Exact file identity for destination reuse: same matching as the
     /// shared suffix rule but without the suffix, so a same-named file elsewhere
     /// never counts as this destination.</summary>
@@ -112,8 +112,8 @@ internal static class RunToCursor
     {
         if (listedLine != line)
             return false;
-        var listed = listedFile.Replace('/', '\\').TrimStart('\\');
-        var wanted = file.Replace('/', '\\').TrimStart('\\');
-        return listed.Equals(wanted, StringComparison.OrdinalIgnoreCase);
+        return Norm(listedFile).Equals(Norm(file), StringComparison.OrdinalIgnoreCase);
     }
+
+    private static string Norm(string path) => path.Replace('/', '\\').TrimStart('\\');
 }

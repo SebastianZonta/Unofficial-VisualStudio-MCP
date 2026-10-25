@@ -7,9 +7,9 @@ public sealed class ListModulesTests
     private static readonly ModuleInfo[] Table =
     [
         new("Shop.dll", @"C:\app\Shop.dll", Loaded: true, SymbolStates.Loaded, @"C:\app\Shop.pdb"),
-        new("Plugin.dll", @"C:\app\Plugin.dll", Loaded: false, SymbolStates.Unknown, ""),
+        new("Plugin.dll", @"C:\app\Plugin.dll", Loaded: true, SymbolStates.Unknown, ""),
         new("Data.dll", @"C:\app\Data.dll", Loaded: true, SymbolStates.Missing, ""),
-        new("Core.dll", @"C:\app\Core.dll", Loaded: true, SymbolStates.Failed, "PDB does not match image"),
+        new("Core.dll", @"C:\app\Core.dll", Loaded: true, SymbolStates.Unknown, "module unreadable: 0x80004005"),
     ];
 
     private static async Task<(FakeDebugBridge Bridge, string SessionId)> RunningAsync(string? instance = null)
@@ -31,9 +31,9 @@ public sealed class ListModulesTests
         Assert.Equal("run", result.Mode);
         Assert.Equal(["Core.dll", "Data.dll", "Plugin.dll", "Shop.dll"], result.Modules.Select(m => m.Name));
         var core = result.Modules[0];
-        Assert.Equal(SymbolStates.Failed, core.SymbolState);
-        Assert.Equal("PDB does not match image", core.SymbolDetail);
-        Assert.False(result.Modules[2].Loaded);
+        Assert.Equal(SymbolStates.Unknown, core.SymbolState);
+        Assert.Equal("module unreadable: 0x80004005", core.SymbolDetail);
+        Assert.True(result.Modules[2].Loaded);
         Assert.Equal(@"C:\app\Shop.pdb", result.Modules[3].SymbolDetail);
     }
 

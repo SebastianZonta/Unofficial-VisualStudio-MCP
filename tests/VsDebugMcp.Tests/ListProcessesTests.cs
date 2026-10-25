@@ -56,7 +56,7 @@ public sealed class ListProcessesTests
 
         var listed = await SessionTools.ListProcessesAsync(bridge, "api", ownedOnly: true, CancellationToken.None);
         var pid = Assert.Single(listed.Processes).Pid;
-        var result = await SessionTools.AttachProcessAsync(bridge, attach.SessionId, pid, consent: true, 30_000, CancellationToken.None);
+        var result = await SessionTools.AttachProcessAsync(bridge, attach.SessionId, pid, consent: true, 30_000, cancellationToken: CancellationToken.None);
 
         Assert.Equal("ok", result.Status);
     }

@@ -27,26 +27,24 @@ internal static class ExceptionConfig
     private const int MaxValueLength = 500;
 
     /// <summary>Settings edits happen in break or design mode only; there is no queued apply.</summary>
-    public static void RequireNotRunning(string mode)
+    public static void RequireNotRunning(string mode) =>
+        DebuggerModes.RequireNot(mode, "run", ErrorCodes.AlreadyRunning,
+            $"exception settings cannot change while the debuggee is {mode}",
+            "pause first, or change settings in design mode");
+
+    /// <summary>One mode rule for the tool boundary and both bridges.</summary>
+    public static void ValidateMode(string mode)
     {
-        if (mode == "run")
-            throw new DebugDomainException(
-                ErrorCodes.AlreadyRunning, $"exception settings cannot change while the debuggee is {mode}",
-                "pause first, or change settings in design mode");
+        if (mode is not (ExceptionBreakModes.FirstChance or ExceptionBreakModes.UnhandledOnly or ExceptionBreakModes.Default))
+            throw DebugDomainException.Fail(ErrorCodes.InvalidArgument, $"unknown exception break mode {mode}", "pass first-chance, unhandled-only, or default");
     }
 
-    public static DebugDomainException NotFound(string name) => new(
+    public static DebugDomainException NotFound(string name) => DebugDomainException.Fail(
         ErrorCodes.ExceptionNotFound, $"no exception type {name}",
         "pass a fully qualified CLR type name as listed by list_exception_settings");
 
-    public static IReadOnlyList<ExceptionSettingInfo> FilterAndOrder(IEnumerable<ExceptionSettingInfo> settings, string? nameFilter)
-    {
-        var filter = nameFilter?.Trim();
-        return settings
-            .Where(s => string.IsNullOrEmpty(filter) || s.Name.Contains(filter, StringComparison.OrdinalIgnoreCase))
-            .OrderBy(s => s.Name, StringComparer.Ordinal)
-            .ToList();
-    }
+    public static IReadOnlyList<ExceptionSettingInfo> FilterAndOrder(IEnumerable<ExceptionSettingInfo> settings, string? nameFilter) =>
+        ListFiltering.FilterAndOrder(settings, nameFilter, s => [s.Name], q => q.OrderBy(s => s.Name, StringComparer.Ordinal));
 
     public static string? Truncate(string? message) =>
         message is { Length: > MaxValueLength } ? message[..MaxValueLength] + " [truncated]" : message;

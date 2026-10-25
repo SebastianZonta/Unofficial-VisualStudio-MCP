@@ -96,7 +96,7 @@ public sealed class RunToCursorTests
 
         var run = await ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None);
 
-        Assert.Contains($"{mine.Breakpoint.Id} Program.cs:15", run.LastHit);
+        Assert.Equal("Program.cs:15", run.LastHit);
         var list = await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None);
         Assert.Equal(mine.Breakpoint.Id, Assert.Single(list.Breakpoints).Id);
     }
@@ -109,7 +109,7 @@ public sealed class RunToCursorTests
 
         var run = await ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None);
 
-        Assert.Contains($"{mine.Breakpoint.Id} Order.cs:20", run.LastHit);
+        Assert.Equal("Order.cs:20", run.LastHit);
         var list = await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None);
         Assert.Equal(mine.Breakpoint.Id, Assert.Single(list.Breakpoints).Id);
     }
@@ -288,7 +288,7 @@ internal class DelegatingBridge(FakeDebugBridge inner) : IDebugBridge
     public virtual Task<ReadVariablesResult> ReadVariablesAsync(string sessionId, string frameId, string? path, int maxVariables, CancellationToken ct) => Inner.ReadVariablesAsync(sessionId, frameId, path, maxVariables, ct);
     public virtual Task<SetVariableResult> SetVariableAsync(string sessionId, string frameId, string path, string value, bool consent, CancellationToken ct) => Inner.SetVariableAsync(sessionId, frameId, path, value, consent, ct);
     public virtual Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct) => Inner.EvaluateAsync(sessionId, expression, timeoutMs, ct);
-    public virtual Task<ExecutionResult> AttachProcessAsync(string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct) => Inner.AttachProcessAsync(sessionId, processId, consent, timeoutMs, ct);
+    public virtual Task<ExecutionResult> AttachProcessAsync(string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct, string? expectedProcessName = null) => Inner.AttachProcessAsync(sessionId, processId, consent, timeoutMs, ct, expectedProcessName);
     public virtual Task<LaunchProcessResult> LaunchProcessAsync(string sessionId, string executablePath, string? arguments, string? workingDirectory, IReadOnlyDictionary<string, string>? environment, int timeoutMs, CancellationToken ct) => Inner.LaunchProcessAsync(sessionId, executablePath, arguments, workingDirectory, environment, timeoutMs, ct);
     public virtual Task<ListExceptionSettingsResult> ListExceptionSettingsAsync(string sessionId, string? nameFilter, CancellationToken ct) => Inner.ListExceptionSettingsAsync(sessionId, nameFilter, ct);
     public virtual Task<SetExceptionSettingResult> SetExceptionSettingAsync(string sessionId, string exceptionType, string mode, CancellationToken ct) => Inner.SetExceptionSettingAsync(sessionId, exceptionType, mode, ct);

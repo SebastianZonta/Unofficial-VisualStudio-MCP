@@ -22,7 +22,8 @@ public interface IDebugBridge
     Task<ReadVariablesResult> ReadVariablesAsync(string sessionId, string frameId, string? path, int maxVariables, CancellationToken ct);
     Task<SetVariableResult> SetVariableAsync(string sessionId, string frameId, string path, string value, bool consent, CancellationToken ct);
     Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct);
-    Task<ExecutionResult> AttachProcessAsync(string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct);
+    Task<ExecutionResult> AttachProcessAsync(string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct,
+        string? expectedProcessName = null);
     Task<LaunchProcessResult> LaunchProcessAsync(string sessionId, string executablePath, string? arguments,
         string? workingDirectory, IReadOnlyDictionary<string, string>? environment, int timeoutMs, CancellationToken ct);
     Task<ListExceptionSettingsResult> ListExceptionSettingsAsync(string sessionId, string? nameFilter, CancellationToken ct);

@@ -19,9 +19,9 @@ internal static class VariableWrite
         ErrorCodes.PathNotFound, $"no variable {path} in frame {frameId}",
         "re-read the frame with read_variables and pass a listed name or path");
 
-    public static DebugDomainException ReadOnly(string frameId, string path, string why) => new(
+    public static DebugDomainException ReadOnly(string frameId, string path, string why, Exception? inner = null) => new(
         ErrorCodes.ReadOnlyTarget, $"{path} in frame {frameId} is read-only ({why}); nothing was written",
-        "write a field or local instead; constants, get-only properties and optimized-away locals cannot change");
+        "write a field or local instead; constants, get-only properties and optimized-away locals cannot change", inner);
 
     private static DebugDomainException Mismatch(string type, string value, string expected) => new(
         ErrorCodes.TypeMismatch, $"expected {expected} for type {type}, got {value}; nothing was written",
@@ -96,7 +96,9 @@ internal static class VariableWrite
     /// <summary>'a', or VS's char display 97 'a' (code must match the glyph); escapes are not accepted.</summary>
     private static string? CharLiteral(string raw)
     {
-        var space = raw.LastIndexOf(' ');
+        // Split at the first separator: the space glyph itself (' ') contains a space,
+        // so LastIndexOf would split inside the quotes and reject a valid round-trip.
+        var space = raw.IndexOf(' ');
         uint code = 0;
         var shownForm = space > 0 && uint.TryParse(raw[..space], NumberStyles.None, CultureInfo.InvariantCulture, out code);
         var quoted = shownForm ? raw[(space + 1)..] : raw;

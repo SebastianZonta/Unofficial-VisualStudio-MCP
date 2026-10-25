@@ -78,7 +78,7 @@ public sealed class SetVariableTests
     {
         var (bridge, sessionId) = await BrokenAsync();
         bridge.ProcessOwners[4242] = bridge.CurrentUser;
-        await SessionTools.AttachProcessAsync(bridge, sessionId, 4242, consent: true, 30000, CancellationToken.None);
+        await SessionTools.AttachProcessAsync(bridge, sessionId, 4242, consent: true, 30000, cancellationToken: CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             InspectionTools.SetVariableAsync(bridge, sessionId, "f0", "total", "0.01", consent: false, CancellationToken.None));

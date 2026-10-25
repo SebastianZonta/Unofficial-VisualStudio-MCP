@@ -29,7 +29,7 @@ public sealed class ExecutionTests
         var resumed = await ExecutionTools.ResumeAsync(bridge, sessionId, 5000, CancellationToken.None);
 
         Assert.Equal("break", resumed.Mode);
-        Assert.Contains(set.Breakpoint.Id, resumed.LastHit);
+        Assert.Equal($"{set.Breakpoint.File}:{set.Breakpoint.Line}", resumed.LastHit);
         Assert.Equal("ok", resumed.Status);
     }
 

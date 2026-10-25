@@ -66,8 +66,8 @@ public sealed class LaunchProcessTests : IDisposable
         var result = await SessionTools.LaunchProcessAsync(bridge, sessionId, _exe);
 
         Assert.Equal("break", result.Mode);
-        Assert.Contains("Program.cs:1", result.LastHit);
-        Assert.Contains(bp.Breakpoint.Id, result.LastHit);
+        Assert.Equal("Program.cs:1", result.LastHit);
+        Assert.DoesNotContain(bp.Breakpoint.Id, result.LastHit);
     }
 
     [Fact]

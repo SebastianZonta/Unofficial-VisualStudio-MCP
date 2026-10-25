@@ -75,7 +75,7 @@ public sealed class ToolValidationTests
             "empty-frame-id" => await InspectionTools.ReadVariablesAsync(bridge, sessionId, "", null, 50, CancellationToken.None),
             "zero-maxVariables" => await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f0", null, 0, CancellationToken.None),
             "huge-maxVariables" => await InspectionTools.ReadVariablesAsync(bridge, sessionId, "f0", null, 501, CancellationToken.None),
-            "zero-process-id" => await SessionTools.AttachProcessAsync(bridge, sessionId, 0, consent: true, 30_000, CancellationToken.None),
+            "zero-process-id" => await SessionTools.AttachProcessAsync(bridge, sessionId, 0, consent: true, 30_000, cancellationToken: CancellationToken.None),
             "consent-false" => await InvokeWithoutConsentAsync(bridge, sessionId),
             _ => throw new InvalidOperationException($"unknown validation case {kase}"),
         };
@@ -84,7 +84,7 @@ public sealed class ToolValidationTests
     private static async Task<object> InvokeWithoutConsentAsync(FakeDebugBridge bridge, string sessionId)
     {
         bridge.ProcessOwners[4321] = bridge.CurrentUser;
-        return await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: false, 30_000, CancellationToken.None);
+        return await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: false, 30_000, cancellationToken: CancellationToken.None);
     }
 
     [Fact]

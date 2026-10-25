@@ -4,36 +4,26 @@ using Microsoft.Extensions.Logging;
 using VsDebugMcp;
 
 // Builder-only harness (never a tool): attach + set + list against the real VS, print, exit.
-if (args.Contains("--live-check-full", StringComparer.Ordinal))
-    return await LiveCheck.RunFullAsync(args);
-
-if (args.Contains("--live-check-launch", StringComparer.Ordinal))
-    return await LiveCheck.RunLaunchAsync(args);
-
-if (args.Contains("--live-check-occupied", StringComparer.Ordinal))
-    return await LiveCheck.RunOccupiedAsync(args);
-
-if (args.Contains("--live-check-run-to", StringComparer.Ordinal))
-    return await LiveCheck.RunToCursorAsync(args);
-
-if (args.Contains("--live-check-audit", StringComparer.Ordinal))
-    return await LiveCheck.RunAuditAsync(args);
-
-if (args.Contains("--live-check-exception", StringComparer.Ordinal))
-    return await LiveCheck.RunExceptionAsync(args);
-
-if (args.Contains("--live-check", StringComparer.Ordinal))
-    return await LiveCheck.RunAsync(args);
+var liveChecks = new (string Flag, Func<string[], Task<int>> Run)[]
+{
+    ("--live-check-full", LiveCheck.RunFullAsync),
+    ("--live-check-launch", LiveCheck.RunLaunchAsync),
+    ("--live-check-occupied", LiveCheck.RunOccupiedAsync),
+    ("--live-check-run-to", LiveCheck.RunToCursorAsync),
+    ("--live-check-audit", LiveCheck.RunAuditAsync),
+    ("--live-check-exception", LiveCheck.RunExceptionAsync),
+    ("--live-check", LiveCheck.RunAsync),
+};
+foreach (var (flag, run) in liveChecks)
+    if (args.Contains(flag, StringComparer.Ordinal))
+        return await run(args);
 
 var builder = Host.CreateApplicationBuilder(args);
 
 builder.Logging.AddConsole(o => o.LogToStandardErrorThreshold = LogLevel.Trace);
 
 var fake = args.Contains("--fake", StringComparer.Ordinal);
-if (fake)
-    builder.Services.AddSingleton<IDebugBridge, FakeDebugBridge>();
-else
-    builder.Services.AddSingleton<IDebugBridge, DteDebugBridge>();
+builder.Services.AddSingleton(typeof(IDebugBridge), fake ? typeof(FakeDebugBridge) : typeof(DteDebugBridge));
 // --live is a no-op (live is the default); --fake opts into the fake bridge.
 if (fake)
     Console.Error.WriteLine("warning: running with --fake: values are canned and must not be treated as a real debuggee");

@@ -14,6 +14,42 @@ internal static class ProcessOwner
     private static Dictionary<int, string?>? _cache;
     private static DateTime _cacheAt = DateTime.MinValue;
 
+    /// <summary>WMI/hosting failures that mean unknown owner: fail closed, never a bare runtime error.
+    /// Covers a stale publish placeholder System.Management.dll (PlatformNotSupported).</summary>
+    private static bool IsHostingFailure(Exception ex) => ex is ManagementException
+        or UnauthorizedAccessException or COMException or InvalidOperationException or InvalidComObjectException
+        or PlatformNotSupportedException or FileNotFoundException or BadImageFormatException;
+
+    private static bool IsEntryFailure(Exception ex) => IsHostingFailure(ex)
+        || ex is FormatException or InvalidCastException or OverflowException;
+
+    private static bool TryGetFresh(out Dictionary<int, string?>? cache)
+    {
+        lock (CacheLock)
+        {
+            cache = _cache;
+            return cache is not null && DateTime.UtcNow - _cacheAt < CacheTtl;
+        }
+    }
+
+    /// <summary>One WMI enumeration with deterministic disposal.
+    /// NB: SELECT * (not ProcessId-only): property-only results cannot
+    /// InvokeMethod("GetOwner") — every call throws InvalidOperationException.
+    /// Row returns false to stop early.</summary>
+    private static void ForEachProcess(string query, Func<ManagementObject, bool> row)
+    {
+        using var searcher = new ManagementObjectSearcher(query);
+        using var results = searcher.Get();
+        foreach (ManagementObject mo in results)
+        {
+            using (mo)
+            {
+                if (!row(mo))
+                    return;
+            }
+        }
+    }
+
     public static string CurrentUserName()
     {
         try
@@ -34,11 +70,8 @@ internal static class ProcessOwner
     /// per-pid <see cref="OwnerOf"/> when listing. Missing pids mean unknown owner.</summary>
     public static IReadOnlyDictionary<int, string?> SnapshotOwners()
     {
-        lock (CacheLock)
-        {
-            if (_cache is not null && DateTime.UtcNow - _cacheAt < CacheTtl)
-                return _cache;
-        }
+        if (TryGetFresh(out var cached) && cached is not null)
+            return cached;
         var fresh = QueryAllOwners();
         lock (CacheLock)
         {
@@ -50,29 +83,24 @@ internal static class ProcessOwner
 
     public static string? OwnerOf(int processId)
     {
-        lock (CacheLock)
-        {
-            if (_cache is not null && DateTime.UtcNow - _cacheAt < CacheTtl && _cache.TryGetValue(processId, out var cached))
-                return cached;
-        }
+        if (TryGetFresh(out var cached) && cached is not null && cached.TryGetValue(processId, out var hit))
+            return hit;
+        string? owner = null;
         try
         {
-            using var searcher = new ManagementObjectSearcher(
-                $"SELECT * FROM Win32_Process WHERE ProcessId = {processId}");
-            using var results = searcher.Get();
-            foreach (ManagementObject mo in results)
+            ForEachProcess($"SELECT * FROM Win32_Process WHERE ProcessId = {processId}", mo =>
             {
-                using (mo)
-                {
-                    return ReadOwner(mo);
-                }
-            }
-            return null;
+                owner = ReadOwner(mo);
+                return false;
+            });
         }
-        catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException or InvalidOperationException or InvalidComObjectException)
+        catch (Exception ex) when (IsHostingFailure(ex))
         {
+            // Stale publish dirs ship a placeholder System.Management.dll that throws
+            // PlatformNotSupported: fail closed to unknown owner, never a bare runtime error.
             return null;
         }
+        return owner;
     }
 
     private static Dictionary<int, string?> QueryAllOwners()
@@ -80,28 +108,21 @@ internal static class ProcessOwner
         var owners = new Dictionary<int, string?>();
         try
         {
-            // NB: SELECT * (not ProcessId-only): property-only results cannot
-            // InvokeMethod("GetOwner") — every call throws InvalidOperationException.
-            using var searcher = new ManagementObjectSearcher("SELECT * FROM Win32_Process");
-            using var results = searcher.Get();
-            foreach (ManagementObject mo in results)
+            ForEachProcess("SELECT * FROM Win32_Process", mo =>
             {
-                using (mo)
+                try
                 {
-                    try
-                    {
-                        var pid = Convert.ToInt32(mo["ProcessId"], CultureInfo.InvariantCulture);
-                        owners[pid] = ReadOwner(mo);
-                    }
-                    catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException
-                        or InvalidOperationException or InvalidComObjectException or FormatException or InvalidCastException or OverflowException)
-                    {
-                        // One unreadable entry must not poison the whole snapshot.
-                    }
+                    var pid = Convert.ToInt32(mo["ProcessId"], CultureInfo.InvariantCulture);
+                    owners[pid] = ReadOwner(mo);
                 }
-            }
+                catch (Exception ex) when (IsEntryFailure(ex))
+                {
+                    // One unreadable entry must not poison the whole snapshot.
+                }
+                return true;
+            });
         }
-        catch (Exception ex) when (ex is ManagementException or UnauthorizedAccessException or COMException or InvalidOperationException or InvalidComObjectException)
+        catch (Exception ex) when (IsHostingFailure(ex))
         {
             // Fail closed: empty map means every owner reads unknown downstream.
         }

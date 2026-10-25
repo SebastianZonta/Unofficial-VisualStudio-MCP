@@ -11,6 +11,7 @@ internal static class ComErrorMapper
     private const int RpcSServerUnavailable = unchecked((int)0x800706BA); // RPC server unavailable (bound VS gone)
     private const int RpcSUnknownIf = unchecked((int)0x800706B5); // endpoint gone with the server
     private const int RpcEServerCallRetryLater = unchecked((int)0x8001010A); // server going away
+    private const int EFail = unchecked((int)0x80004005); // evaluator refused the assignment
 
     /// <summary>True when the failure means the bound VS instance is gone (per-session death, not a busy server).</summary>
     public static bool IsDisconnected(COMException ex) => ex.HResult is
@@ -18,6 +19,10 @@ internal static class ComErrorMapper
 
     /// <summary>True when VS refused the call (busy): nothing happened, so the target is unchanged.</summary>
     public static bool IsCallRejected(COMException ex) => ex.HResult == RpcECallRejected;
+
+    /// <summary>True only for a genuine evaluator refusal (E_FAIL): the only shape mapped
+    /// to read-only-target. Busy, denied and disconnects keep their own codes.</summary>
+    public static bool IsRefusal(COMException ex) => ex.HResult == EFail;
 
     public static DebugDomainException ToDomain(COMException ex) => ex.HResult switch
     {

@@ -23,6 +23,8 @@ public sealed class FakeDebugBridge : IDebugBridge
         public List<ModuleInfo> Modules { get; } = new();
         /// <summary>Exception-break settings, copied from the catalog at attach: per session, never shared.</summary>
         public Dictionary<string, string> ExceptionModes { get; } = new(StringComparer.Ordinal);
+        /// <summary>Break-when-thrown values this session found at attach, so default restores them.</summary>
+        public Dictionary<string, string> FoundExceptionModes { get; } = new(StringComparer.Ordinal);
         /// <summary>Throw armed for the next run; a null Message simulates a read refused under nse.</summary>
         public FakeThrow? PendingThrow { get; set; }
         /// <summary>Exception the session is stopped on; null on every other stop.</summary>
@@ -88,7 +90,10 @@ public sealed class FakeDebugBridge : IDebugBridge
         var sessionId = Guid.NewGuid().ToString("N");
         var session = new FakeSession { InstanceKey = key };
         foreach (var (name, mode) in ExceptionCatalog)
+        {
             session.ExceptionModes[name] = mode;
+            session.FoundExceptionModes[name] = mode;
+        }
         _sessions[sessionId] = session;
         return Task.FromResult(new AttachResult(sessionId, "design", LastHit: null));
     }
@@ -112,14 +117,19 @@ public sealed class FakeDebugBridge : IDebugBridge
         _ = await RequireAsync(sessionId, ct);
     }
 
+    private static DebugDomainException NoSession() =>
+        new("no-session", "no active session", "call attach first");
+
+    private static DebugDomainException VsGone(string sessionId) =>
+        new("vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
+
     private Task<FakeSession> RequireAsync(string sessionId, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
         if (!_sessions.TryGetValue(sessionId, out var session))
-            throw new DebugDomainException("no-session", "no active session", "call attach first");
+            throw NoSession();
         if (session.Dead)
-            throw new DebugDomainException(
-                "vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
+            throw VsGone(sessionId);
         return Task.FromResult(session);
     }
 
@@ -133,8 +143,10 @@ public sealed class FakeDebugBridge : IDebugBridge
     public Task<ListSessionsResult> ListSessionsAsync(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
+        // Inventory lists only live sessions: dead records stay until detach for rebind,
+        // but never surface as actionable handles.
         return Task.FromResult(new ListSessionsResult(
-            _sessions.Select(kv => new SessionInfo(kv.Key, $"{kv.Value.InstanceKey} [fake]")).ToList()));
+            _sessions.Where(kv => !kv.Value.Dead).Select(kv => new SessionInfo(kv.Key, $"{kv.Value.InstanceKey} [fake]")).ToList()));
     }
 
     public async Task<DetachResult> DetachAsync(string sessionId, CancellationToken ct)
@@ -148,6 +160,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         string? condition = null, int? hitCount = null, string? hitCountMode = null, string? logMessage = null)
     {
         var session = await RequireAsync(sessionId, ct);
+        BreakpointOptions.ValidateLocation(file, line);
         var error = BreakpointOptions.Check(condition, hitCount, hitCountMode, logMessage);
         if (error is not null)
             throw new DebugDomainException(ErrorCodes.InvalidArgument, error.Value.Detail, error.Value.Remediation);
@@ -220,9 +233,7 @@ public sealed class FakeDebugBridge : IDebugBridge
     public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
     {
         var session = await RequireAsync(sessionId, ct);
-        if (session.Mode != "run")
-            throw new DebugDomainException(
-                "not-running", $"debuggee is {session.Mode}, nothing to pause", "resume first, then pause while running");
+        RequireRunMode(session.Mode);
         session.Mode = "break";
         return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: "paused on request");
     }
@@ -232,9 +243,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         var session = await RequireAsync(sessionId, ct);
         _ = timeoutMs;
         ct.ThrowIfCancellationRequested();
-        if (session.Mode == "run")
-            throw new DebugDomainException(
-                "already-running", "debuggee is already running", "pause first to inspect");
+        RequireNotRunMode(session.Mode);
         if (ForceTimeout)
             return new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "resume exceeded timeoutMs; still waiting");
         return RunUntilStop(session);
@@ -291,7 +300,7 @@ public sealed class FakeDebugBridge : IDebugBridge
                     continue;
                 var rendered = Render(id, session);
                 session.Mode = "break";
-                session.LastHit = $"{rendered.Id} {rendered.File}:{rendered.Line}";
+                session.LastHit = $"{rendered.File}:{rendered.Line}";
                 return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"hit {rendered.Id}");
             }
         }
@@ -303,12 +312,12 @@ public sealed class FakeDebugBridge : IDebugBridge
         var session = await RequireAsync(sessionId, ct);
         _ = timeoutMs;
         ct.ThrowIfCancellationRequested();
-        if (session.Mode != "break")
-            throw new DebugDomainException(
-                "not-in-break-mode", $"debuggee is {session.Mode}", "resume to a breakpoint or pause first; only inspect and step in break mode");
+        RequireBreakMode(session.Mode);
+        RequireStepDirection(direction);
+        // One shape on fast and over-budget paths: the post-step snapshot.
         if (ForceTimeout)
             return new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "step exceeded timeoutMs; mode unchanged, retry or pause");
-        return new ExecutionResult(session.Mode, LastHit: null, Status: "ok", Note: $"stepped {direction}");
+        return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: $"stepped {direction}");
     }
 
     private BreakpointInfo Render(string id, FakeSession session)
@@ -328,28 +337,49 @@ public sealed class FakeDebugBridge : IDebugBridge
             ? bp.HitCount % bp.HitCountTarget.Value == 0
             : bp.HitCount == bp.HitCountTarget.Value);
 
-    private static bool ConditionGate(FakeBreakpoint bp)
-    {
-        if (bp.Condition is null)
-            return true;
-        var cond = bp.Condition.Trim();
+    private static bool ConditionGate(FakeBreakpoint bp) =>
         // Deterministic fake truthiness: only an explicit false/0 fails; the live
         // bridge evaluates the real expression per hit instead.
-        return !cond.Equals("false", StringComparison.OrdinalIgnoreCase) && cond != "0";
+        bp.Condition is null || (bp.Condition.Trim() is var cond
+            && !cond.Equals("false", StringComparison.OrdinalIgnoreCase) && cond != "0");
+
+    // Mode guards, private to this bridge (shared-rules files are owned elsewhere);
+    // DteDebugBridge carries the same four for its debugger modes.
+    private static void RequireRunMode(string mode)
+    {
+        if (mode != "run")
+            throw new DebugDomainException(
+                "not-running", $"debuggee is {mode}, nothing to pause", "resume first, then pause while running");
     }
 
-    private static void RequireBreak(FakeSession session)
+    private static void RequireNotRunMode(string mode)
     {
-        if (session.Mode != "break")
+        if (mode == "run")
             throw new DebugDomainException(
-                "not-in-break-mode", $"debuggee is {session.Mode}",
+                "already-running", "debuggee is already running", "pause first to inspect");
+    }
+
+    private static void RequireBreakMode(string mode)
+    {
+        if (mode != "break")
+            throw new DebugDomainException(
+                "not-in-break-mode", $"debuggee is {mode}",
                 "resume to a breakpoint or pause first; only inspect and step in break mode");
     }
 
+    private static void RequireStepDirection(string direction)
+    {
+        if (direction is not ("over" or "into" or "out"))
+            throw new DebugDomainException(ErrorCodes.InvalidArgument, $"unknown step direction {direction}", "pass over, into, or out");
+    }
+
+    private static void RequireBreak(FakeSession session) => RequireBreakMode(session.Mode);
+
     private static IReadOnlyList<StackFrameInfo> CannedFrames() =>
     [
-        new StackFrameInfo("f0", "Order.Total()", "Shop.dll", "Order.cs", 17),
-        new StackFrameInfo("f1", "Program.Main()", "Shop.dll", "Program.cs", 42),
+        // Live EnvDTE exposes no file/line on frames: fake matches live with nulls.
+        new StackFrameInfo("f0", "Order.Total()", "Shop.dll", null, null),
+        new StackFrameInfo("f1", "Program.Main()", "Shop.dll", null, null),
     ];
 
     // Per-frame canned variables: the same names carry different values in f0 and f1,
@@ -406,7 +436,12 @@ public sealed class FakeDebugBridge : IDebugBridge
         if (path == ExceptionConfig.ExceptionPath && session.CurrentException is { } current)
             return new ReadVariablesResult(frameId, path,
             [
-                new ValueInfo("Message", "string", current.Message ?? "(unavailable)", Expandable: false, Path: null),
+                new ValueInfo("Message", "string", ExceptionConfig.Truncate(current.Message) ?? "(unavailable)", Expandable: false, Path: null),
+            ], session.Mode, session.LastHit);
+        if (path == "items[0]")
+            return new ReadVariablesResult(frameId, path,
+            [
+                new ValueInfo("items[0].Id", "int", "1", Expandable: false, Path: null),
             ], session.Mode, session.LastHit);
         if (path != "items" && path != "order")
             throw new DebugDomainException(
@@ -456,8 +491,11 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw new DebugDomainException(
                 "invalid-expression", $"expression did not evaluate without side effects: {expression}",
                 "pass a read-only expression valid in the top frame; prefer fields and property reads over method calls");
-        if (expression.Trim() == $"{ExceptionConfig.ExceptionPath}.Message" && session.CurrentException is { Message: { } message })
-            return new EvaluateResult(expression, message, "string", Expandable: false, session.Mode, session.LastHit);
+        if (expression.Trim() == $"{ExceptionConfig.ExceptionPath}.Message" && session.CurrentException is { } currentEx)
+            return new EvaluateResult(expression, ExceptionConfig.Truncate(currentEx.Message) ?? "(unavailable)", "string", Expandable: false, session.Mode, session.LastHit);
+        // Indexer drill paths round-trip without edit: items[0] evaluates like live.
+        if (expression.Trim() == "items[0]")
+            return new EvaluateResult(expression, "{Id=1, ...}", "Item", Expandable: true, session.Mode, session.LastHit);
         // Read-only by construction: the fake holds no live handles and this path never mutates state.
         // Evaluate always runs in the top frame (f0), whatever frame was inspected before.
         // Unknown names fail like live (invalid-expression), never a canned value.
@@ -470,7 +508,8 @@ public sealed class FakeDebugBridge : IDebugBridge
     }
 
     public async Task<ExecutionResult> AttachProcessAsync(
-        string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct)
+        string sessionId, int processId, bool consent, int timeoutMs, CancellationToken ct,
+        string? expectedProcessName = null)
     {
         var session = await RequireAsync(sessionId, ct);
         _ = timeoutMs;
@@ -482,6 +521,8 @@ public sealed class FakeDebugBridge : IDebugBridge
         // A VS PID (devenv) is never an attach target: listing still shows VS
         // instances for diagnosis, but attaching would bind the IDE to itself.
         var known = Processes.FirstOrDefault(p => p.Pid == processId);
+        if (known is not null)
+            ProcessLaunch.CheckExpectedName(known.Name, expectedProcessName, processId);
         if (known is not null && Path.GetFileNameWithoutExtension(known.Name).Equals("devenv", StringComparison.OrdinalIgnoreCase))
             throw new DebugDomainException(
                 ErrorCodes.InvalidArgument, $"devenv (PID {processId}) is a VS instance, never a target process",
@@ -534,10 +575,11 @@ public sealed class FakeDebugBridge : IDebugBridge
     {
         var session = await RequireAsync(sessionId, ct);
         ExceptionConfig.RequireNotRunning(session.Mode);
+        ExceptionConfig.ValidateMode(mode);
         if (!session.ExceptionModes.ContainsKey(exceptionType))
             throw ExceptionConfig.NotFound(exceptionType);
         session.ExceptionModes[exceptionType] = mode == ExceptionBreakModes.Default
-            ? ExceptionCatalog.GetValueOrDefault(exceptionType, ExceptionBreakModes.UnhandledOnly)
+            ? session.FoundExceptionModes.GetValueOrDefault(exceptionType, ExceptionCatalog.GetValueOrDefault(exceptionType, ExceptionBreakModes.UnhandledOnly))
             : mode;
         return new SetExceptionSettingResult(
             new ExceptionSettingInfo(exceptionType, session.ExceptionModes[exceptionType]), session.Mode, session.LastHit);

@@ -6,13 +6,11 @@ internal static class LiveCheck
 {
     public static async Task<int> RunFullAsync(string[] args)
     {
-        var file = args.SkipWhile(a => a != "--live-check-full").Skip(1).FirstOrDefault();
-        var lineText = args.SkipWhile(a => a != "--live-check-full").Skip(2).FirstOrDefault();
+        var rest = Rest(args, "--live-check-full");
+        var file = rest.FirstOrDefault();
+        var lineText = rest.Skip(1).FirstOrDefault();
         if (file is null || !int.TryParse(lineText, out var line))
-        {
-            Console.Error.WriteLine("usage: VsDebugMcp --live-check-full <file> <line>");
-            return 2;
-        }
+            return Usage("usage: VsDebugMcp --live-check-full <file> <line>");
         using var bridge = new DteDebugBridge();
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(5));
         try
@@ -50,8 +48,7 @@ internal static class LiveCheck
         }
         catch (DebugDomainException ex)
         {
-            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
-            return 1;
+            return ReportDomain(ex);
         }
     }
 
@@ -59,12 +56,9 @@ internal static class LiveCheck
     /// args (a1 a2), working directory (the temp dir) and env (LIVE_CHECK=launched) pass through.</summary>
     public static async Task<int> RunLaunchAsync(string[] args)
     {
-        var rest = args.SkipWhile(a => a != "--live-check-launch").Skip(1).ToArray();
+        var rest = Rest(args, "--live-check-launch");
         if (rest.Length < 3 || !int.TryParse(rest[2], out var line))
-        {
-            Console.Error.WriteLine("usage: VsDebugMcp --live-check-launch <exe> <file> <line>");
-            return 2;
-        }
+            return Usage("usage: VsDebugMcp --live-check-launch <exe> <file> <line>");
         using var bridge = new DteDebugBridge();
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         string? sessionId = null;
@@ -111,8 +105,7 @@ internal static class LiveCheck
         }
         catch (DebugDomainException ex)
         {
-            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
-            return 1;
+            return ReportDomain(ex);
         }
         finally
         {
@@ -127,12 +120,9 @@ internal static class LiveCheck
     /// Design-mode rejection is always checked; optional &lt;runLine&gt; (Sandbox: HEARTBEAT) adds run mode and timeout via a `wait 20` relaunch.</summary>
     public static async Task<int> RunToCursorAsync(string[] args)
     {
-        var rest = args.SkipWhile(a => a != "--live-check-run-to").Skip(1).ToArray();
+        var rest = Rest(args, "--live-check-run-to");
         if (rest.Length < 4 || !int.TryParse(rest[2], out var line) || !int.TryParse(rest[3], out var toLine))
-        {
-            Console.Error.WriteLine("usage: VsDebugMcp --live-check-run-to <exe> <file> <line> <toLine> [<runLine>]");
-            return 2;
-        }
+            return Usage("usage: VsDebugMcp --live-check-run-to <exe> <file> <line> <toLine> [<runLine>]");
         using var bridge = new DteDebugBridge();
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         string? sessionId = null;
@@ -209,8 +199,7 @@ internal static class LiveCheck
         }
         catch (DebugDomainException ex)
         {
-            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
-            return 1;
+            return ReportDomain(ex);
         }
         finally
         {
@@ -224,12 +213,9 @@ internal static class LiveCheck
     /// is refused with breakpoint-exists, and A's breakpoint survives B's attempt.</summary>
     public static async Task<int> RunOccupiedAsync(string[] args)
     {
-        var rest = args.SkipWhile(a => a != "--live-check-occupied").Skip(1).ToArray();
+        var rest = Rest(args, "--live-check-occupied");
         if (rest.Length < 3 || !int.TryParse(rest[2], out var line))
-        {
-            Console.Error.WriteLine("usage: VsDebugMcp --live-check-occupied <instance> <file> <line>");
-            return 2;
-        }
+            return Usage("usage: VsDebugMcp --live-check-occupied <instance> <file> <line>");
         using var bridgeA = new DteDebugBridge();
         using var bridgeB = new DteDebugBridge();
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
@@ -262,8 +248,7 @@ internal static class LiveCheck
         }
         catch (DebugDomainException ex)
         {
-            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
-            return 1;
+            return ReportDomain(ex);
         }
         finally
         {
@@ -278,12 +263,9 @@ internal static class LiveCheck
     /// drill-down, evaluate pinned to f0. Breaks at &lt;file&gt;:&lt;line&gt; inside Helper.</summary>
     public static async Task<int> RunAuditAsync(string[] args)
     {
-        var rest = args.SkipWhile(a => a != "--live-check-audit").Skip(1).ToArray();
+        var rest = Rest(args, "--live-check-audit");
         if (rest.Length < 3 || !int.TryParse(rest[2], out var line))
-        {
-            Console.Error.WriteLine("usage: VsDebugMcp --live-check-audit <exe> <file> <line>");
-            return 2;
-        }
+            return Usage("usage: VsDebugMcp --live-check-audit <exe> <file> <line>");
         var (exe, file) = (rest[0], rest[1]);
         using var bridge = new DteDebugBridge();
         using var other = new DteDebugBridge();
@@ -292,11 +274,6 @@ internal static class LiveCheck
         string? otherSession = null;
         var owned = new List<string>();
         var failures = 0;
-        void Check(bool ok, string what)
-        {
-            Console.WriteLine($"{(ok ? "PASS" : "FAIL")} {what}");
-            if (!ok) failures++;
-        }
         try
         {
             sessionId = (await bridge.AttachAsync(null, cts.Token)).SessionId;
@@ -313,13 +290,13 @@ internal static class LiveCheck
             var list = await bridge.ListBreakpointsAsync(sessionId, cts.Token);
             foreach (var bp in list.Breakpoints)
                 Console.WriteLine($"  {bp.Id} {bp.File}:{bp.Line} warning={bp.Warning}");
-            Check(list.Breakpoints.Count(bp => bp.Id == b && bp.Line == 2) == 1, $"{b} still names line 2 after removing {a} and {c}");
-            Check(list.Breakpoints.Count(bp => bp.File.Equals(file, StringComparison.OrdinalIgnoreCase) && bp.Line == 2) == 1, "owned breakpoint not duplicated as other<N>");
+            Check(ref failures, list.Breakpoints.Count(bp => bp.Id == b && bp.Line == 2) == 1, $"{b} still names line 2 after removing {a} and {c}");
+            Check(ref failures, list.Breakpoints.Count(bp => bp.File.Equals(file, StringComparison.OrdinalIgnoreCase) && bp.Line == 2) == 1, "owned breakpoint not duplicated as other<N>");
             var foreign = list.Breakpoints.FirstOrDefault(bp => bp.File.Equals(file, StringComparison.OrdinalIgnoreCase) && bp.Line == 3);
-            Check(foreign is not null && foreign.Id.StartsWith("other", StringComparison.Ordinal), "other session's breakpoint listed as other<N>");
+            Check(ref failures, foreign is not null && foreign.Id.StartsWith("other", StringComparison.Ordinal), "other session's breakpoint listed as other<N>");
             if (foreign is not null)
-                Check(await FailsWith(() => bridge.RemoveBreakpointAsync(sessionId, foreign.Id, cts.Token), "breakpoint-not-found"), "other<N> not removable");
-            Check(await FailsWith(() => bridge.RemoveBreakpointAsync(sessionId, a, cts.Token), "breakpoint-not-found"), "removed id stays not-found");
+                Check(ref failures, await FailsWith(() => bridge.RemoveBreakpointAsync(sessionId, foreign.Id, cts.Token), "breakpoint-not-found"), "other<N> not removable");
+            Check(ref failures, await FailsWith(() => bridge.RemoveBreakpointAsync(sessionId, a, cts.Token), "breakpoint-not-found"), "removed id stays not-found");
             await other.DetachAsync(otherSession, cts.Token);
             otherSession = null;
             await bridge.RemoveBreakpointAsync(sessionId, b, cts.Token);
@@ -334,18 +311,18 @@ internal static class LiveCheck
                 return 1;
             }
             var count = await bridge.EvaluateAsync(sessionId, "items.Count", 10_000, cts.Token);
-            Check(count.Value == "3" && count.Expression == "items.Count", $"nse property read works and echoes input (got {count.Expression} = {count.Value})");
-            Check(await FailsWith(() => bridge.EvaluateAsync(sessionId, "items.Remove(1)", 10_000, cts.Token), "invalid-expression"), "mutating call refused");
+            Check(ref failures, count.Value == "3" && count.Expression == "items.Count", $"nse property read works and echoes input (got {count.Expression} = {count.Value})");
+            Check(ref failures, await FailsWith(() => bridge.EvaluateAsync(sessionId, "items.Remove(1)", 10_000, cts.Token), "invalid-expression"), "mutating call refused");
             var after = await bridge.EvaluateAsync(sessionId, "items.Count", 10_000, cts.Token);
-            Check(after.Value == "3", $"target unchanged after refused call (items.Count = {after.Value})");
+            Check(ref failures, after.Value == "3", $"target unchanged after refused call (items.Count = {after.Value})");
             var f1 = await bridge.ReadVariablesAsync(sessionId, "f1", null, 50, cts.Token);
             Console.WriteLine($"  f1: {string.Join(", ", f1.Variables.Select(v => $"{v.Name}={v.Value}"))}");
-            Check(f1.Variables.Any(v => v.Name == "list"), "f1 top level has list");
+            Check(ref failures, f1.Variables.Any(v => v.Name == "list"), "f1 top level has list");
             var drilled = await bridge.ReadVariablesAsync(sessionId, "f1", "list", 50, cts.Token);
-            Check(drilled.Variables.Count > 0, $"f1 drill-down of list resolves in f1 ({drilled.Variables.Count} members)");
+            Check(ref failures, drilled.Variables.Count > 0, $"f1 drill-down of list resolves in f1 ({drilled.Variables.Count} members)");
             var total = await bridge.EvaluateAsync(sessionId, "total", 10_000, cts.Token);
-            Check(total.Value == "82", $"evaluate after reading f1 runs in f0 (total = {total.Value}, f0 is 82, f1 is 41)");
-            Check(await FailsWith(() => bridge.ReadVariablesAsync(sessionId, "f99", "list", 50, cts.Token), "frame-not-found"), "unknown frame with path is frame-not-found");
+            Check(ref failures, total.Value == "82", $"evaluate after reading f1 runs in f0 (total = {total.Value}, f0 is 82, f1 is 41)");
+            Check(ref failures, await FailsWith(() => bridge.ReadVariablesAsync(sessionId, "f99", "list", 50, cts.Token), "frame-not-found"), "unknown frame with path is frame-not-found");
             foreach (var id in owned.ToList())
             {
                 await bridge.RemoveBreakpointAsync(sessionId, id, cts.Token);
@@ -358,8 +335,7 @@ internal static class LiveCheck
         }
         catch (DebugDomainException ex)
         {
-            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
-            return 1;
+            return ReportDomain(ex);
         }
         finally
         {
@@ -376,46 +352,39 @@ internal static class LiveCheck
     /// then the setting is restored with default.</summary>
     public static async Task<int> RunExceptionAsync(string[] args)
     {
-        var exe = args.SkipWhile(a => a != "--live-check-exception").Skip(1).FirstOrDefault();
+        var rest = Rest(args, "--live-check-exception");
+        var exe = rest.FirstOrDefault();
         if (exe is null)
-        {
-            Console.Error.WriteLine("usage: VsDebugMcp --live-check-exception <Sandbox.exe>");
-            return 2;
-        }
+            return Usage("usage: VsDebugMcp --live-check-exception <Sandbox.exe>");
         const string type = "System.InvalidOperationException";
         using var bridge = new DteDebugBridge();
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(3));
         string? sessionId = null;
         var changed = false;
         var failures = 0;
-        void Check(bool ok, string what)
-        {
-            Console.WriteLine($"{(ok ? "PASS" : "FAIL")} {what}");
-            if (!ok) failures++;
-        }
         try
         {
             sessionId = (await bridge.AttachAsync(null, cts.Token)).SessionId;
             var all = await bridge.ListExceptionSettingsAsync(sessionId, null, cts.Token);
             Console.WriteLine($"list: count={all.Settings.Count} mode={all.Mode}");
             var found = all.Settings.FirstOrDefault(s => s.Name == type);
-            Check(found is not null, $"{type} listed (found mode {found?.Mode})");
-            Check(await FailsWith(() => bridge.SetExceptionSettingAsync(sessionId, "InvalidOperationException", ExceptionBreakModes.FirstChance, cts.Token), ErrorCodes.ExceptionNotFound), "short name is exception-not-found");
-            Check(await FailsWith(() => bridge.SetExceptionSettingAsync(sessionId, "System.NoSuchException", ExceptionBreakModes.FirstChance, cts.Token), ErrorCodes.ExceptionNotFound), "unknown name is exception-not-found");
+            Check(ref failures, found is not null, $"{type} listed (found mode {found?.Mode})");
+            Check(ref failures, await FailsWith(() => bridge.SetExceptionSettingAsync(sessionId, "InvalidOperationException", ExceptionBreakModes.FirstChance, cts.Token), ErrorCodes.ExceptionNotFound), "short name is exception-not-found");
+            Check(ref failures, await FailsWith(() => bridge.SetExceptionSettingAsync(sessionId, "System.NoSuchException", ExceptionBreakModes.FirstChance, cts.Token), ErrorCodes.ExceptionNotFound), "unknown name is exception-not-found");
             var set = await bridge.SetExceptionSettingAsync(sessionId, type, ExceptionBreakModes.FirstChance, cts.Token);
             changed = true;
-            Check(set.Setting.Mode == ExceptionBreakModes.FirstChance, "set first-chance echoes first-chance");
+            Check(ref failures, set.Setting.Mode == ExceptionBreakModes.FirstChance, "set first-chance echoes first-chance");
 
             var launch = await bridge.LaunchProcessAsync(sessionId, exe, "throw", null, null, 30_000, cts.Token);
             Console.WriteLine($"launch: mode={launch.Mode} lastHit={launch.LastHit} note={launch.Note}");
             Console.WriteLine($"  exception: type={launch.Exception?.Type} path={launch.Exception?.Path} message={launch.Exception?.Message ?? "(null)"}");
-            Check(launch.Mode == "break" && launch.LastHit is null, "first-chance break with no lastHit");
-            Check(launch.Exception?.Type.Contains(type, StringComparison.Ordinal) == true, "payload type");
-            Check(launch.Exception?.Path == "$exception", "payload path");
+            Check(ref failures, launch.Mode == "break" && launch.LastHit is null, "first-chance break with no lastHit");
+            Check(ref failures, launch.Exception?.Type.Contains(type, StringComparison.Ordinal) == true, "payload type");
+            Check(ref failures, launch.Exception?.Path == "$exception", "payload path");
             if (launch.Exception is { Message: { } message })
             {
                 var probe = await bridge.EvaluateAsync(sessionId, "$exception.Message", 10_000, cts.Token);
-                Check(probe.Value == message, $"message matches probe ({probe.Value})");
+                Check(ref failures, probe.Value == message, $"message matches probe ({probe.Value})");
             }
             else
             {
@@ -432,19 +401,57 @@ internal static class LiveCheck
         }
         catch (DebugDomainException ex)
         {
-            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
-            return 1;
+            return ReportDomain(ex);
         }
         finally
         {
             // Settings live in the VS instance (ADR-0011): restore what this check changed.
+            // Detach is guaranteed even when restore fails; a failed restore counts, never hides.
             if (sessionId is not null)
             {
                 if (changed)
-                    await bridge.SetExceptionSettingAsync(sessionId, type, ExceptionBreakModes.Default, CancellationToken.None);
-                await bridge.DetachAsync(sessionId, CancellationToken.None);
+                {
+                    try
+                    {
+                        await bridge.SetExceptionSettingAsync(sessionId, type, ExceptionBreakModes.Default, CancellationToken.None);
+                    }
+                    catch (Exception ex)
+                    {
+                        failures++;
+                        Console.WriteLine($"FAIL restore {type} to default: {ex.Message}");
+                    }
+                }
+                try
+                {
+                    await bridge.DetachAsync(sessionId, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"detach failed: {ex.Message}");
+                }
             }
         }
+    }
+
+    private static string[] Rest(string[] args, string flag) =>
+        args.SkipWhile(a => a != flag).Skip(1).ToArray();
+
+    private static int Usage(string line)
+    {
+        Console.Error.WriteLine(line);
+        return 2;
+    }
+
+    private static int ReportDomain(DebugDomainException ex)
+    {
+        Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
+        return 1;
+    }
+
+    private static void Check(ref int failures, bool ok, string what)
+    {
+        Console.WriteLine($"{(ok ? "PASS" : "FAIL")} {what}");
+        if (!ok) failures++;
     }
 
     private static async Task<bool> FailsWith(Func<Task> call, string code)
@@ -463,13 +470,11 @@ internal static class LiveCheck
 
     public static async Task<int> RunAsync(string[] args)
     {
-        var file = args.SkipWhile(a => a != "--live-check").Skip(1).FirstOrDefault();
-        var lineText = args.SkipWhile(a => a != "--live-check").Skip(2).FirstOrDefault();
+        var rest = Rest(args, "--live-check");
+        var file = rest.FirstOrDefault();
+        var lineText = rest.Skip(1).FirstOrDefault();
         if (file is null || !int.TryParse(lineText, out var line))
-        {
-            Console.Error.WriteLine("usage: VsDebugMcp --live-check <file> <line>");
-            return 2;
-        }
+            return Usage("usage: VsDebugMcp --live-check <file> <line>");
         using var bridge = new DteDebugBridge();
         using var cts = new CancellationTokenSource(TimeSpan.FromMinutes(2));
         try
@@ -488,8 +493,7 @@ internal static class LiveCheck
         }
         catch (DebugDomainException ex)
         {
-            Console.Error.WriteLine($"DOMAIN {ex.Code}: {ex.Message}");
-            return 1;
+            return ReportDomain(ex);
         }
     }
 }

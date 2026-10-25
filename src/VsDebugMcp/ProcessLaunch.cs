@@ -12,7 +12,17 @@ internal static class ProcessLaunch
     /// (the executable's directory when none is given).</summary>
     public static string CheckStart(string executablePath, string? workingDirectory)
     {
-        if (Path.GetFileNameWithoutExtension(executablePath).Equals("devenv", StringComparison.OrdinalIgnoreCase))
+        CheckExecutableExists(executablePath);
+        return ResolveWorkingDirectory(executablePath, workingDirectory);
+    }
+
+    private static void CheckExecutableExists(string executablePath)
+    {
+        if (!ArgumentValidator.IsAbsolutePath(executablePath))
+            throw new DebugDomainException(
+                ErrorCodes.InvalidArgument, $"executablePath must be an absolute path: {executablePath}",
+                "pass the full path to a built target executable");
+        if (BaseName(executablePath).Equals("devenv", StringComparison.OrdinalIgnoreCase))
             throw new DebugDomainException(
                 ErrorCodes.InvalidArgument, "devenv is a VS instance, never a target process",
                 "pass the program under test, not Visual Studio itself");
@@ -26,7 +36,21 @@ internal static class ProcessLaunch
             throw new DebugDomainException(
                 ErrorCodes.InvalidArgument, $"{executablePath} is not a .NET 5+ app (no .runtimeconfig.json beside it)",
                 "launch a .NET 5+ build output, or start it yourself and use attach_process");
-        var cwd = workingDirectory ?? Path.GetDirectoryName(executablePath)!;
+    }
+
+    private static string BaseName(string name) => Path.GetFileNameWithoutExtension(name.Trim().Trim('"'));
+
+    private static string ResolveWorkingDirectory(string executablePath, string? workingDirectory)
+    {
+        if (workingDirectory is not null && workingDirectory.Length == 0)
+            throw new DebugDomainException(
+                ErrorCodes.InvalidArgument, "working directory must not be empty",
+                "pass an existing working directory or omit it to use the executable's directory");
+        var cwd = workingDirectory ?? Path.GetDirectoryName(executablePath);
+        if (string.IsNullOrEmpty(cwd))
+            throw new DebugDomainException(
+                ErrorCodes.InvalidArgument, $"could not determine a working directory for {executablePath}",
+                "pass an existing working directory explicitly");
         if (!Directory.Exists(cwd))
             throw new DebugDomainException(
                 ErrorCodes.InvalidArgument, $"working directory {cwd} does not exist",
@@ -39,15 +63,41 @@ internal static class ProcessLaunch
         ErrorCodes.AlreadyBound, $"the VS instance of this debug session is already debugging target PID {targetPid}",
         "end the current run (or detach) before launching");
 
+    /// <summary>Recycled-PID guard: when the caller names the target it listed, a PID
+    /// now naming something else fails closed instead of debugging the wrong process.</summary>
+    public static void CheckExpectedName(string actualName, string? expectedName, int processId)
+    {
+        if (string.IsNullOrWhiteSpace(expectedName))
+            return;
+        var actual = BaseName(actualName);
+        var expected = BaseName(expectedName);
+        if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
+            throw new DebugDomainException(
+                "process-not-found", $"process {processId} is now {actualName}, expected {expectedName} (PID may have been recycled)",
+                "list local processes and retry");
+    }
+
     /// <summary>CreateProcess Unicode environment block: extra variables override inherited
     /// ones case-insensitively (Windows semantics), sorted, double-NUL terminated.</summary>
     public static string BuildEnvironmentBlock(
         IReadOnlyDictionary<string, string> inherited, IReadOnlyDictionary<string, string>? extra)
     {
+        var extras = extra ?? new Dictionary<string, string>();
+        foreach (var kv in extras)
+        {
+            if (string.IsNullOrEmpty(kv.Key) || kv.Key.Contains('=') || kv.Key.Contains('\0'))
+                throw new DebugDomainException(
+                    ErrorCodes.InvalidArgument, $"invalid environment variable name {kv.Key}",
+                    "pass names without '=' or NUL");
+            if (kv.Value is null || kv.Value.Contains('\0'))
+                throw new DebugDomainException(
+                    ErrorCodes.InvalidArgument, $"invalid environment value for {kv.Key}",
+                    "pass values without NUL");
+        }
         var merged = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var kv in inherited)
             merged[kv.Key] = kv.Value;
-        foreach (var kv in extra ?? new Dictionary<string, string>())
+        foreach (var kv in extras)
         {
             merged.Remove(kv.Key);
             merged[kv.Key] = kv.Value;
@@ -97,7 +147,13 @@ internal static class ProcessLaunch
     {
         public int Pid { get; } = pid;
 
-        public void Resume() => _ = NativeMethods.ResumeThread(thread);
+        public void Resume()
+        {
+            if (NativeMethods.ResumeThread(thread) == -1)
+                throw new DebugDomainException(
+                    ErrorCodes.LaunchFailed, $"could not resume target process {Pid}",
+                    "check the executable is runnable by the bridge user");
+        }
 
         /// <summary>No partial binding: a launch that fails after start ends its target process.</summary>
         public void Kill() => _ = NativeMethods.TerminateProcess(process, 1);

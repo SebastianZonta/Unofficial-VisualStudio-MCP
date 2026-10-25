@@ -4,6 +4,16 @@ namespace VsDebugMcp;
 /// parsing and rendering. Pure; each layer throws its own exception type.</summary>
 internal static class BreakpointOptions
 {
+    /// <summary>One location rule for the tool boundary and both bridges: file/line
+    /// validated before anything is created.</summary>
+    public static void ValidateLocation(string file, int line)
+    {
+        if (string.IsNullOrWhiteSpace(file))
+            throw DebugDomainException.Fail(ErrorCodes.InvalidArgument, "file must not be empty", "pass a source file path");
+        if (line < 1)
+            throw DebugDomainException.Fail(ErrorCodes.InvalidArgument, "line must be >= 1", "pass a 1-based line number");
+    }
+
     /// <summary>Error naming the offending input, or null when valid.</summary>
     public static (string Detail, string Remediation)? Check(string? condition, int? hitCount, string? hitCountMode, string? logMessage)
     {
@@ -46,8 +56,12 @@ internal static class BreakpointOptions
         string? condition, int? hitCount, string? hitCountMode, string? logMessage)
     {
         var cond = string.IsNullOrWhiteSpace(condition) ? null : condition.Trim();
-        var mode = hitCount is null ? null
-            : string.IsNullOrWhiteSpace(hitCountMode) ? HitCountModes.Exact : hitCountMode;
+        var mode = (hitCount, hitCountMode) switch
+        {
+            (null, _) => null,
+            (_, string m) when !string.IsNullOrWhiteSpace(m) => m,
+            _ => HitCountModes.Exact,
+        };
         return (cond, hitCount, mode, logMessage);
     }
 
@@ -73,39 +87,78 @@ internal static class BreakpointOptions
             return ("must not be empty", "pass a read-only expression");
         if (expression.Contains(';'))
             return ("must not contain ';' (statements are not supported)", "pass a single read-only expression");
-        if (expression.Contains('\r') || expression.Contains('\n'))
+        if (expression.Contains('\r') || expression.Contains('\n')
+            || expression.Contains('\v') || expression.Contains('\f')
+            || expression.Contains('\u0085') || expression.Contains('\u2028') || expression.Contains('\u2029'))
             return ("must be single-line", "pass a single read-only expression");
-        if (ContainsAssignment(expression))
+        if (expression.Contains("/*", StringComparison.Ordinal) || expression.Contains("*/", StringComparison.Ordinal)
+            || expression.Contains("//", StringComparison.Ordinal))
+            return ("must not contain comments", "pass a read-only expression without /* */ or // comments");
+        var code = StripBlockComments(expression);
+        if (ContainsAssignment(code))
             return ("must be read-only (assignment, ++ and -- are not supported)", "pass an expression without '=', '++' or '--'");
         return null;
     }
 
     internal static (string Detail, string Remediation)? CheckInvocationRule(string expression) =>
-        ContainsInvocation(expression)
+        ContainsInvocation(StripBlockComments(expression))
             ? ("must be read-only (method calls are not supported)", "pass field, property and indexer reads or comparisons without '(...)'")
             : null;
+
+    /// <summary>Block comments are whitespace for the gate: foo /*c*/ (1) is still a call,
+    /// while x =&gt; x.Id&gt;0 and (i==3) have no comments and still pass.</summary>
+    internal static string StripBlockComments(string expression)
+    {
+        if (!expression.Contains("/*", StringComparison.Ordinal))
+            return expression;
+        var sb = new System.Text.StringBuilder(expression.Length);
+        var i = 0;
+        while (i < expression.Length)
+        {
+            if (i + 1 < expression.Length && expression[i] == '/' && expression[i + 1] == '*')
+            {
+                var close = expression.IndexOf("*/", i + 2, StringComparison.Ordinal);
+                if (close < 0)
+                {
+                    sb.Append(' ');
+                    break;
+                }
+                sb.Append(' ');
+                i = close + 2;
+            }
+            else
+            {
+                sb.Append(expression[i]);
+                i++;
+            }
+        }
+        return sb.ToString();
+    }
 
     /// <summary>Fake/live-emulated log rendering: each {expression} hole becomes its evaluated value.</summary>
     public static string FormatLogMessage(string template, Func<string, string> evaluate)
     {
         var rendered = new System.Text.StringBuilder(template.Length);
-        for (var i = 0; i < template.Length; i++)
+        var next = 0;
+        foreach (var (open, close) in BraceSpans(template))
         {
-            if (template[i] == '{')
-            {
-                var close = template.IndexOf('}', i + 1);
-                rendered.Append(evaluate(template.Substring(i + 1, close - i - 1)));
-                i = close;
-            }
-            else
-            {
-                rendered.Append(template[i]);
-            }
+            rendered.Append(template, next, open - next);
+            rendered.Append(evaluate(template.Substring(open + 1, close - open - 1)));
+            next = close + 1;
         }
+        rendered.Append(template, next, template.Length - next);
         return rendered.ToString();
     }
 
     public static IEnumerable<string> Holes(string template)
+    {
+        foreach (var (open, close) in BraceSpans(template))
+            yield return template.Substring(open + 1, close - open - 1);
+    }
+
+    /// <summary>Single brace scan: each {expression} hole as (open, close) indices.
+    /// Stops at the first unclosed '{'; stray '}' is left for the caller to judge.</summary>
+    private static IEnumerable<(int Open, int Close)> BraceSpans(string template)
     {
         for (var i = 0; i < template.Length; i++)
         {
@@ -114,7 +167,7 @@ internal static class BreakpointOptions
             var close = template.IndexOf('}', i + 1);
             if (close < 0)
                 yield break;
-            yield return template.Substring(i + 1, close - i - 1);
+            yield return (i, close);
             i = close;
         }
     }
@@ -134,7 +187,7 @@ internal static class BreakpointOptions
     /// <summary>A location already holding a breakpoint this debug session did not create. VS would
     /// hand that breakpoint back from Add, and owning it would let remove/detach delete it.</summary>
     public static DebugDomainException Exists(string foreignId, string file, int line) =>
-        new(ErrorCodes.BreakpointExists,
+        DebugDomainException.Fail(ErrorCodes.BreakpointExists,
             $"{file}:{line} already has breakpoint {foreignId} (not created by this debug session)",
             "use it as is (it still stops the target), or remove it in VS and set again");
 
@@ -145,7 +198,7 @@ internal static class BreakpointOptions
     {
         if (existing.Condition != condition || existing.HitCountTarget != hitCount
             || existing.HitCountMode != hitCountMode || existing.LogMessage != logMessage)
-            throw new DebugDomainException(ErrorCodes.InvalidArgument,
+            throw DebugDomainException.Fail(ErrorCodes.InvalidArgument,
                 $"{existing.File}:{existing.Line} already has {existing.Id} with different options",
                 $"remove_breakpoint {existing.Id} first, then set again with the new options");
     }
@@ -163,10 +216,10 @@ internal static class BreakpointOptions
 
     public static DebugDomainException NotFound(string breakpointId) =>
         breakpointId.StartsWith(ForeignPrefix, StringComparison.Ordinal)
-            ? new DebugDomainException(ErrorCodes.BreakpointNotFound,
+            ? DebugDomainException.Fail(ErrorCodes.BreakpointNotFound,
                 $"breakpoint {breakpointId} was not created by this debug session",
                 "it belongs to the user or another debug session; remove it in VS, or pass an id set_breakpoint returned")
-            : new DebugDomainException(ErrorCodes.BreakpointNotFound, $"no breakpoint {breakpointId}",
+            : DebugDomainException.Fail(ErrorCodes.BreakpointNotFound, $"no breakpoint {breakpointId}",
                 "call list_breakpoints for valid ids");
 
     /// <summary>Session log buffer (capped): drops the oldest entry when full.</summary>
@@ -180,21 +233,17 @@ internal static class BreakpointOptions
 
     private static bool BracesBalanced(string template)
     {
-        for (var i = 0; i < template.Length; i++)
+        var next = 0;
+        foreach (var (open, close) in BraceSpans(template))
         {
-            if (template[i] == '{')
-            {
-                var close = template.IndexOf('}', i + 1);
-                if (close < 0 || template.Substring(i + 1, close - i - 1).IndexOfAny(['{', '}']) >= 0)
-                    return false;
-                i = close;
-            }
-            else if (template[i] == '}')
-            {
+            if (template.AsSpan(next, open - next).Contains('}'))
                 return false;
-            }
+            if (template.AsSpan(open + 1, close - open - 1).IndexOfAny('{', '}') >= 0)
+                return false;
+            next = close + 1;
         }
-        return true;
+        var tail = template.AsSpan(next);
+        return !tail.Contains('{') && !tail.Contains('}');
     }
 
     // Single home for the read-only gate: ArgumentValidator delegates here.

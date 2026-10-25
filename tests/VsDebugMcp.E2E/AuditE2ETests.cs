@@ -338,6 +338,68 @@ public sealed class AuditE2ETests(E2EFixture fx)
         });
     }
 
+    [E2EFact]
+    public async Task MediumAudit_BridgeParity()
+    {
+        // Live parity for the medium audit: step lastHit shape (US4/US5), recycled-PID
+        // guard (US2), live-only module states (US8) and file/line-less frames (US7).
+        E2EFixture.Gate();
+        var ct = TestCt();
+        await E2EFixture.WithCleanupAsync<object?>(async cleanups =>
+        {
+            var sessionId = await AttachAsync(ct);
+            cleanups.Add(() => DetachAsync(sessionId, CancellationToken.None));
+            using var wait = Process.Start(new ProcessStartInfo(fx.SandboxExe, "wait 900")
+            {
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+            }) ?? throw new InvalidOperationException("could not start the Sandbox wait target.");
+            cleanups.Add(() => { try { if (!wait.HasExited) wait.Kill(); } catch { } return Task.CompletedTask; });
+            var recycled = await Assert.ThrowsAsync<E2EToolException>(() => E2EFixture.CallAsync(fx.Client, "attach_process",
+                Args(("sessionId", sessionId), ("processId", wait.Id), ("consent", true), ("timeoutMs", 30000),
+                    ("expectedProcessName", "definitely-not-the-sandbox")), ct));
+            Assert.Equal("process-not-found", recycled.Code);
+            var set = await E2EFixture.CallAsync(fx.Client, "set_breakpoint",
+                Args(("sessionId", sessionId), ("file", fx.SandboxScenarios), ("line", fx.MarkerLine("STEP_START"))), ct);
+            var bp = Prop(ArrayProp(set, "breakpoint"), "id");
+            cleanups.Add(async () =>
+            {
+                try { await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None); } catch { }
+            });
+            var launch = await E2EFixture.CallAsync(fx.Client, "launch_process",
+                Args(("sessionId", sessionId), ("executablePath", fx.SandboxExe), ("arguments", "step"), ("timeoutMs", 30000)), ct);
+            Assert.Equal("break", E2EFixture.ModeOf(launch));
+            var stepped = await E2EFixture.CallAsync(fx.Client, "step",
+                Args(("sessionId", sessionId), ("direction", "over"), ("timeoutMs", 30000)), ct);
+            Assert.Equal("break", E2EFixture.ModeOf(stepped));
+            var lastHit = Prop(stepped, "lastHit");
+            Assert.True(string.IsNullOrEmpty(lastHit) || System.Text.RegularExpressions.Regex.IsMatch(lastHit, @"^.+:\d+$"),
+                $"step lastHit must be null or file:line, got '{lastHit}'");
+            Assert.DoesNotContain("bp", lastHit, StringComparison.OrdinalIgnoreCase);
+            var stack = await E2EFixture.CallAsync(fx.Client, "read_stack", Args(("sessionId", sessionId), ("maxFrames", 5)), ct);
+            foreach (var frame in ArrayProp(stack, "frames").EnumerateArray())
+            {
+                foreach (var name in new[] { "file", "line" })
+                {
+                    if (frame.TryGetProperty(name, out var v))
+                        Assert.True(v.ValueKind == JsonValueKind.Null || (v.ValueKind == JsonValueKind.String && string.IsNullOrEmpty(v.GetString())),
+                            $"frame must carry no {name}");
+                }
+            }
+            var modules = await E2EFixture.CallAsync(fx.Client, "list_modules",
+                Args(("sessionId", sessionId), ("nameFilter", "sandbox")), ct);
+            var entries = ArrayProp(modules, "modules").EnumerateArray().ToList();
+            Assert.NotEmpty(entries);
+            Assert.All(entries, m => Assert.Contains(Prop(m, "symbolState"),
+                new[] { "loaded", "missing", "unknown" }));
+            cleanups.Add(async () =>
+            {
+                try { await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None); } catch { }
+            });
+            return null;
+        });
+    }
+
     [Fact(Skip = "manual: open a modal dialog in VS, then run with VSDEBUG_E2E=1 to prove vs-busy still surfaces after the filter window.")]
     public async Task BusyVs_StillSurfacesAfterRetryWindow()
     {

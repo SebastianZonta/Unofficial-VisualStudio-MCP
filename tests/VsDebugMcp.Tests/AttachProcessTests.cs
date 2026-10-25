@@ -27,7 +27,7 @@ public sealed class AttachProcessTests
         var (_, sessionId) = await AttachedAsync(bridge);
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
-            SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: false, 30_000, CancellationToken.None));
+            SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: false, 30_000, cancellationToken: CancellationToken.None));
         Assert.Contains("consent-required", ex.Message);
     }
 
@@ -39,7 +39,7 @@ public sealed class AttachProcessTests
         var attached = await SessionTools.AttachAsync(bridge, null, CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
-            SessionTools.AttachProcessAsync(bridge, attached.SessionId, 99999, consent: true, 30_000, CancellationToken.None));
+            SessionTools.AttachProcessAsync(bridge, attached.SessionId, 99999, consent: true, 30_000, cancellationToken: CancellationToken.None));
         Assert.Contains("process-not-found", ex.Message);
     }
 
@@ -51,7 +51,7 @@ public sealed class AttachProcessTests
         var (_, sessionId) = await AttachedAsync(bridge);
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
-            SessionTools.AttachProcessAsync(bridge, sessionId, 9876, consent: true, 30_000, CancellationToken.None));
+            SessionTools.AttachProcessAsync(bridge, sessionId, 9876, consent: true, 30_000, cancellationToken: CancellationToken.None));
         Assert.Contains("user-mismatch", ex.Message);
     }
 
@@ -62,7 +62,7 @@ public sealed class AttachProcessTests
         bridge.ProcessOwners[4321] = "FAKE\\dev";
         var (_, sessionId) = await AttachedAsync(bridge);
 
-        var result = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, CancellationToken.None);
+        var result = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, cancellationToken: CancellationToken.None);
 
         Assert.Equal("ok", result.Status);
         Assert.Contains("4321", result.Note);
@@ -75,10 +75,10 @@ public sealed class AttachProcessTests
         bridge.ProcessOwners[4321] = "FAKE\\dev";
         bridge.ProcessOwners[4322] = "FAKE\\dev";
         var (_, sessionId) = await AttachedAsync(bridge);
-        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, CancellationToken.None);
+        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, cancellationToken: CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
-            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: true, 30_000, CancellationToken.None));
+            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: true, 30_000, cancellationToken: CancellationToken.None));
         Assert.Contains("already-bound", ex.Message);
         Assert.Contains("4321", ex.Message);
     }
@@ -90,10 +90,10 @@ public sealed class AttachProcessTests
         bridge.ProcessOwners[4321] = "FAKE\\dev";
         bridge.ProcessOwners[4322] = "FAKE\\dev";
         var (_, sessionId) = await AttachedAsync(bridge);
-        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, CancellationToken.None);
+        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, cancellationToken: CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
-            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: false, 30_000, CancellationToken.None));
+            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: false, 30_000, cancellationToken: CancellationToken.None));
         Assert.Contains("consent-required", ex.Message);
     }
 
@@ -104,10 +104,10 @@ public sealed class AttachProcessTests
         bridge.ProcessOwners[4321] = "FAKE\\dev";
         bridge.ProcessOwners[4322] = "OTHER\\eve";
         var (_, sessionId) = await AttachedAsync(bridge);
-        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, CancellationToken.None);
+        _ = await SessionTools.AttachProcessAsync(bridge, sessionId, 4321, consent: true, 30_000, cancellationToken: CancellationToken.None);
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
-            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: true, 30_000, CancellationToken.None));
+            SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: true, 30_000, cancellationToken: CancellationToken.None));
         Assert.Contains("user-mismatch", ex.Message);
     }
 
@@ -117,7 +117,7 @@ public sealed class AttachProcessTests
         var bridge = new FakeDebugBridge();
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
-            SessionTools.AttachProcessAsync(bridge, "bogus-session-id", 4321, consent: true, 30_000, CancellationToken.None));
+            SessionTools.AttachProcessAsync(bridge, "bogus-session-id", 4321, consent: true, 30_000, cancellationToken: CancellationToken.None));
         Assert.Contains("no-session", ex.Message);
     }
 
@@ -130,7 +130,7 @@ public sealed class AttachProcessTests
         var (_, sessionId) = await AttachedAsync(bridge);
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
-            SessionTools.AttachProcessAsync(bridge, sessionId, 1234, consent: true, 30_000, CancellationToken.None));
+            SessionTools.AttachProcessAsync(bridge, sessionId, 1234, consent: true, 30_000, cancellationToken: CancellationToken.None));
         Assert.Contains("invalid-argument", ex.Message);
         Assert.Contains("devenv", ex.Message);
     }

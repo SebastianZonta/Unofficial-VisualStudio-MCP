@@ -15,17 +15,27 @@ public static class ArgumentValidator
         return ex;
     }
 
-    public static void ValidateSessionId(string sessionId)
+    /// <summary>True for a non-empty absolute path. Pure predicate; throw sites stay distinct.</summary>
+    public static bool IsAbsolutePath(string? path)
+        => !string.IsNullOrWhiteSpace(path) && Path.IsPathFullyQualified(path);
+
+    private static void RequireNonEmpty(string? value, string message)
     {
-        if (string.IsNullOrWhiteSpace(sessionId))
-            throw Fail(ErrorCodes.InvalidArgument, $"sessionId must not be empty; remediation: call attach first");
+        if (string.IsNullOrWhiteSpace(value))
+            throw Fail(ErrorCodes.InvalidArgument, message);
     }
 
-    public static void ValidateFile(string file)
+    private static void RequireRange(int value, int min, int max, string message)
     {
-        if (string.IsNullOrWhiteSpace(file))
-            throw Fail(ErrorCodes.InvalidArgument, $"file must not be empty; remediation: pass a source file path");
+        if (value < min || value > max)
+            throw Fail(ErrorCodes.InvalidArgument, message);
     }
+
+    public static void ValidateSessionId(string sessionId)
+        => RequireNonEmpty(sessionId, $"sessionId must not be empty; remediation: call attach first");
+
+    public static void ValidateFile(string file)
+        => RequireNonEmpty(file, $"file must not be empty; remediation: pass a source file path");
 
     public static void ValidateLine(int line)
     {
@@ -34,10 +44,7 @@ public static class ArgumentValidator
     }
 
     public static void ValidateBreakpointId(string breakpointId)
-    {
-        if (string.IsNullOrWhiteSpace(breakpointId))
-            throw Fail(ErrorCodes.InvalidArgument, $"breakpointId must not be empty; remediation: call list_breakpoints for valid ids");
-    }
+        => RequireNonEmpty(breakpointId, $"breakpointId must not be empty; remediation: call list_breakpoints for valid ids");
 
     public static void ValidateBreakpointOptions(string? condition, int? hitCount, string? hitCountMode, string? logMessage)
     {
@@ -47,10 +54,7 @@ public static class ArgumentValidator
     }
 
     public static void ValidateFrameId(string frameId)
-    {
-        if (string.IsNullOrWhiteSpace(frameId))
-            throw Fail(ErrorCodes.InvalidArgument, $"frameId must not be empty; remediation: call read_stack for valid frame ids");
-    }
+        => RequireNonEmpty(frameId, $"frameId must not be empty; remediation: call read_stack for valid frame ids");
 
     /// <summary>A drill-down path reaches the expression evaluator, so it gets the evaluate rule. Null means top level.</summary>
     public static void ValidatePath(string? path)
@@ -65,16 +69,12 @@ public static class ArgumentValidator
     /// <summary>A write target is a path too, so it gets the same read-only rule; it is never optional.</summary>
     public static void ValidateWritePath(string path)
     {
-        if (string.IsNullOrWhiteSpace(path))
-            throw Fail(ErrorCodes.InvalidArgument, $"path must not be empty; remediation: pass a variable name or path returned by read_variables");
+        RequireNonEmpty(path, $"path must not be empty; remediation: pass a variable name or path returned by read_variables");
         ValidatePath(path);
     }
 
     public static void ValidateWriteValue(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            throw Fail(ErrorCodes.InvalidArgument, $"value must not be empty; remediation: pass the new value as read_variables shows it");
-    }
+        => RequireNonEmpty(value, $"value must not be empty; remediation: pass the new value as read_variables shows it");
 
     public static void ValidateDirection(string direction)
     {
@@ -94,22 +94,13 @@ public static class ArgumentValidator
     }
 
     public static void ValidateTimeoutMs(int timeoutMs, string paramName = "timeoutMs")
-    {
-        if (timeoutMs is < 1000 or > 60000)
-            throw Fail(ErrorCodes.InvalidArgument, $"{paramName} must be 1000-60000; remediation: pass a budget in milliseconds within range");
-    }
+        => RequireRange(timeoutMs, 1000, 60000, $"{paramName} must be 1000-60000; remediation: pass a budget in milliseconds within range");
 
     public static void ValidateMaxFrames(int maxFrames)
-    {
-        if (maxFrames is < 1 or > 200)
-            throw Fail(ErrorCodes.InvalidArgument, $"maxFrames must be 1-200; remediation: pass a frame cap within range");
-    }
+        => RequireRange(maxFrames, 1, 200, $"maxFrames must be 1-200; remediation: pass a frame cap within range");
 
     public static void ValidateMaxVariables(int maxVariables)
-    {
-        if (maxVariables is < 1 or > 500)
-            throw Fail(ErrorCodes.InvalidArgument, $"maxVariables must be 1-500; remediation: pass a variable cap within range");
-    }
+        => RequireRange(maxVariables, 1, 500, $"maxVariables must be 1-500; remediation: pass a variable cap within range");
 
     public static void ValidateProcessId(int processId)
     {
@@ -119,15 +110,12 @@ public static class ArgumentValidator
 
     public static void ValidateExecutablePath(string executablePath)
     {
-        if (string.IsNullOrWhiteSpace(executablePath) || !Path.IsPathFullyQualified(executablePath))
+        if (!IsAbsolutePath(executablePath))
             throw Fail(ErrorCodes.InvalidArgument, $"executablePath must be an absolute path; remediation: pass the full path to the target executable");
     }
 
     public static void ValidateExceptionType(string exceptionType)
-    {
-        if (string.IsNullOrWhiteSpace(exceptionType))
-            throw Fail(ErrorCodes.InvalidArgument, $"exceptionType must not be empty; remediation: pass a fully qualified CLR exception type name");
-    }
+        => RequireNonEmpty(exceptionType, $"exceptionType must not be empty; remediation: pass a fully qualified CLR exception type name");
 
     public static void ValidateExceptionMode(string mode)
     {

@@ -16,8 +16,7 @@ internal static class VsDiscovery
         }
         // No override: highest version wins; same version resolves to the highest
         // pid, which rises with start order, so this is the newest running instance.
-        return names.OrderByDescending(VersionOf).ThenByDescending(TryParsePid)
-            .ThenBy(n => n, StringComparer.Ordinal).FirstOrDefault();
+        return NewestFirst(names).FirstOrDefault();
     }
 
     public static bool IsDteEntry(string displayName)
@@ -41,9 +40,11 @@ internal static class VsDiscovery
 
     /// <summary>DTE entries only, newest-version-first (same order as the attach default).</summary>
     public static IReadOnlyList<string> OrderForListing(IEnumerable<string> displayNames)
-        => displayNames.Where(IsDteEntry)
-            .OrderByDescending(VersionOf).ThenByDescending(TryParsePid)
-            .ThenBy(n => n, StringComparer.Ordinal).ToList();
+        => NewestFirst(displayNames.Where(IsDteEntry)).ToList();
+
+    private static IOrderedEnumerable<string> NewestFirst(IEnumerable<string> names)
+        => names.OrderByDescending(VersionOf).ThenByDescending(TryParsePid)
+            .ThenBy(n => n, StringComparer.Ordinal);
 
     private static Version VersionOf(string displayName)
         => Version.TryParse(VersionTextOf(displayName), out var v) ? v : new Version(0, 0);
