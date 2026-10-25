@@ -62,7 +62,7 @@ Failures are structured: `code: detail; remediation: …` (e.g. `consent-require
   `VSINSTALLDIR` set ([TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#build-envdte-hintpath-misses)).
 - No VS needed for the unit tests (they run against an in-memory fake bridge).
 
-Full setup — self-contained `standalone` folder or source build, client
+Full setup — one-line install, manual publish, client
 registration, smoke test — lives in [INSTALL.md](INSTALL.md).
 
 ## Develop
@@ -70,10 +70,8 @@ registration, smoke test — lives in [INSTALL.md](INSTALL.md).
 ```powershell
 dotnet build                                    # Debug
 dotnet test                                     # no VS required
-dotnet publish src/VsDebugMcp/VsDebugMcp.csproj -c Debug -o src/VsDebugMcp/bin/Fixed
+./scripts/publish-fresh.ps1 -OutDir standalone-vNext  # the single publish path, never raw dotnet publish
 ```
-
-The `bin/Fixed` output is an example of what an MCP client config can point at.
 Republishing while the host runs fails: see
 [Exe locked on republish](docs/TROUBLESHOOTING.md#exe-locked-on-republish).
 

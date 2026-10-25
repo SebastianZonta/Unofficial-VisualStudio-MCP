@@ -15,5 +15,5 @@ dotnet tool run crap4csharp --changed --no-coverage --no-progress --top 30  # fa
 
 ## Publish
 
-- Publish the MCP via `scripts/publish-fresh.ps1` to a fresh **empty** folder before the E2E pass (src/bin is locked while hosts run: stop the clients first; repoint client config after publishing). Paste its `MCP binary:` line into the report header.
+- Publish the MCP via `scripts/publish-fresh.ps1` to a fresh **empty** folder before the E2E pass (src/bin is locked while hosts run: stop the clients first; repoint client config after publishing). Paste its `MCP binary:` line into the report header. Release builds add `-Version <semver without v> -SingleFile` (see `.github/workflows/release.yml`); local E2E publishes use neither.
 - Republishing while the MCP host runs fails (exe locked): stop the client first, or publish to a fresh **empty** folder and repoint config (`dotnet publish` never cleans the output dir — a stale `System.Management.dll` placeholder breaks WMI tools, see [Stale publish dir](../TROUBLESHOOTING.md#stale-publish-dir-wmi-tools-throw-platformnotsupportedexception)). `standalone*/` output is gitignored.

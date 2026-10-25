@@ -1,0 +1,60 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']          # push v1.2.3 to ship
+
+permissions:
+  contents: write         # needed to create the GitHub Release
+
+jobs:
+  publish:
+    runs-on: windows-latest   # win-x64 RID must build on Windows (EnvDTE refs)
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (pinned SHA: supply-chain anchoring)
+
+      - name: Validate tag
+        shell: pwsh
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}  # via env: never interpolate ${{ }} inside run: (script-injection safe)
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Bad tag: $env:GITHUB_REF_NAME" }
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4 (pinned SHA)
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Resolve VS install path (vswhere)
+        shell: pwsh
+        run: |
+          $installPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
+          if (-not $installPath) { throw 'vswhere found no Visual Studio installation.' }
+          "VSINSTALLDIR=$installPath\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Test
+        run: dotnet test VsDebugMcp.slnx -c Release
+
+      - name: Publish win-x64
+        shell: pwsh
+        env:
+          GITHUB_REF_NAME: ${{ github.ref_name }}
+        run: |
+          $version = $env:GITHUB_REF_NAME.Substring(1)
+          ./scripts/publish-fresh.ps1 -OutDir publish/win-x64 -Version $version -SingleFile
+          Compress-Archive -Force publish/win-x64/* 'VsDebugMcp-win-x64.zip'
+          [System.IO.File]::WriteAllText('SHA256SUMS.txt', ((Get-FileHash 'VsDebugMcp-win-x64.zip' -Algorithm SHA256).Hash.ToLower() + '  VsDebugMcp-win-x64.zip' + "`n"))  # LF-only: macOS shasum chokes on CRLF
+
+      - name: Smoke-test single-file bundle
+        shell: pwsh
+        run: |
+          & ./publish/win-x64/VsDebugMcp.exe --live-check  # expect usage printout (exit 2), proves the shipped bundle loads
+          if ($LASTEXITCODE -ne 2) { throw "Smoke test failed: exit $LASTEXITCODE, want 2 (usage line)." }
+
+      - name: Create release
+        shell: pwsh
+        run: gh release create $env:GITHUB_REF_NAME --generate-notes 'VsDebugMcp-win-x64.zip' 'SHA256SUMS.txt' 'install.ps1' 'install.sh' || gh release upload $env:GITHUB_REF_NAME 'VsDebugMcp-win-x64.zip' 'SHA256SUMS.txt' 'install.ps1' 'install.sh' --clobber
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REF_NAME: ${{ github.ref_name }}

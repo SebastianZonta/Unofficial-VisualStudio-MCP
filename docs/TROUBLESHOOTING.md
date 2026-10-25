@@ -35,7 +35,9 @@ the `HintPath`s at its `PublicAssemblies`.
 Symptom: publish/overwrite fails while the client runs. Cause: the MCP host
 locks the exe. Fix: stop the host (close/restart the client) before
 republishing, then restart the client to load the new binary. Or publish to a
-fresh folder and repoint the client config.
+fresh folder and repoint the client config. Release-zip users just re-run
+`install.ps1` / `install.sh` (on Windows the installer refuses while VsDebugMcp.exe
+is still running — stop the host first).
 
 ### Stale publish dir: WMI tools throw `PlatformNotSupportedException`
 
@@ -50,7 +52,9 @@ and shadow the real 314 KB Windows implementation (`runtimes/win` asset):
 check the published `System.Management.dll` size. Fix: publish to a clean
 (empty) folder and repoint the client config, then restart the client. Verify:
 the fresh folder's `System.Management.dll` is ~314 KB and a direct-stdio
-`list_processes` call returns `IsError = False`.
+`list_processes` call returns `IsError = False`. (Single-file `-SingleFile`
+releases bundle assemblies into the exe — no `System.Management.dll` on disk
+by design, so this entry doesn't apply to the release zip.)
 
 ## VS state
 
