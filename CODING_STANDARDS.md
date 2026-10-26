@@ -25,6 +25,17 @@ and add the missing case, or justify why neither fits.
 Logic both bridges apply (validation, filtering, ordering, mode gates,
 truncation) lives once in a shared static rules class (`ModuleListing`,
 `ExceptionConfig`, `BreakpointOptions`), called from both bridges.
+A verbatim copy in `DteDebugBridge` and `FakeDebugBridge` (the four mode
+guards were the live case) means the shared home exists but a caller lags
+it: move the logic, delete the copies, point both callers at the home.
+
+## No COM train wrecks
+
+Reach COM through one named helper per hop (`SessionDte` → `DebuggerOf` →
+`ModeOf`/`LastHitOf`). A call site names the helper, never the chain.
+Two-deep `dte.Solution?.FullName` / `dte.Solution?.Projects` is the current
+ceiling: fold the next chain into a helper (e.g. `SolutionOf`) rather than
+adding a third.
 
 ## Spec deviations
 

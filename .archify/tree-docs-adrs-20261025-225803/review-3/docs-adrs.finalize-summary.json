@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "fail",
+  "type": "tree",
+  "quality": "showcase",
+  "specification": {
+    "path": "C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\.archify\\tree-docs-adrs-20261025-225803\\candidate.json",
+    "sha256": "4c3af81a98556ddd9d706f62c747bef4d2f17fd52a1e4cdfac6fcab144c32826",
+    "bytes": 9421
+  },
+  "artifact": {
+    "path": "C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\.archify\\tree-docs-adrs-20261025-225803\\docs-adrs.html",
+    "sha256": "d55f4bc004a2258a60af90fd71aef8187143cfc7eabadee91819e86db5d8f576",
+    "bytes": 918379
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "fail"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/browser-check-runtime",
+      "severity": "error",
+      "message": "browser-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\.archify\\tree-docs-adrs-20261025-225803\\docs-adrs.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools write pipe failed: stream closed\nChrome process: still running.\nWindows browser startup may have relaunched before connecting to the DevTools pipe. Retry from a non-elevated PowerShell opened normally, outside an elevated or compatibility-mode parent. Archify does not disable browser de-elevation or the sandbox to preserve pipe handles.\nChrome transport: Node v24.14.1, libuv 1.51.0, win32; pid=34448, exitCode=null, signalCode=null.\nChrome read pipe: readable=true, ended=false, destroyed=false, receivedBytes=0, messages=0, bufferedBytes=0.\nChrome write pipe: writable=false, ended=true, destroyed=true, completedWrites=1, writtenBytes=50, bufferedBytes=0."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\.archify\\tree-docs-adrs-20261025-225803\\review-3\\docs-adrs.finalize.json",
+    "summaryReceipt": "C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\.archify\\tree-docs-adrs-20261025-225803\\review-3\\docs-adrs.finalize-summary.json",
+    "browserCheckReceipt": "C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\.archify\\tree-docs-adrs-20261025-225803\\review-3\\docs-adrs.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-25T17:20:22.201Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 2003,
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  }
+}

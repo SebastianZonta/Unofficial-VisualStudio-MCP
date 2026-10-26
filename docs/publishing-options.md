@@ -201,71 +201,7 @@ see its [`action.yml`](https://github.com/actions/setup-dotnet/blob/main/action.
 `ref_name` flows via `env:`, never interpolated into `run:` (script-injection safe).
 Release creation uses `gh release create` (asset upload included —
 see the [`gh release create` manual](https://cli.github.com/manual/gh_release_create)).
-Reproduced here verbatim — edit the workflow file, not this copy:
-
-```yaml
-name: release
-on:
-  push:
-    tags: ['v*']          # push v1.2.3 to ship
-permissions:
-  contents: write         # needed to create the GitHub Release
-jobs:
-  publish:
-    runs-on: windows-latest   # win-x64 RID must build on Windows (EnvDTE refs)
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4 (pinned SHA: supply-chain anchoring)
-
-      - name: Validate tag
-        shell: pwsh
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}  # via env: never interpolate ${{ }} inside run: (script-injection safe)
-        run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
-          if ($version -notmatch '^\d+\.\d+\.\d+$') { throw "Bad tag: $env:GITHUB_REF_NAME" }
-
-      - name: Setup .NET SDK
-        uses: actions/setup-dotnet@67a3573c9a986a3f9c594539f4ab511d57bb3ce9 # v4 (pinned SHA)
-        with:
-          dotnet-version: 10.0.x
-
-      - name: Resolve VS install path (vswhere)
-        shell: pwsh
-        run: |
-          $installPath = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * -property installationPath
-          if (-not $installPath) { throw 'vswhere found no Visual Studio installation.' }
-          "VSINSTALLDIR=$installPath\" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Test
-        run: dotnet test VsDebugMcp.slnx -c Release
-
-      - name: Publish win-x64
-        shell: pwsh
-        env:
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-        run: |
-          $version = $env:GITHUB_REF_NAME.Substring(1)
-          ./scripts/publish-fresh.ps1 -OutDir publish/win-x64 -Version $version -SingleFile
-          Compress-Archive -Force publish/win-x64/* 'VsDebugMcp-win-x64.zip'
-          # LF-only sums: macOS shasum chokes on the CRLF that Out-File -Encoding ascii writes
-          [System.IO.File]::WriteAllText('SHA256SUMS.txt', ((Get-FileHash 'VsDebugMcp-win-x64.zip' -Algorithm SHA256).Hash.ToLower() + '  VsDebugMcp-win-x64.zip' + "`n"))
-
-      - name: Smoke-test single-file bundle
-        shell: pwsh
-        run: |
-          Get-ChildItem ./publish/win-x64  # what the bundle actually contains
-          $p = Start-Process -FilePath ./publish/win-x64/VsDebugMcp.exe -ArgumentList '--live-check' -NoNewWindow -Wait -PassThru -RedirectStandardOutput smoke-out.txt -RedirectStandardError smoke-err.txt
-          Get-Content smoke-out.txt, smoke-err.txt  # usage line goes to stderr by design; show both in the log
-          Write-Host "exit=$($p.ExitCode)"
-          if ($p.ExitCode -ne 2) { throw "Smoke test failed: exit $($p.ExitCode), want 2 (usage line)." }
-
-      - name: Create release
-        shell: pwsh
-        run: gh release create $env:GITHUB_REF_NAME --generate-notes 'VsDebugMcp-win-x64.zip' 'SHA256SUMS.txt' 'install.ps1' 'install.sh' || gh release upload $env:GITHUB_REF_NAME 'VsDebugMcp-win-x64.zip' 'SHA256SUMS.txt' 'install.ps1' 'install.sh' --clobber
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-```
+See the landed workflow: [.github/workflows/release.yml](../.github/workflows/release.yml) — read that file, not a copy here; the workflow content lives only there.
 
 Notes: `windows-latest` is required, not incidental — the csproj resolves
 EnvDTE from the VS install (`VsDebugMcp.csproj`), so the build needs VS
@@ -275,7 +211,7 @@ present; the workflow resolves it via `vswhere` → `VSINSTALLDIR` (same as
 
 ### 4. Coworker install scripts (landed: `install.ps1` + `install.sh` at repo root)
 
-The sketch below was the starting point; the landed scripts additionally
+The original sketch was the starting point; the landed scripts additionally
 auto-detect installed clients (opencode, Claude Code, Claude Desktop, Cursor,
 VS Code, Windsurf, Gemini CLI) and merge a `vs-debug` entry into each config
 (`.bak` backup of the pre-installer original, idempotent, corrupt JSON skipped with a warning,
@@ -284,38 +220,9 @@ is the same flow in bash for Git Bash/WSL (without `python3` it prints a manual
 snippet instead of wiring).
 Re-wire without re-downloading via `-ConfigOnly` / `--config-only`.
 
-```powershell
-# Sketch only — the starting point, not the landed scripts. Differences from
-# the landed install.ps1: the checksum here takes the whole file's first token
-# instead of the anchored VsDebugMcp-win-x64.zip entry line, Compress-Archive
-# lacks -Force, and there is no client auto-wire (see the scripts).
-param([string]$Dest = 'C:\Tools\VsDebugMcp') # install folder; override with -Dest <path>
-# Run AFTER closing the MCP host (opencode/VS Code): it holds VsDebugMcp.exe locked.
-$ErrorActionPreference = 'Stop'
-$dest = $Dest
-$base = 'https://github.com/SebastianZonta/Unofficial-VisualStudio-MCP/releases/latest/download'
-$zip = "$env:TEMP\VsDebugMcp-win-x64.zip"
-if (Get-Process VsDebugMcp -ErrorAction SilentlyContinue) { throw 'Close the MCP host first — VsDebugMcp.exe is still running.' }
-Invoke-WebRequest -Uri "$base/VsDebugMcp-win-x64.zip" -OutFile $zip -UseBasicParsing
-$expected = (Invoke-WebRequest -Uri "$base/SHA256SUMS.txt" -UseBasicParsing).Content.Split()[0].ToLower()
-$actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-if ($actual -ne $expected) { throw "Checksum mismatch — delete $zip and retry." }
-if (Test-Path $dest) { Remove-Item $dest -Recurse -Force }
-Expand-Archive $zip $dest
-Remove-Item $zip -Force
-& "$dest\VsDebugMcp.exe" --live-check   # expect: usage printout (exit 2), proves runtime loads
-# ...then Wire-Clients auto-registers every detected client (see the script).
-Write-Host "Installed to $dest."
-```
+See the landed scripts: [install.ps1](../install.ps1), [install.sh](../install.sh). The sketch that became them is intentionally not kept here.
 
-Registration snippet (unchanged from `INSTALL.md`):
-
-```json
-"vs-debug": {
-  "type": "local",
-  "command": ["C:\\Tools\\VsDebugMcp\\VsDebugMcp.exe"]
-}
-```
+Registration snippet: see [INSTALL.md](../INSTALL.md#option-a--copy-a-local-publish-folder) step 3 (same `vs-debug` entry, kept only there).
 
 ### 5. Update story
 

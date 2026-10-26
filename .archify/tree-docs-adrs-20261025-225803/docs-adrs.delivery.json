@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "receiptId": "d4cff6d8-1e63-4d8d-895d-563f47e13197",
+  "status": "current",
+  "command": "deliver",
+  "type": "tree",
+  "input": "C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\.archify\\tree-docs-adrs-20261025-225803\\candidate.json",
+  "output": "C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\.archify\\tree-docs-adrs-20261025-225803\\docs-adrs.html",
+  "specification": {
+    "sha256": "4c3af81a98556ddd9d706f62c747bef4d2f17fd52a1e4cdfac6fcab144c32826",
+    "bytes": 9421
+  },
+  "artifact": {
+    "sha256": "d55f4bc004a2258a60af90fd71aef8187143cfc7eabadee91819e86db5d8f576",
+    "bytes": 918379
+  }
+}
