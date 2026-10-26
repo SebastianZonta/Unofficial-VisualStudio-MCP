@@ -13,7 +13,7 @@ public sealed class AttachTests
         Assert.False(string.IsNullOrWhiteSpace(result.SessionId));
         Assert.False(string.IsNullOrWhiteSpace(result.Mode));
         // lastHit is null when nothing has run yet, but the envelope field must exist (JSON null).
-        Assert.True(result.GetType().GetProperty("LastHit") is not null);
+        Assert.Null(result.LastHit);
     }
 
     [Fact]

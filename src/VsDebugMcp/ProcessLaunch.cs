@@ -73,7 +73,7 @@ internal static class ProcessLaunch
         var expected = BaseName(expectedName);
         if (!actual.Equals(expected, StringComparison.OrdinalIgnoreCase))
             throw new DebugDomainException(
-                "process-not-found", $"process {processId} is now {actualName}, expected {expectedName} (PID may have been recycled)",
+                ErrorCodes.ProcessNotFound, $"process {processId} is now {actualName}, expected {expectedName} (PID may have been recycled)",
                 "list local processes and retry");
     }
 

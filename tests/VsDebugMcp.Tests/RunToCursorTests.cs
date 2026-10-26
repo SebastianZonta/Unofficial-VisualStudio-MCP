@@ -176,7 +176,7 @@ public sealed class RunToCursorTests
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             ExecutionTools.RunToCursorAsync(bridge, sessionId, "Order.cs", 20, 5000, CancellationToken.None));
 
-        Assert.Contains("automation-failed", ex.Message);
+        Assert.Contains(ErrorCodes.AutomationFailed, ex.Message);
         Assert.Equal(0, await BreakpointCountAsync(inner, sessionId));
     }
     [Fact]
@@ -324,7 +324,7 @@ internal sealed class GoConflictOnceBridge(FakeDebugBridge inner, int hresult) :
         if (!_raced)
         {
             _raced = true;
-            throw new DebugDomainException("automation-failed",
+            throw new DebugDomainException(ErrorCodes.AutomationFailed,
                 $"VS automation call failed (HRESULT 0x{_hresult:X8}): Unable to execute method at this time",
                 "dismiss any modal dialog in VS and retry",
                 new COMException("Unable to execute method at this time", _hresult));

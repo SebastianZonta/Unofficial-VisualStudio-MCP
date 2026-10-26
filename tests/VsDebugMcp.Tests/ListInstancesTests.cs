@@ -46,7 +46,7 @@ public sealed class ListInstancesTests
             "Shop", @"C:\src\Shop.sln", ["Shop.Api"], true, null));
         bridge.Instances.Add(new VsInstanceInfo(
             "!VisualStudio.DTE.18.0:555", 555, "18.0",
-            "", "", [], false, "vs-busy: modal dialog"));
+            "", "", [], false, $"{ErrorCodes.VsBusy}: modal dialog"));
 
         var result = await SessionTools.ListInstancesAsync(bridge, CancellationToken.None);
 

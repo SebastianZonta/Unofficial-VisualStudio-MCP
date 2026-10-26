@@ -159,7 +159,7 @@ internal static class LiveCheck
                     await bridge.RemoveBreakpointAsync(sessionId, bpId, cts.Token);
                     break;
                 }
-                catch (DebugDomainException ex) when (ex.Code == "vs-busy" && attempt < 5)
+                catch (DebugDomainException ex) when (ex.Code == ErrorCodes.VsBusy && attempt < 5)
                 {
                     await Task.Delay(1_000, cts.Token);
                 }
@@ -394,7 +394,8 @@ internal static class LiveCheck
             {
                 var next = await bridge.ResumeAsync(sessionId, 30_000, cts.Token);
                 Console.WriteLine($"resume: mode={next.Mode} note={next.Note}");
-                if (next.Mode != "break") break;
+                if (next.Mode != "break")
+                    break;
             }
             Console.WriteLine(failures == 0 ? "exception live check: all passed" : $"exception live check: {failures} failed");
             return failures == 0 ? 0 : 1;

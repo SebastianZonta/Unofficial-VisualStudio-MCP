@@ -107,8 +107,8 @@ public sealed class AuditMediumTests
     public void Single_prefix_and_mapped_timeout()
     {
         var busy = ComErrorMapper.ToDomain(new COMException("busy", unchecked((int)0x80010001)));
-        Assert.StartsWith("vs-busy", busy.Message);
-        Assert.Equal(1, Regex.Matches(busy.Message, "vs-busy").Count);
+        Assert.StartsWith(ErrorCodes.VsBusy, busy.Message);
+        Assert.Equal(1, Regex.Matches(busy.Message, ErrorCodes.VsBusy).Count);
         var dte = ReadRepoFile("src", "VsDebugMcp", "DteDebugBridge.cs");
         Assert.Contains("attaching to the VS instance exceeded", dte);
     }
@@ -178,7 +178,7 @@ public sealed class AuditMediumTests
         var ex = await Assert.ThrowsAsync<ModelContextProtocol.McpException>(() =>
             SessionTools.AttachProcessAsync(bridge2, session2, 4321,
                 consent: true, 30_000, expectedProcessName: "Other", cancellationToken: CancellationToken.None));
-        Assert.Contains("process-not-found", ex.Message);
+        Assert.Contains(ErrorCodes.ProcessNotFound, ex.Message);
     }
 
     private static string ReadRepoFile(params string[] relative)

@@ -39,9 +39,7 @@ internal sealed class BreakpointKeeper
         foreach (Breakpoint b in debugger.Breakpoints)
             live.Add(b);
 
-        var snapshot = _registry.SnapshotOwned(sessionId);
-        List<OwnedBreakpoint> owned = snapshot.Owned;
-        List<LogpointSpec> specs = snapshot.Specs;
+        var (owned, specs, _) = _registry.SnapshotOwned(sessionId);
 
         (BreakpointInfo Info, string Mode, string? LastHit, bool Created) Occupied(int i)
         {
@@ -122,10 +120,7 @@ internal sealed class BreakpointKeeper
         Debugger debugger,
         string sessionId)
     {
-        var snapshot = _registry.SnapshotOwned(sessionId);
-        List<OwnedBreakpoint> owned = snapshot.Owned;
-        List<LogpointSpec> specs = snapshot.Specs;
-        List<BreakpointLogEntry> log = snapshot.Log;
+        var (owned, specs, log) = _registry.SnapshotOwned(sessionId);
 
         // Owned breakpoints under their stable ids (creation order), then every other
         // breakpoint in the VS instance under a positional, list-only id.
@@ -174,7 +169,7 @@ internal sealed class BreakpointKeeper
     {
         // Only ids this session minted resolve: a stale, positional or foreign id never
         // reaches a breakpoint the user (or another session) set.
-        OwnedBreakpoint? target = _registry.FindOwned(sessionId, breakpointId);
+        var target = _registry.FindOwned(sessionId, breakpointId);
         if (target is null)
             throw BreakpointOptions.NotFound(breakpointId);
         try

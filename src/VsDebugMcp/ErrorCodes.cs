@@ -26,6 +26,8 @@ public static class ErrorCodes
     public const string ExceptionNotFound = "exception-not-found";
     public const string TypeMismatch = "type-mismatch";
     public const string ReadOnlyTarget = "read-only-target";
+    public const string VsBusy = "vs-busy";
+    public const string AutomationFailed = "automation-failed";
 
     /// <summary>Key under which <see cref="DebugDomainException.Code"/> is preserved
     /// in <c>McpException.Data</c> by <see cref="ToolErrors"/>.</summary>

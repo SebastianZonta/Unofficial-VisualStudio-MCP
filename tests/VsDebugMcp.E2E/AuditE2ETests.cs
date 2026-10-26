@@ -16,17 +16,13 @@ public sealed class AuditE2ETests(E2EFixture fx)
 
     private static string Prop(JsonElement el, string name)
     {
-        if (el.TryGetProperty(name, out var exact))
-            return exact.ValueKind == JsonValueKind.Null ? "" : exact.ToString();
-        foreach (var prop in el.EnumerateObject())
-        {
-            if (prop.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
-                return prop.Value.ValueKind == JsonValueKind.Null ? "" : prop.Value.ToString();
-        }
-        throw new InvalidOperationException($"property {name} missing in {el}");
+        var value = Scan(el, name);
+        return value.ValueKind == JsonValueKind.Null ? "" : value.ToString();
     }
 
-    private static JsonElement ArrayProp(JsonElement el, string name)
+    private static JsonElement ArrayProp(JsonElement el, string name) => Scan(el, name);
+
+    private static JsonElement Scan(JsonElement el, string name)
     {
         if (el.TryGetProperty(name, out var exact))
             return exact;
@@ -59,7 +55,10 @@ public sealed class AuditE2ETests(E2EFixture fx)
 
     private async Task DetachAsync(string sessionId, CancellationToken ct)
     {
-        try { await E2EFixture.CallAsync(fx.Client, "detach", Args(("sessionId", sessionId)), ct); }
+        try
+        {
+            await E2EFixture.CallAsync(fx.Client, "detach", Args(("sessionId", sessionId)), ct);
+        }
         catch { /* best effort */ }
     }
 
@@ -102,7 +101,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
             var bp = Prop(ArrayProp(set, "breakpoint"), "id");
             cleanups.Add(async () =>
             {
-                try { await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None); } catch { }
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None);
+                }
+                catch { }
             });
             var launch = await E2EFixture.CallAsync(fx.Client, "launch_process",
                 Args(("sessionId", sessionId), ("executablePath", fx.SandboxExe), ("arguments", "inspect"), ("timeoutMs", 30000)), ct);
@@ -116,7 +119,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
             Assert.Equal("invalid-argument", rejected.Code);
             cleanups.Add(async () =>
             {
-                try { await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None); } catch { }
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None);
+                }
+                catch { }
             });
             return null;
         });
@@ -157,7 +164,12 @@ public sealed class AuditE2ETests(E2EFixture fx)
             var resumed = await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 1000)), ct);
             Assert.Equal("ok", Prop(resumed, "status"));
             Assert.Equal("run", E2EFixture.ModeOf(resumed));
-            try { if (!wait.HasExited) wait.Kill(); } catch { }
+            try
+            {
+                if (!wait.HasExited)
+                    wait.Kill();
+            }
+            catch { }
             await wait.WaitForExitAsync(ct);
             // The rule no longer strands the session once the target ended.
             var exit = await E2EFixture.CallAsync(fx.Client, "launch_process",
@@ -181,7 +193,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
             var bp = Prop(ArrayProp(set, "breakpoint"), "id");
             cleanups.Add(async () =>
             {
-                try { await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None); } catch { }
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None);
+                }
+                catch { }
             });
             var launch = await E2EFixture.CallAsync(fx.Client, "launch_process",
                 Args(("sessionId", sessionId), ("executablePath", fx.SandboxExe), ("arguments", "inspect"), ("timeoutMs", 30000)), ct);
@@ -216,7 +232,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
             Assert.Equal("True", Prop(note, "expandable"));
             cleanups.Add(async () =>
             {
-                try { await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None); } catch { }
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None);
+                }
+                catch { }
             });
             return null;
         });
@@ -236,7 +256,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
             var bp = Prop(ArrayProp(set, "breakpoint"), "id");
             cleanups.Add(async () =>
             {
-                try { await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None); } catch { }
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None);
+                }
+                catch { }
             });
             var launch = await E2EFixture.CallAsync(fx.Client, "launch_process",
                 Args(("sessionId", sessionId), ("executablePath", fx.SandboxExe), ("arguments", "stack"), ("timeoutMs", 30000)), ct);
@@ -268,7 +292,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
                 Args(("sessionId", sessionId), ("expression", "node.Depth"), ("timeoutMs", 10000)), ct), "value"));
             cleanups.Add(async () =>
             {
-                try { await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None); } catch { }
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None);
+                }
+                catch { }
             });
             return null;
         });
@@ -310,7 +338,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
             {
                 foreach (var id in new[] { y, fresh })
                 {
-                    try { await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", id)), CancellationToken.None); } catch { }
+                    try
+                    {
+                        await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", id)), CancellationToken.None);
+                    }
+                    catch { }
                 }
             });
             var badFile = await Assert.ThrowsAsync<E2EToolException>(() => E2EFixture.CallAsync(fx.Client, "set_breakpoint",
@@ -364,7 +396,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
             var bp = Prop(ArrayProp(set, "breakpoint"), "id");
             cleanups.Add(async () =>
             {
-                try { await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None); } catch { }
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None);
+                }
+                catch { }
             });
             var launch = await E2EFixture.CallAsync(fx.Client, "launch_process",
                 Args(("sessionId", sessionId), ("executablePath", fx.SandboxExe), ("arguments", "step"), ("timeoutMs", 30000)), ct);
@@ -394,7 +430,11 @@ public sealed class AuditE2ETests(E2EFixture fx)
                 new[] { "loaded", "missing", "unknown" }));
             cleanups.Add(async () =>
             {
-                try { await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None); } catch { }
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None);
+                }
+                catch { }
             });
             return null;
         });

@@ -14,7 +14,12 @@ internal static class RunToCursor
     // this HResult so genuine automation failures still surface.
     private const int GoConflictHResult = unchecked((int)0x89711007);
 
+    /// <param name="bridge">Bridge to drive (live or fake).</param>
+    /// <param name="sessionId">Session to run in.</param>
+    /// <param name="file">Destination file.</param>
+    /// <param name="line">Destination line.</param>
     /// <param name="cont">Continues from the given mode (break: resume; run: wait for the next stop).</param>
+    /// <param name="ct">Cancellation token.</param>
     public static async Task<ExecutionResult> RunAsync(IDebugBridge bridge, string sessionId, string file, int line,
         Func<string, Task<ExecutionResult>> cont, CancellationToken ct)
     {
@@ -56,7 +61,7 @@ internal static class RunToCursor
                         await bridge.RemoveBreakpointAsync(sessionId, set.Breakpoint.Id, CancellationToken.None);
                         break;
                     }
-                    catch (DebugDomainException ex) when (ex.Code == "vs-busy" && attempt < RemoveAttempts)
+                    catch (DebugDomainException ex) when (ex.Code == ErrorCodes.VsBusy && attempt < RemoveAttempts)
                     {
                         await Task.Delay(RemoveRetryDelayMs, CancellationToken.None);
                     }
@@ -97,7 +102,7 @@ internal static class RunToCursor
     }
 
     private static bool IsLostGoRace(DebugDomainException ex) =>
-        ex.Code == "automation-failed"
+        ex.Code == ErrorCodes.AutomationFailed
         && ex.InnerException is COMException com
         && com.HResult == GoConflictHResult;
 

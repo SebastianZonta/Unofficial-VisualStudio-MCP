@@ -96,7 +96,7 @@ public sealed class ComDispatcherTests
 
         var rejected = await Assert.ThrowsAsync<DebugDomainException>(() =>
             dispatcher.InvokeAsync(() => -1, CancellationToken.None));
-        Assert.Equal("vs-busy", rejected.Code);
+        Assert.Equal(ErrorCodes.VsBusy, rejected.Code);
 
         release.Set();
         Assert.Equal(Enumerable.Range(0, 100), await Task.WhenAll(pending));
@@ -135,6 +135,6 @@ public sealed class ComDispatcherTests
 
         var ex = await Assert.ThrowsAsync<DebugDomainException>(() =>
             dispatcher.InvokeAsync(() => 1, CancellationToken.None));
-        Assert.Equal("vs-busy", ex.Code);
+        Assert.Equal(ErrorCodes.VsBusy, ex.Code);
     }
 }

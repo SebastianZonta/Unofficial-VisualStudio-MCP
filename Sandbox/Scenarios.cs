@@ -1,7 +1,7 @@
 namespace Sandbox;
 
 /// <summary>One method per scenario. The locals in scope at each marker are listed in
-/// docs/agents/e2e.md; change them together.</summary>
+/// docs/agents/e2e-phases-setup.md; change them together.</summary>
 internal static class Scenarios
 {
     // loop: conditions, hit counts, logpoints. Tick runs once per i = 1..count.

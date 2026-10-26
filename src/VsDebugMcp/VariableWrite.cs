@@ -39,7 +39,7 @@ internal static class VariableWrite
             t = t[..^1];
         if (raw == "null")
             return nullable || t is "string" or "System.String" ? "null" : throw Mismatch(type, value, "a non-null value (the target is not nullable)");
-        return Coercers.TryGetValue(t, out var coerce)
+        return _coercers.TryGetValue(t, out var coerce)
             ? coerce(raw, type, value)
             : throw Mismatch(type, value, "a supported type (bool, char, string, integral, float, double or decimal, or null for a nullable)");
     }
@@ -49,7 +49,7 @@ internal static class VariableWrite
     private const NumberStyles DecimalStyle = RealStyle & ~NumberStyles.AllowExponent;
     private const NumberStyles UnsignedStyle = NumberStyles.None;
 
-    private static readonly Dictionary<string, Func<string, string, string, string>> Coercers = new(StringComparer.Ordinal)
+    private static readonly Dictionary<string, Func<string, string, string, string>> _coercers = new(StringComparer.Ordinal)
     {
         ["bool"] = CoerceBool,
         ["System.Boolean"] = CoerceBool,

@@ -9,8 +9,8 @@ namespace VsDebugMcp;
 /// owned by the user it runs as. WMI is the owner source; failures return null (fail closed).</summary>
 internal static class ProcessOwner
 {
-    private static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(2);
-    private static readonly object CacheLock = new();
+    private static readonly TimeSpan _cacheTtl = TimeSpan.FromSeconds(2);
+    private static readonly object _cacheLock = new();
     private static Dictionary<int, string?>? _cache;
     private static DateTime _cacheAt = DateTime.MinValue;
 
@@ -25,10 +25,10 @@ internal static class ProcessOwner
 
     private static bool TryGetFresh(out Dictionary<int, string?>? cache)
     {
-        lock (CacheLock)
+        lock (_cacheLock)
         {
             cache = _cache;
-            return cache is not null && DateTime.UtcNow - _cacheAt < CacheTtl;
+            return cache is not null && DateTime.UtcNow - _cacheAt < _cacheTtl;
         }
     }
 
@@ -61,7 +61,7 @@ internal static class ProcessOwner
             // Identity/SID resolution varies by token and elevation: surface a mapped
             // code, never a bare host error, so both process tools stay named.
             throw new DebugDomainException(
-                "automation-failed", $"could not determine the bridge user: {ex.Message}",
+                ErrorCodes.AutomationFailed, $"could not determine the bridge user: {ex.Message}",
                 "retry; if it persists, run the MCP host as the same user and elevation as the target processes");
         }
     }
@@ -73,7 +73,7 @@ internal static class ProcessOwner
         if (TryGetFresh(out var cached) && cached is not null)
             return cached;
         var fresh = QueryAllOwners();
-        lock (CacheLock)
+        lock (_cacheLock)
         {
             _cache = fresh;
             _cacheAt = DateTime.UtcNow;

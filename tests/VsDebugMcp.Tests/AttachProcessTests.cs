@@ -40,7 +40,7 @@ public sealed class AttachProcessTests
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             SessionTools.AttachProcessAsync(bridge, attached.SessionId, 99999, consent: true, 30_000, cancellationToken: CancellationToken.None));
-        Assert.Contains("process-not-found", ex.Message);
+        Assert.Contains(ErrorCodes.ProcessNotFound, ex.Message);
     }
 
     [Fact]

@@ -1,4 +1,4 @@
-// E2E debug target (docs/agents/e2e.md). One scenario per launch: `Sandbox.exe <scenario> [n]`.
+// E2E debug target (docs/agents/e2e-phases-setup.md). One scenario per launch: `Sandbox.exe <scenario> [n]`.
 // Breakpoint lines are found by their `// E2E:<NAME>` marker, never by number; keep every
 // marker on an executable statement and keep marker names unique.
 using Sandbox;

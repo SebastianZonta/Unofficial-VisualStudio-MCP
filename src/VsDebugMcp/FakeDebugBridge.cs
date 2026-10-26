@@ -150,11 +150,9 @@ public sealed class FakeDebugBridge : IDebugBridge
         _ = await RequireAsync(sessionId, ct);
     }
 
-    private static DebugDomainException NoSession() =>
-        new("no-session", "no active session", "call attach first");
+    private static DebugDomainException NoSession() => SessionRegistry.NoSession();
 
-    private static DebugDomainException VsGone(string sessionId) =>
-        new("vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
+    private static DebugDomainException VsGone(string sessionId) => SessionRegistry.VsGone(sessionId);
 
     private Task<FakeSession> RequireAsync(string sessionId, CancellationToken ct)
     {
@@ -248,7 +246,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         {
             // Busy rejection: nothing deleted, the id stays owned (like the live bridge).
             RemoveBusyFailures--;
-            throw new DebugDomainException("vs-busy", "Visual Studio rejected the automation call", "dismiss any modal dialog in VS and retry");
+            throw new DebugDomainException(ErrorCodes.VsBusy, "Visual Studio rejected the automation call", "dismiss any modal dialog in VS and retry");
         }
         if (!session.Breakpoints.Remove(breakpointId))
             throw BreakpointOptions.NotFound(breakpointId);
@@ -474,7 +472,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         canned.Select(v => session.Writes.TryGetValue((frameId, v.Name), out var w) ? v with { Value = w.Value, Type = w.Type } : v);
 
     // Get-only in the fake's model (List<T>.Count), so writes to it are read-only targets.
-    private static readonly HashSet<string> ReadOnlyNames = new(StringComparer.Ordinal) { "items.Count" };
+    private static readonly HashSet<string> _readOnlyNames = new(StringComparer.Ordinal) { "items.Count" };
 
     public async Task<SetVariableResult> SetVariableAsync(
         string sessionId, string frameId, string path, string value, bool consent, CancellationToken ct)
@@ -489,7 +487,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         var target = Written(session, frameId, CannedTopLevel(frameId).Concat(CannedChildren(frameId)))
             .FirstOrDefault(v => v.Name == path.Trim())
             ?? throw VariableWrite.PathNotFound(frameId, path);
-        if (ReadOnlyNames.Contains(target.Name))
+        if (_readOnlyNames.Contains(target.Name))
             throw VariableWrite.ReadOnly(frameId, path, "get-only property");
         // Echo what VS would re-read: the coerced value as displayed, not the agent's spelling.
         var shown = VariableWrite.Shown(VariableWrite.Coerce(target.Type, value));
@@ -549,7 +547,7 @@ public sealed class FakeDebugBridge : IDebugBridge
                 "pass the program under test, not Visual Studio itself");
         if (!ProcessOwners.TryGetValue(processId, out var owner))
             throw new DebugDomainException(
-                "process-not-found", $"no local process {processId}", "list local processes and retry");
+                ErrorCodes.ProcessNotFound, $"no local process {processId}", "list local processes and retry");
         if (!owner.Equals(CurrentUser, StringComparison.OrdinalIgnoreCase))
             throw new DebugDomainException(
                 "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {CurrentUser}",

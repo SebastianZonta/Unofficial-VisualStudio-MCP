@@ -1,6 +1,5 @@
 using EnvDTE;
 using Microsoft.Extensions.Logging;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.ComTypes;
 
@@ -248,7 +247,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                             ErrorCodes.InvalidArgument, $"devenv (PID {processId}) is a VS instance, never a target process",
                             "pass the program under test, not Visual Studio itself");
                     throw new DebugDomainException(
-                        "process-not-found", $"no local process {processId}", "list local processes and retry");
+                        ErrorCodes.ProcessNotFound, $"no local process {processId}", "list local processes and retry");
                 }
                 // A VS PID (devenv) is never an attach target: it would bind the IDE to itself.
                 if (Path.GetFileNameWithoutExtension(target.Name).Equals("devenv", StringComparison.OrdinalIgnoreCase))
@@ -695,7 +694,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 var now = after.IsValidValue ? SafeGet(() => after.Value) : null;
                 if (now is null)
                     throw new DebugDomainException(
-                        "automation-failed", $"wrote {path} in frame {frameId} but could not re-read it; the write may have applied",
+                        ErrorCodes.AutomationFailed, $"wrote {path} in frame {frameId} but could not re-read it; the write may have applied",
                         "re-read the frame with read_variables before writing again");
                 // A silently ignored assignment (const, get-only) leaves the old value in place.
                 // Unknown-before (unreadable pre-read) never reports false success: if the
@@ -1171,7 +1170,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
         {
             throw new DebugDomainException(
-                "automation-failed", $"could not enumerate local processes: {ex.Message}",
+                ErrorCodes.AutomationFailed, $"could not enumerate local processes: {ex.Message}",
                 "retry; if it persists, check the MCP host can read the process table");
         }
         var me = ProcessOwner.CurrentUserName();
@@ -1219,7 +1218,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             throw new DebugDomainException("vs-not-running", $"VS instance {picked} left the ROT",
                 "start Visual Studio 2026 and retry");
         if (obj is not DTE dte)
-            throw new DebugDomainException("automation-failed", $"ROT entry {picked} is not a VS automation object",
+            throw new DebugDomainException(ErrorCodes.AutomationFailed, $"ROT entry {picked} is not a VS automation object",
                 "restart VS and retry");
         return dte;
     }

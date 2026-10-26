@@ -9,7 +9,7 @@ public sealed class ComPlumbingTests
     {
         var ex = ComErrorMapper.ToDomain(new COMException("rejected", unchecked((int)0x80010001)));
 
-        Assert.Equal("vs-busy", ex.Code);
+        Assert.Equal(ErrorCodes.VsBusy, ex.Code);
         Assert.Contains("0x80010001", ex.Message);
     }
 
@@ -34,7 +34,7 @@ public sealed class ComPlumbingTests
     {
         var ex = ComErrorMapper.ToDomain(new COMException("boom", unchecked((int)0x80004005)));
 
-        Assert.Equal("automation-failed", ex.Code);
+        Assert.Equal(ErrorCodes.AutomationFailed, ex.Code);
         Assert.Contains("0x80004005", ex.Message);
     }
 

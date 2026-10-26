@@ -36,7 +36,7 @@ internal sealed class ComDispatcher : IDisposable
         if (!enqueued)
         {
             throw new DebugDomainException(
-                "vs-busy",
+                ErrorCodes.VsBusy,
                 _disposed
                     ? "debugger dispatcher is shutting down"
                     : "debugger dispatcher queue is full (100 pending calls)",
@@ -92,9 +92,14 @@ internal sealed class ComDispatcher : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+            return;
         _disposed = true;
-        try { _queue.CompleteAdding(); } catch { /* best effort */ }
+        try
+        {
+            _queue.CompleteAdding();
+        }
+        catch { /* best effort */ }
         // Never park process exit on a wedged STA thread: bounded join, then drop it (IsBackground).
         _thread.Join(TimeSpan.FromSeconds(5));
         _queue.Dispose();
@@ -116,18 +121,26 @@ internal sealed class ComDispatcher : IDisposable
         private static OleMessageFilter? _root;
         private static IOleMessageFilter? _previous;
 
-        private OleMessageFilter() { }
+        private OleMessageFilter()
+        {
+        }
 
         public static void Register()
         {
             _root = new OleMessageFilter();
-            try { _ = NativeMethods.CoRegisterMessageFilter(_root, out _previous); }
+            try
+            {
+                _ = NativeMethods.CoRegisterMessageFilter(_root, out _previous);
+            }
             catch { /* best effort: without a filter every busy call just surfaces vs-busy */ }
         }
 
         public static void Revoke()
         {
-            try { _ = NativeMethods.CoRegisterMessageFilter(_previous, out _); }
+            try
+            {
+                _ = NativeMethods.CoRegisterMessageFilter(_previous, out _);
+            }
             catch { /* best effort */ }
         }
 
