@@ -31,9 +31,9 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             ErrorCodes.Timeout, "attaching to the VS instance exceeded its budget", "dismiss any modal dialog in VS and retry", cancellationToken);
         if (picked is null)
             throw instanceOverride is null
-                ? new DebugDomainException("vs-not-running", "no running VS instance found in the ROT",
+                ? new DebugDomainException(ErrorCodes.VsNotRunning, "no running VS instance found in the ROT",
                     "start Visual Studio 2026 and retry")
-                : new DebugDomainException("vs-not-running", $"no running VS instance matching {instanceOverride}",
+                : new DebugDomainException(ErrorCodes.VsNotRunning, $"no running VS instance matching {instanceOverride}",
                     "check the instance override or start the matching VS and retry");
         // Idempotent re-attach: the same display name returns its live session, never a duplicate binding.
         // The bind+insert below re-checks under the same lock that inserts, so parallel
@@ -259,11 +259,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 var me = ProcessOwner.CurrentUserName();
                 if (owner is null)
                     throw new DebugDomainException(
-                        "user-mismatch", $"could not determine the owner of process {processId}; failing closed",
+                        ErrorCodes.UserMismatch, $"could not determine the owner of process {processId}; failing closed",
                         "only attach to processes you own");
                 if (!owner.Equals(me, StringComparison.OrdinalIgnoreCase))
                     throw new DebugDomainException(
-                        "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {me}",
+                        ErrorCodes.UserMismatch, $"process {processId} belongs to {owner}, bridge runs as {me}",
                         "only attach to your own processes");
                 if (debugger.DebuggedProcesses.Count > 0)
                     throw ProcessLaunch.AlreadyBound(debugger.DebuggedProcesses.Item(1).ProcessID);
@@ -1215,7 +1215,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         var obj = GetRotObject(picked);
         if (obj is null)
-            throw new DebugDomainException("vs-not-running", $"VS instance {picked} left the ROT",
+            throw new DebugDomainException(ErrorCodes.VsNotRunning, $"VS instance {picked} left the ROT",
                 "start Visual Studio 2026 and retry");
         if (obj is not DTE dte)
             throw new DebugDomainException(ErrorCodes.AutomationFailed, $"ROT entry {picked} is not a VS automation object",

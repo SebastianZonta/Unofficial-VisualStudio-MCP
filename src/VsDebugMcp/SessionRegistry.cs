@@ -61,10 +61,10 @@ internal sealed class SessionRegistry
     /// <summary>Resolves the live DTE for a session. Unknown id is no-session;
     /// a dead binding is per-session vs-not-running (siblings unaffected).</summary>
     internal static DebugDomainException NoSession() =>
-        new("no-session", "no active session", "call attach first");
+        new(ErrorCodes.NoSession, "no active session", "call attach first");
 
     internal static DebugDomainException VsGone(string sessionId) =>
-        new("vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
+        new(ErrorCodes.VsNotRunning, $"the VS instance bound to session {sessionId} is gone", "call attach again");
 
     public DTE SessionDte(string sessionId)
     {

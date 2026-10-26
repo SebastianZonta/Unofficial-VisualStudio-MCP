@@ -53,7 +53,7 @@ public sealed class MultiSessionTests
 
         var forgotten = await Assert.ThrowsAsync<DebugDomainException>(() =>
             bridge.RequireSessionAsync(a.SessionId, CancellationToken.None));
-        Assert.Contains("no-session", forgotten.Message);
+        Assert.Contains(ErrorCodes.NoSession, forgotten.Message);
 
         await bridge.RequireSessionAsync(b.SessionId, CancellationToken.None);
         var sessions = await SessionTools.ListSessionsAsync(bridge, CancellationToken.None);
@@ -68,7 +68,7 @@ public sealed class MultiSessionTests
 
         var ex = await Assert.ThrowsAsync<DebugDomainException>(() =>
             bridge.DetachAsync("bogus-session-id", CancellationToken.None));
-        Assert.Contains("no-session", ex.Message);
+        Assert.Contains(ErrorCodes.NoSession, ex.Message);
     }
 
     [Fact]
@@ -82,7 +82,7 @@ public sealed class MultiSessionTests
 
         var ex = await Assert.ThrowsAsync<DebugDomainException>(() =>
             bridge.SetBreakpointAsync(a.SessionId, "A.cs", 1, CancellationToken.None));
-        Assert.Contains("vs-not-running", ex.Message);
+        Assert.Contains(ErrorCodes.VsNotRunning, ex.Message);
 
         await bridge.RequireSessionAsync(b.SessionId, CancellationToken.None);
     }

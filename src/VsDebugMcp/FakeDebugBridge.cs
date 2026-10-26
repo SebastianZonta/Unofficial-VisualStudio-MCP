@@ -550,7 +550,7 @@ public sealed class FakeDebugBridge : IDebugBridge
                 ErrorCodes.ProcessNotFound, $"no local process {processId}", "list local processes and retry");
         if (!owner.Equals(CurrentUser, StringComparison.OrdinalIgnoreCase))
             throw new DebugDomainException(
-                "user-mismatch", $"process {processId} belongs to {owner}, bridge runs as {CurrentUser}",
+                ErrorCodes.UserMismatch, $"process {processId} belongs to {owner}, bridge runs as {CurrentUser}",
                 "only attach to your own processes");
         if (session.TargetPid is { } bound)
             throw ProcessLaunch.AlreadyBound(bound);

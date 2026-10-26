@@ -28,6 +28,7 @@ public static class ErrorCodes
     public const string ReadOnlyTarget = "read-only-target";
     public const string VsBusy = "vs-busy";
     public const string AutomationFailed = "automation-failed";
+    public const string ElevationMismatch = "elevation-mismatch";
 
     /// <summary>Key under which <see cref="DebugDomainException.Code"/> is preserved
     /// in <c>McpException.Data</c> by <see cref="ToolErrors"/>.</summary>

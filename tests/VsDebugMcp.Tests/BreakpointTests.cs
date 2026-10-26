@@ -129,7 +129,7 @@ public sealed class BreakpointTests
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             BreakpointTools.SetBreakpointAsync(bridge, "bogus-session-id", "Program.cs", 42, CancellationToken.None));
-        Assert.Contains("no-session", ex.Message);
+        Assert.Contains(ErrorCodes.NoSession, ex.Message);
     }
 
     [Fact]

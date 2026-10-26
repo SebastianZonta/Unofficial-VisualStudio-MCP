@@ -52,7 +52,7 @@ public sealed class AttachProcessTests
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             SessionTools.AttachProcessAsync(bridge, sessionId, 9876, consent: true, 30_000, cancellationToken: CancellationToken.None));
-        Assert.Contains("user-mismatch", ex.Message);
+        Assert.Contains(ErrorCodes.UserMismatch, ex.Message);
     }
 
     [Fact]
@@ -108,7 +108,7 @@ public sealed class AttachProcessTests
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             SessionTools.AttachProcessAsync(bridge, sessionId, 4322, consent: true, 30_000, cancellationToken: CancellationToken.None));
-        Assert.Contains("user-mismatch", ex.Message);
+        Assert.Contains(ErrorCodes.UserMismatch, ex.Message);
     }
 
     [Fact]
@@ -118,7 +118,7 @@ public sealed class AttachProcessTests
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             SessionTools.AttachProcessAsync(bridge, "bogus-session-id", 4321, consent: true, 30_000, cancellationToken: CancellationToken.None));
-        Assert.Contains("no-session", ex.Message);
+        Assert.Contains(ErrorCodes.NoSession, ex.Message);
     }
 
     [Fact]

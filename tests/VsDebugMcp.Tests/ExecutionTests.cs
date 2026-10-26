@@ -123,6 +123,6 @@ public sealed class ExecutionTests
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             ExecutionTools.ResumeAsync(bridge, "bogus-session-id", 5000, CancellationToken.None));
-        Assert.Contains("no-session", ex.Message);
+        Assert.Contains(ErrorCodes.NoSession, ex.Message);
     }
 }

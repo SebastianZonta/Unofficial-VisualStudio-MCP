@@ -26,7 +26,7 @@ public sealed class ComPlumbingTests
     {
         var ex = ComErrorMapper.ToDomain(new COMException("denied", unchecked((int)0x80070005)));
 
-        Assert.Equal("elevation-mismatch", ex.Code);
+        Assert.Equal(ErrorCodes.ElevationMismatch, ex.Code);
     }
 
     [Fact]

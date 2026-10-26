@@ -143,7 +143,7 @@ public sealed class LaunchProcessTests : IDisposable
         var bridge = new FakeDebugBridge();
 
         var ex = await Assert.ThrowsAsync<McpException>(() => SessionTools.LaunchProcessAsync(bridge, "bogus-session-id", _exe));
-        Assert.Contains("no-session", ex.Message);
+        Assert.Contains(ErrorCodes.NoSession, ex.Message);
     }
 
     [Fact]

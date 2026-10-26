@@ -216,6 +216,6 @@ public sealed class InspectionTests
 
         var ex = await Assert.ThrowsAsync<McpException>(() =>
             InspectionTools.ReadStackAsync(bridge, "bogus-session-id", 20, CancellationToken.None));
-        Assert.Contains("no-session", ex.Message);
+        Assert.Contains(ErrorCodes.NoSession, ex.Message);
     }
 }

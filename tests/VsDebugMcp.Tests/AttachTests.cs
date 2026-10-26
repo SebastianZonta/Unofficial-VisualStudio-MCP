@@ -24,7 +24,7 @@ public sealed class AttachTests
         var ex = await Assert.ThrowsAsync<DebugDomainException>(() =>
             bridge.RequireSessionAsync("bogus-session-id", CancellationToken.None));
 
-        Assert.Contains("no-session", ex.Message);
+        Assert.Contains(ErrorCodes.NoSession, ex.Message);
     }
 
     [Fact]
