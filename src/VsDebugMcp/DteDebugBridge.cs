@@ -13,43 +13,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 {
     private readonly ComDispatcher _dispatcher = new();
     private readonly ILogger<DteDebugBridge>? _logger;
-    private readonly object _gate = new();
-    private readonly Dictionary<string, SessionEntry> _sessions = new();
+    private readonly SessionRegistry _registry = new();
     private bool _disposed;
-
-    /// <summary>One live binding: a VS instance held by exactly one debug session.
-    /// Dte is null once the instance is known dead; the record stays until detach.</summary>
-    private sealed class SessionEntry
-    {
-        public DTE? Dte { get; set; }
-        public string DisplayName { get; set; } = "";
-        public int Pid { get; set; }
-        public bool Dead { get; set; }
-        /// <summary>Breakpoints this session created, in creation order, under stable ids
-        /// (never positions, never reused). The single record for remove, list and detach
-        /// cleanup (deleted on detach so no stale conditional breakpoint surprises a later
-        /// session). Guarded by _gate; RCWs touched on the dispatcher only.</summary>
-        public List<OwnedBreakpoint> Owned { get; } = new();
-        /// <summary>Mints bp&lt;N&gt; ids; only goes up.</summary>
-        public int BreakpointCounter { get; set; }
-        /// <summary>Logpoints are emulated evaluate-then-decide (native log output lands in
-        /// the VS Output window, which automation cannot read), so the Resume loop needs
-        /// the template per breakpoint id. Guarded by _gate.</summary>
-        public List<LogpointSpec> Logpoints { get; } = new();
-        public List<BreakpointLogEntry> Log { get; } = new();
-        /// <summary>Break-when-thrown value per exception type as this session first found it,
-        /// so a reset to default restores it. Guarded by _gate.</summary>
-        public Dictionary<string, bool> FoundExceptionModes { get; } = new(StringComparer.Ordinal);
-    }
-
-    private sealed record OwnedBreakpoint(string Id, Breakpoint Breakpoint);
-
-    private sealed record LogpointSpec(string Id, string File, int Line, string LogMessage)
-    {
-        // A hit is still recognised by file:line against lastHit: two logpoints at the
-        // same location share the template match (first wins per hit).
-        public string Key => $"{File}:{Line}";
-    }
 
     public DteDebugBridge(ILogger<DteDebugBridge>? logger = null)
     {
@@ -74,10 +39,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         // (or rebinds if the winner died mid-race).
         while (true)
         {
-            var existing = FindByDisplayName(picked);
+            var existing = _registry.FindByDisplayName(picked);
             if (existing is not null)
             {
-                var alive = await _dispatcher.InvokeAsync(() => ProbeAlive(existing.Value.Entry.Dte), 10_000, cancellationToken);
+                var alive = await _dispatcher.InvokeAsync(() => SessionRegistry.ProbeAlive(existing.Value.Entry.Dte), 10_000, cancellationToken);
                 if (alive)
                 {
                     var (mode, lastHit) = await ReadStateAsync(existing.Value.Id, cancellationToken);
@@ -86,32 +51,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 await DetachAsync(existing.Value.Id, cancellationToken);
             }
             var dte = await _dispatcher.InvokeAsync(() => BindDisplayName(picked), 10_000, cancellationToken);
-            string sessionId;
-            bool won;
-            lock (_gate)
-            {
-                string? raced = null;
-                foreach (var kv in _sessions)
-                {
-                    if (kv.Value.DisplayName == picked) { raced = kv.Key; break; }
-                }
-                if (raced is not null)
-                {
-                    sessionId = raced;
-                    won = false;
-                }
-                else
-                {
-                    sessionId = Guid.NewGuid().ToString("N");
-                    _sessions[sessionId] = new SessionEntry
-                    {
-                        Dte = dte,
-                        DisplayName = picked,
-                        Pid = VsDiscovery.TryParsePid(picked),
-                    };
-                    won = true;
-                }
-            }
+            var sessionId = _registry.GetOrAdd(picked, dte, VsDiscovery.TryParsePid(picked), out var won);
             if (won)
             {
                 var (freshMode, freshHit) = await ReadStateAsync(sessionId, cancellationToken);
@@ -124,66 +64,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     public Task RequireSessionAsync(string sessionId, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        _ = SessionDte(sessionId);
+        _ = _registry.SessionDte(sessionId);
         return Task.CompletedTask;
     }
 
-    /// <summary>Resolves the live DTE for a session. Unknown id is no-session;
-    /// a dead binding is per-session vs-not-running (siblings unaffected).</summary>
-    private static DebugDomainException NoSession() =>
-        new("no-session", "no active session", "call attach first");
-
-    private static DebugDomainException VsGone(string sessionId) =>
-        new("vs-not-running", $"the VS instance bound to session {sessionId} is gone", "call attach again");
-
-    private DTE SessionDte(string sessionId)
-    {
-        lock (_gate)
-        {
-            return RequireAlive(LookupEntryLocked(sessionId), sessionId);
-        }
-    }
-
-    // Call under _gate; single TryGetValue so the lookup stays atomic with the caller.
-    private SessionEntry LookupEntryLocked(string sessionId)
-    {
-        if (!_sessions.TryGetValue(sessionId, out var entry))
-            throw NoSession();
-        return entry;
-    }
-
-    private static DTE RequireAlive(SessionEntry entry, string sessionId)
-    {
-        if (entry is { Dead: true } or { Dte: null })
-            throw VsGone(sessionId);
-        return entry.Dte!;
-    }
-
-    private (string Id, SessionEntry Entry)? FindByDisplayName(string displayName)
-    {
-        lock (_gate)
-        {
-            return ScanByDisplayName(displayName);
-        }
-    }
-
-    private (string Id, SessionEntry Entry)? ScanByDisplayName(string displayName)
-    {
-        var hit = _sessions.FirstOrDefault(kv => kv.Value.DisplayName == displayName);
-        return hit.Key is null ? null : (hit.Key, hit.Value);
-    }
-
-    private static bool ProbeAlive(DTE? dte)
-    {
-        if (dte is null) return false;
-        return IsResponsive(dte);
-    }
-
-    private static bool IsResponsive(DTE dte)
-    {
-        try { _ = dte.Name; return true; }
-        catch (Exception ex) when (IsComOrGone(ex)) { return false; }
-    }
+    private DTE SessionDte(string sessionId) => _registry.SessionDte(sessionId);
 
     private static bool IsComOrGone(Exception ex) => ex is COMException or InvalidComObjectException;
 
@@ -194,7 +79,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         if (ComErrorMapper.IsDisconnected(ex))
         {
             MarkDead(sessionId, dte);
-            return VsGone(sessionId);
+            return SessionRegistry.VsGone(sessionId);
         }
         return ComErrorMapper.ToDomain(ex);
     }
@@ -212,7 +97,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         {
             return ex;
         }
-        return VsGone(sessionId);
+        return SessionRegistry.VsGone(sessionId);
     }
 
     /// <summary>Maps the standard COM pair on a dispatched call to per-session errors.</summary>
@@ -242,19 +127,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private void MarkDead(string sessionId, DTE dte)
     {
-        lock (_gate)
-        {
-            if (_sessions.TryGetValue(sessionId, out var entry))
-                ClearIfOwned(entry, dte);
-        }
+        _registry.MarkDead(sessionId, dte);
         ReleaseOnDispatcher(dte);
-    }
-
-    private static void ClearIfOwned(SessionEntry entry, DTE dte)
-    {
-        if (!ReferenceEquals(entry.Dte, dte)) return;
-        entry.Dte = null;
-        entry.Dead = true;
     }
 
     /// <summary>Best-effort RCW release; failures are ignored by design.</summary>
@@ -279,31 +153,19 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     public Task<ListSessionsResult> ListSessionsAsync(CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        lock (_gate)
-        {
-            // Inventory lists only live sessions, like the fake bridge.
-            return Task.FromResult(new ListSessionsResult(
-                _sessions.Where(kv => !kv.Value.Dead).Select(kv => new SessionInfo(kv.Key, kv.Value.DisplayName)).ToList()));
-        }
+        return Task.FromResult(new ListSessionsResult(_registry.ListLiveSessions()));
     }
 
     public async Task<DetachResult> DetachAsync(string sessionId, CancellationToken ct)
     {
         ct.ThrowIfCancellationRequested();
-        SessionEntry entry;
-        lock (_gate)
-        {
-            if (!_sessions.TryGetValue(sessionId, out var found))
-                throw NoSession();
-            _sessions.Remove(sessionId);
-            entry = found;
-        }
+        if (!_registry.TryRemove(sessionId, out var entry) || entry is null)
+            throw SessionRegistry.NoSession();
         // Detach removes the record even for dead bindings; breakpoint cleanup and
         // the release are best-effort. Deleting this session's breakpoints first
         // keeps stale conditional breakpoints out of later sessions on the same VS.
-        List<Breakpoint> owned;
-        lock (_gate)
-            owned = entry.Owned.Select(o => o.Breakpoint).ToList();
+        // The entry is exclusively ours after TryRemove, so its record reads lock-free.
+        List<Breakpoint> owned = entry.Owned.Select(o => o.Breakpoint).ToList();
         if (entry.Dte is { } dte)
         {
             try
@@ -495,7 +357,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             var live = new List<Breakpoint>();
             foreach (Breakpoint b in debugger.Breakpoints)
                 live.Add(b);
-            var snapshot = SnapshotOwned(sessionId);
+            var snapshot = _registry.SnapshotOwned(sessionId);
             List<OwnedBreakpoint> owned = snapshot.Owned;
             List<LogpointSpec> specs = snapshot.Specs;
             (BreakpointInfo Info, string Mode, string? LastHit, bool Created) Occupied(int i)
@@ -532,29 +394,18 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 var info = SnapshotBreakpoint(bp, id: "");
                 // Mint ownership inside the dispatch: the live handle never crosses
                 // threads, and a detach racing the call leaves nothing behind.
-                DebugDomainException? gone = null;
-                var id = "";
-                lock (_gate)
+                string id;
+                try
                 {
-                    if (!_sessions.TryGetValue(sessionId, out var entry) || entry.Dead || entry.Dte is null)
-                        gone = entry is null ? NoSession() : VsGone(sessionId);
-                    else
-                    {
-                        id = BreakpointOptions.OwnedId(++entry.BreakpointCounter);
-                        entry.Owned.Add(new OwnedBreakpoint(id, bp));
-                        if (log is not null)
-                            // Key on the VS snapshot path (full path), never the user-passed file:
-                            // the Resume loop matches specs against lastHit, which is full-path.
-                            entry.Logpoints.Add(new LogpointSpec(id, info.File, info.Line, log));
-                    }
+                    id = _registry.MintOwned(sessionId, bp, info.File, info.Line, log);
                 }
-                if (gone is not null)
+                catch (DebugDomainException)
                 {
                     // Nobody could ever remove this breakpoint (it would list as
                     // other<N>), so delete it before the error surfaces, never afterwards.
                     try { bp.Delete(); } catch { /* best effort */ }
                     Release(bp);
-                    throw gone;
+                    throw;
                 }
                 return (Info: info with { Id = id, Bound = true }, Mode: ModeOf(debugger), LastHit: LastHitOf(debugger), Created: true);
             }
@@ -576,7 +427,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     public async Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
         {
-            var snapshot = SnapshotOwned(sessionId);
+            var snapshot = _registry.SnapshotOwned(sessionId);
             List<OwnedBreakpoint> owned = snapshot.Owned;
             List<LogpointSpec> specs = snapshot.Specs;
             List<BreakpointLogEntry> log = snapshot.Log;
@@ -608,7 +459,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 { Warning = BreakpointOptions.ForeignWarning });
             }
             if (gone.Count > 0)
-                Forget(sessionId, gone.Select(g => g.Id));
+                _registry.Forget(sessionId, gone.Select(g => g.Id));
             return new ListBreakpointsResult(items, ModeOf(debugger), LastHitOf(debugger), log);
         }, ct);
 
@@ -658,7 +509,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         {
             // Only ids this session minted resolve: a stale, positional or foreign id never
             // reaches a breakpoint the user (or another session) set.
-            OwnedBreakpoint? target = FindOwned(sessionId, breakpointId);
+            OwnedBreakpoint? target = _registry.FindOwned(sessionId, breakpointId);
             if (target is null)
                 throw BreakpointOptions.NotFound(breakpointId);
             try
@@ -671,45 +522,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 // HResult): gone either way. A dead VS still surfaces via ModeOf below.
                 // A busy rejection deleted nothing: it propagates as vs-busy and the id stays owned.
             }
-            Forget(sessionId, [breakpointId]);
+            _registry.Forget(sessionId, [breakpointId]);
             Release(target.Breakpoint);
             return new RemoveBreakpointResult(breakpointId, ModeOf(debugger), LastHitOf(debugger));
         }, ct);
-
-    private sealed record OwnedSnapshot(List<OwnedBreakpoint> Owned, List<LogpointSpec> Specs, List<BreakpointLogEntry> Log);
-
-    /// <summary>Copies of the session's breakpoint records; live handles stay owned by the session.</summary>
-    private OwnedSnapshot SnapshotOwned(string sessionId)
-    {
-        lock (_gate)
-        {
-            _sessions.TryGetValue(sessionId, out var entry);
-            return new OwnedSnapshot(
-                entry?.Owned.ToList() ?? new List<OwnedBreakpoint>(),
-                entry?.Logpoints.ToList() ?? new List<LogpointSpec>(),
-                entry?.Log.ToList() ?? new List<BreakpointLogEntry>());
-        }
-    }
-
-    private OwnedBreakpoint? FindOwned(string sessionId, string breakpointId)
-    {
-        lock (_gate)
-            return _sessions.TryGetValue(sessionId, out var entry)
-                ? entry.Owned.FirstOrDefault(o => o.Id == breakpointId) : null;
-    }
-
-    /// <summary>Drops owned ids (and their logpoint specs) from the session record.</summary>
-    private void Forget(string sessionId, IEnumerable<string> ids)
-    {
-        var dead = ids.ToHashSet(StringComparer.Ordinal);
-        lock (_gate)
-        {
-            if (!_sessions.TryGetValue(sessionId, out var entry))
-                return;
-            entry.Owned.RemoveAll(o => dead.Contains(o.Id));
-            entry.Logpoints.RemoveAll(s => dead.Contains(s.Id));
-        }
-    }
 
     private static bool StillExists(Breakpoint bp)
     {
@@ -907,14 +723,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         if (lastHit is null)
             return false;
-        LogpointSpec? spec;
-        OwnedBreakpoint? owner;
-        lock (_gate)
-        {
-            _sessions.TryGetValue(sessionId, out var entry);
-            spec = entry?.Logpoints.FirstOrDefault(s => s.Key.Equals(lastHit, StringComparison.OrdinalIgnoreCase));
-            owner = spec is null ? null : entry!.Owned.FirstOrDefault(o => o.Id == spec.Id);
-        }
+        var (spec, owner) = _registry.FindLogpointOwner(sessionId, lastHit);
         if (spec is null || owner is null)
             return false;
         var captured = spec;
@@ -949,12 +758,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
         if (logged is null)
             return false;
-        lock (_gate)
-        {
-            if (_sessions.TryGetValue(sessionId, out var entry))
-                BreakpointOptions.AppendLog(entry.Log,
-                    new BreakpointLogEntry(logged.Value.Token, logged.Value.Message, logged.Value.Hits));
-        }
+        _registry.AppendLog(sessionId,
+            new BreakpointLogEntry(logged.Value.Token, logged.Value.Message, logged.Value.Hits));
         try
         {
             await _dispatcher.InvokeAsync(() =>
@@ -1285,13 +1090,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             // Exact name only: a short or differently cased name never configures a lookalike.
             if (!string.Equals(setting.Name, exceptionType, StringComparison.Ordinal))
                 throw ExceptionConfig.NotFound(exceptionType);
-            bool found;
-            lock (_gate)
-            {
-                var modes = _sessions[sessionId].FoundExceptionModes;
-                if (!modes.TryGetValue(exceptionType, out found))
-                    modes[exceptionType] = found = setting.BreakWhenThrown;
-            }
+            var found = _registry.GetOrObserveFoundMode(sessionId, exceptionType, () => setting.BreakWhenThrown);
             group.SetBreakWhenThrown(mode switch
             {
                 ExceptionBreakModes.FirstChance => true,
@@ -2082,15 +1881,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         if (_disposed) return;
         _disposed = true;
-        List<DTE> live;
-        lock (_gate)
-        {
-            live = _sessions.Values
-                .Where(e => e.Dte is not null)
-                .Select(e => e.Dte!)
-                .ToList();
-            _sessions.Clear();
-        }
+        var live = _registry.Drain();
         // One best-effort release-all serialized on the dispatcher (never the caller thread).
         if (live.Count > 0)
         {
