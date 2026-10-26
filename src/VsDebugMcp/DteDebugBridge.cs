@@ -15,12 +15,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     private readonly ILogger<DteDebugBridge>? _logger;
     private readonly SessionRegistry _registry = new();
     private readonly BreakpointKeeper _keeper;
+    private readonly ExecutionDriver _driver;
     private bool _disposed;
 
     public DteDebugBridge(ILogger<DteDebugBridge>? logger = null)
     {
         _logger = logger;
         _keeper = new BreakpointKeeper(_registry, ModeOf, LastHitOf);
+        _driver = new ExecutionDriver(_dispatcher, IssueMap, SnapshotModeAsync, TrySnapshotAsync, RequireSessionAsync);
     }
 
     public async Task<AttachResult> AttachAsync(string? instanceOverride, CancellationToken cancellationToken)
@@ -98,6 +100,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             return ex;
         }
         return SessionRegistry.VsGone(sessionId);
+    }
+
+    /// <summary>Single-dispatch issue call the execution driver borrows per call,
+    /// so the session COM mapping stays single-sourced here.</summary>
+    private bool IssueMap(string sessionId, Func<Debugger, bool> work)
+    {
+        var dte = SessionDte(sessionId);
+        return WithSessionMap(sessionId, dte, work);
     }
 
     /// <summary>Maps the standard COM pair on a dispatched call to per-session errors.</summary>
@@ -334,7 +344,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 "dismiss any VS dialog, then retry with a larger timeoutMs");
         }
         // Same wait as resume: an entry-point hit (or logpoint) surfaces here, still-running is ok.
-        var run = await WithExceptionAsync(sessionId, await PollResumeAsync(sessionId, deadline, timeoutMs, 0, ct), ct);
+        var run = await WithExceptionAsync(sessionId, await _driver.PollResumeAsync(sessionId, deadline, timeoutMs, 0, TryLogAndContinueAsync, ct), ct);
         return new LaunchProcessResult(pid, run.Mode, run.LastHit, run.Status, $"launched target process {pid}; {run.Note}", run.Exception);
     }
 
@@ -425,151 +435,13 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             return new RemoveBreakpointResult(removedId, mode, lastHit);
         }, ct);
 
-    public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
-    {
-        var (currentMode, modeTimeout) = await TryRequireModeAsync(sessionId,
-            new ExecutionResult("run", null, "timeout", "pause request timed out while reading debugger state; retry"), ct);
-        if (modeTimeout is not null)
-            return modeTimeout;
-        DebuggerModes.RequireRunMode(currentMode!);
-        try
-        {
-            // Non-blocking break: Break(true) would park the dispatcher until break
-            // mode is reached; poll instead so a timeout never wedges later calls.
-            await _dispatcher.InvokeAsync(() =>
-            {
-                var dte = SessionDte(sessionId);
-                return WithSessionMap(sessionId, dte, debugger =>
-                {
-                    debugger.Break(false);
-                    return true;
-                });
-            }, 10_000, ct);
-        }
-        catch (TimeoutException)
-        {
-            return new ExecutionResult("run", null, "timeout", "pause request timed out while issuing; retry");
-        }
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(30);
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-            if (DateTime.UtcNow >= deadline)
-                return new ExecutionResult("run", null, "timeout", "pause request issued but break mode not reached in time");
-            await Task.Delay(TimeSpan.FromMilliseconds(250), ct);
-            await RequireSessionAsync(sessionId, ct);
-            var (mode, lastHit) = await TrySnapshotAsync(sessionId, ct);
-            if (mode == "break")
-                return new ExecutionResult(mode, lastHit, "ok", "paused on request");
-        }
-    }
+    public Task<ExecutionResult> PauseAsync(
+        string sessionId,
+        CancellationToken ct) =>
+        _driver.PauseAsync(sessionId, ct);
 
     public async Task<ExecutionResult> ResumeAsync(string sessionId, int timeoutMs, CancellationToken ct) =>
-        await WithExceptionAsync(sessionId, await ResumeCoreAsync(sessionId, timeoutMs, ct), ct);
-
-    private async Task<ExecutionResult> ResumeCoreAsync(string sessionId, int timeoutMs, CancellationToken ct)
-    {
-        var (currentMode, modeTimeout) = await TryRequireModeAsync(sessionId,
-            new ExecutionResult("unknown", null, "timeout", "resume request timed out while reading debugger state; mode unknown, retry"), ct);
-        if (modeTimeout is not null)
-            return modeTimeout;
-        DebuggerModes.RequireNotRunMode(currentMode!);
-        if (currentMode == "break")
-        {
-            // A hit already pending may be a logpoint: log-and-continue it instead
-            // of blind-resuming past it (which would silently drop the log entry).
-            var (preMode, preHit) = await TrySnapshotAsync(sessionId, ct);
-            if (preMode == "break" && await TryLogAndContinueAsync(sessionId, preHit, timeoutMs, ct))
-                return await PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 1, ct);
-        }
-        try
-        {
-            // Non-blocking Go: returns immediately after resuming so the single STA
-            // dispatcher thread is never held hostage by a long-running debuggee.
-            // Completion (next breakpoint or process exit) is observed by polling below.
-            await _dispatcher.InvokeAsync(() =>
-            {
-                var dte = SessionDte(sessionId);
-                return WithSessionMap(sessionId, dte, debugger =>
-                {
-                    debugger.Go(false);
-                    return true;
-                });
-            }, IssueBudgetMs(timeoutMs), ct);
-        }
-        catch (TimeoutException)
-        {
-            // The Go issue may or may not have taken effect: re-snapshot instead of
-            // assuming. Running plus a free dispatcher is success, not a timeout.
-            var (issueMode, issueHit) = await TrySnapshotAsync(sessionId, ct);
-            if (issueMode == "run")
-                return new ExecutionResult(issueMode, null, "ok", "resume issued; debuggee running, dispatcher is free");
-            var mode = issueMode ?? "unknown";
-            return new ExecutionResult(mode, issueMode == "break" ? issueHit : null, "timeout",
-                issueMode is null
-                    ? "resume request timed out while issuing Go; debugger state unreadable, retry"
-                    : $"resume request timed out while issuing Go; debugger mode is {mode}, retry");
-        }
-
-        return await PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 0, ct);
-    }
-
-    private async Task<ExecutionResult> PollResumeAsync(string sessionId, DateTime deadline, int timeoutMs, int logged, CancellationToken ct)
-    {
-        var seenRun = false;
-
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-            var remaining = deadline - DateTime.UtcNow;
-
-            if (remaining <= TimeSpan.Zero)
-            {
-                // Go was issued and the dispatcher is free: still-running is success.
-                // Re-snapshot so the reported mode is actual, never assumed.
-                var (finalMode, finalHit) = await TrySnapshotAsync(sessionId, ct);
-                if (finalMode == "break")
-                    return new ExecutionResult(finalMode, finalHit, "ok", "hit breakpoint");
-                if (finalMode == "design")
-                    return new ExecutionResult(finalMode, null, "ok", "run ended back in design mode");
-                if (finalMode == "run" || seenRun)
-                    return new ExecutionResult("run", null, "ok", "resume issued; debuggee still running, dispatcher is free");
-                return new ExecutionResult("unknown", null, "timeout", "resume exceeded timeoutMs; debugger state unreadable, dispatcher is free, retry or pause");
-            }
-
-            await Task.Delay(ClampDelay(remaining), ct);
-            await RequireSessionAsync(sessionId, ct);
-            var (mode, lastHit) = await TrySnapshotAsync(sessionId, ct);
-
-            if (mode == "run")
-                seenRun = true;
-
-            if (mode == "break")
-            {
-                // Emulated logpoint: buffer the formatted template and keep going;
-                // a logpoint hit never surfaces as a stop.
-                if (await TryLogAndContinueAsync(sessionId, lastHit, timeoutMs, ct))
-                {
-                    logged++;
-                    continue;
-                }
-                // A false here may be a stale snapshot (the Go landed between the
-                // snapshot and the re-read) or a transient first-hit automation
-                // race, not a genuine stop: confirm with one fresh snapshot and
-                // keep polling unless the same break is still pending.
-                var (confirmMode, confirmHit) = await TrySnapshotAsync(sessionId, ct);
-                if (confirmMode != "break" || !string.Equals(confirmHit, lastHit, StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                return new ExecutionResult(mode, lastHit, "ok",
-                    logged > 0 ? $"hit breakpoint; logged {logged} logpoint hits" : "hit breakpoint");
-            }
-
-            if (mode == "design")
-                return new ExecutionResult(mode, null, "ok", "run ended back in design mode");
-        }
-    }
+        await WithExceptionAsync(sessionId, await _driver.ResumeCoreAsync(sessionId, timeoutMs, TryLogAndContinueAsync, ct), ct);
 
     /// <summary>Emulated logpoint hit: formats the template against the live frame,
     /// buffers it session-side, and resumes the debuggee. Returns false for stopping
@@ -629,7 +501,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     debugger.Go(false);
                     return true;
                 });
-            }, IssueBudgetMs(timeoutMs), ct);
+            }, ExecutionDriver.IssueBudgetMs(timeoutMs), ct);
         }
         catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
         {
@@ -711,81 +583,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             ? await ResumeAsync(sessionId, timeoutMs, ct)
             // Already running: no Go, just the resume wait for the next stop.
             : await WithExceptionAsync(sessionId,
-                await PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 0, ct), ct), ct);
+                await _driver.PollResumeAsync(sessionId, DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs), timeoutMs, 0, TryLogAndContinueAsync, ct), ct), ct);
 
     public async Task<ExecutionResult> StepAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct) =>
-        await WithExceptionAsync(sessionId, await StepCoreAsync(sessionId, direction, timeoutMs, ct), ct);
-
-    private async Task<ExecutionResult> StepCoreAsync(string sessionId, string direction, int timeoutMs, CancellationToken ct)
-    {
-        var (currentMode, modeTimeout) = await TryRequireModeAsync(sessionId,
-            new ExecutionResult("unknown", null, "timeout", "step request timed out while reading debugger state; mode unknown, retry or pause"), ct);
-        if (modeTimeout is not null)
-            return modeTimeout;
-        DebuggerModes.RequireBreakMode(currentMode!);
-        DebuggerModes.RequireStepDirection(direction);
-        try
-        {
-            // Non-blocking step for the same reason as Go(false): never park the
-            // dispatcher inside a potentially long debugger wait.
-            await _dispatcher.InvokeAsync(() =>
-            {
-                var dte = SessionDte(sessionId);
-                return WithSessionMap(sessionId, dte, debugger =>
-                {
-                    var step = direction switch
-                    {
-                        "over" => debugger.StepOver,
-                        "into" => debugger.StepInto,
-                        "out" => (Action<bool>)debugger.StepOut,
-                        _ => throw new InvalidOperationException("unreachable: step direction validated before dispatch"),
-                    };
-                    step(false);
-                    return true;
-                });
-            }, IssueBudgetMs(timeoutMs), ct);
-        }
-        catch (TimeoutException)
-        {
-            // The step may or may not have been issued: re-snapshot the actual mode,
-            // never report the stale pre-step break.
-            var (issueMode, issueHit) = await TrySnapshotAsync(sessionId, ct);
-            var mode = issueMode ?? "unknown";
-            return new ExecutionResult(mode, issueMode == "break" ? issueHit : null, "timeout",
-                issueMode is null
-                    ? "step request timed out while issuing; debugger state unreadable, retry or pause"
-                    : $"step request timed out while issuing; debugger mode is {mode}, retry or pause");
-        }
-
-        var deadline = DateTime.UtcNow + TimeSpan.FromMilliseconds(timeoutMs);
-        while (true)
-        {
-            ct.ThrowIfCancellationRequested();
-            var remaining = deadline - DateTime.UtcNow;
-            if (remaining <= TimeSpan.Zero)
-            {
-                // Over budget with no terminal state observed: report the actual mode
-                // (the step usually resumed the debuggee), never the stale pre-step break.
-                var (finalMode, finalHit) = await TrySnapshotAsync(sessionId, ct);
-                if (finalMode == "break")
-                    return new ExecutionResult(finalMode, finalHit, "ok", $"stepped {direction}");
-                if (finalMode == "design")
-                    return new ExecutionResult(finalMode, null, "ok", $"stepped {direction}; run ended back in design mode");
-                var actual = finalMode ?? "unknown";
-                return new ExecutionResult(actual, null, "timeout",
-                    finalMode is null
-                        ? "step exceeded timeoutMs; debugger state unreadable, retry or pause"
-                        : $"step exceeded timeoutMs; debugger mode is {actual}, retry or pause");
-            }
-            await Task.Delay(ClampDelay(remaining), ct);
-            await RequireSessionAsync(sessionId, ct);
-            var (mode, hit) = await TrySnapshotAsync(sessionId, ct);
-            if (mode == "break")
-                return new ExecutionResult(mode, hit, "ok", $"stepped {direction}");
-            if (mode == "design")
-                return new ExecutionResult(mode, null, "ok", $"stepped {direction}; run ended back in design mode");
-        }
-    }
+        await WithExceptionAsync(sessionId, await _driver.StepCoreAsync(sessionId, direction, timeoutMs, ct), ct);
 
     public async Task<ReadStackResult> ReadStackAsync(string sessionId, int maxFrames, CancellationToken ct)
         => await RunSnapshotAsync(sessionId, debugger =>
@@ -1154,39 +955,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }, 10_000, ct);
     }
 
-    /// <summary>Shared Pause/Resume/Step pre-flight: session check plus strict mode read.
-    /// A mode-read timeout throws <see cref="ModeReadTimeoutException"/> carrying the
-    /// op-specific timeout result, which the caller returns verbatim.</summary>
-    private async Task<string> RequireModeAsync(string sessionId, ExecutionResult timeoutResult, CancellationToken ct)
-    {
-        await RequireSessionAsync(sessionId, ct);
-        try
-        {
-            return await SnapshotModeAsync(sessionId, ct);
-        }
-        catch (TimeoutException)
-        {
-            throw new ModeReadTimeoutException(timeoutResult);
-        }
-    }
-
-    private async Task<(string? Mode, ExecutionResult? Timeout)> TryRequireModeAsync(string sessionId, ExecutionResult timeoutResult, CancellationToken ct)
-    {
-        try
-        {
-            return (await RequireModeAsync(sessionId, timeoutResult, ct), null);
-        }
-        catch (ModeReadTimeoutException ex)
-        {
-            return (null, ex.TimeoutResult);
-        }
-    }
-
-    private sealed class ModeReadTimeoutException(ExecutionResult timeoutResult) : Exception
-    {
-        public ExecutionResult TimeoutResult { get; } = timeoutResult;
-    }
-
     /// <summary>Best-effort snapshot for polling: null mode means "keep waiting".</summary>
     private async Task<(string? Mode, string? LastHit)> TrySnapshotAsync(string sessionId, CancellationToken ct)
     {
@@ -1221,12 +989,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             return (null, null);
         }
     }
-
-    private static TimeSpan ClampDelay(TimeSpan remaining) =>
-        remaining > TimeSpan.FromMilliseconds(250) ? TimeSpan.FromMilliseconds(250) : remaining;
-
-    /// <summary>Bounds the fire-and-forget issue call so a small timeoutMs is honoured.</summary>
-    private static int IssueBudgetMs(int timeoutMs) => Math.Clamp(timeoutMs, 1_000, 10_000);
 
     /// <summary>Every agent-supplied evaluation runs in the C# evaluator's no-side-effects
     /// mode (ADR-0010): a call that would mutate state is refused, not executed.</summary>
