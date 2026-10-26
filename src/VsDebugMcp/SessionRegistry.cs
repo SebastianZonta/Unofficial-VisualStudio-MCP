@@ -70,8 +70,20 @@ internal sealed class SessionRegistry
     {
         lock (_gate)
         {
-            return RequireAlive(LookupEntryLocked(sessionId), sessionId);
+            // Alive-checked by the helper, so Dte is non-null here.
+            return RequireLiveEntryLocked(sessionId).Dte!;
         }
+    }
+
+    // Call under _gate; unknown id is no-session, dead binding is vs-not-running.
+    private SessionEntry RequireLiveEntryLocked(string sessionId)
+    {
+        var entry = LookupEntryLocked(sessionId);
+
+        if (entry is { Dead: true } or { Dte: null })
+            throw VsGone(sessionId);
+
+        return entry;
     }
 
     // Call under _gate; single TryGetValue so the lookup stays atomic with the caller.
@@ -80,13 +92,6 @@ internal sealed class SessionRegistry
         if (!_sessions.TryGetValue(sessionId, out var entry))
             throw NoSession();
         return entry;
-    }
-
-    private static DTE RequireAlive(SessionEntry entry, string sessionId)
-    {
-        if (entry is { Dead: true } or { Dte: null })
-            throw VsGone(sessionId);
-        return entry.Dte!;
     }
 
     public (string Id, SessionEntry Entry)? FindByDisplayName(string displayName)
@@ -231,16 +236,27 @@ internal sealed class SessionRegistry
     {
         lock (_gate)
         {
-            if (!_sessions.TryGetValue(sessionId, out var entry) || entry.Dead || entry.Dte is null)
-                throw entry is null ? NoSession() : VsGone(sessionId);
-            var id = BreakpointOptions.OwnedId(++entry.BreakpointCounter);
-            entry.Owned.Add(new OwnedBreakpoint(id, bp));
-            if (logMessage is not null)
-                // Key on the VS snapshot path (full path), never the user-passed file:
-                // the Resume loop matches specs against lastHit, which is full-path.
-                entry.Logpoints.Add(new LogpointSpec(id, file, line, logMessage));
-            return id;
+            return TrackOwned(RequireLiveEntryLocked(sessionId), bp, file, line, logMessage);
         }
+    }
+
+    private static string TrackOwned(
+        SessionEntry entry,
+        Breakpoint bp,
+        string file,
+        int line,
+        string? logMessage
+    )
+    {
+        var id = BreakpointOptions.OwnedId(++entry.BreakpointCounter);
+        entry.Owned.Add(new OwnedBreakpoint(id, bp));
+
+        if (logMessage is not null)
+            // Key on the VS snapshot path (full path), never the user-passed file:
+            // the Resume loop matches specs against lastHit, which is full-path.
+            entry.Logpoints.Add(new LogpointSpec(id, file, line, logMessage));
+
+        return id;
     }
 
     /// <summary>Drops owned ids (and their logpoint specs) from the session record.</summary>
@@ -284,11 +300,11 @@ internal sealed class SessionRegistry
     {
         lock (_gate)
         {
-            if (!_sessions.TryGetValue(sessionId, out var entry))
-                throw NoSession();
-            var modes = entry.FoundExceptionModes;
+            var modes = LookupEntryLocked(sessionId).FoundExceptionModes;
+
             if (!modes.TryGetValue(exceptionType, out var found))
                 modes[exceptionType] = found = observe();
+
             return found;
         }
     }

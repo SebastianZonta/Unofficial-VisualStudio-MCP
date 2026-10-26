@@ -261,6 +261,14 @@ public sealed class FakeDebugBridge : IDebugBridge
             session.ForeignBreakpoints.Add((file, line));
     }
 
+    /// <summary>Test hook: the user deleted an owned breakpoint by hand in VS,
+    /// out of band: it vanishes without going through remove_breakpoint.</summary>
+    public void DeleteOwnedOutOfBand(string sessionId, string breakpointId)
+    {
+        if (_sessions.TryGetValue(sessionId, out var session))
+            session.Breakpoints.Remove(breakpointId);
+    }
+
     public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
     {
         var session = await RequireAsync(sessionId, ct);

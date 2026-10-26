@@ -35,9 +35,7 @@ internal sealed class BreakpointKeeper
         // VS hands back the existing breakpoint for an occupied location, so owning what Add
         // returns would let remove/detach delete the user's. Check first: an own repeat
         // returns its id unchanged, a foreign one is refused (positional id as in the listing).
-        var live = new List<Breakpoint>();
-        foreach (Breakpoint b in debugger.Breakpoints)
-            live.Add(b);
+        var live = CollectLive(debugger);
 
         var (owned, specs, _) = _registry.SnapshotOwned(sessionId);
 
@@ -122,13 +120,35 @@ internal sealed class BreakpointKeeper
     {
         var (owned, specs, log) = _registry.SnapshotOwned(sessionId);
 
+        var live = CollectLive(debugger);
+
         // Owned breakpoints under their stable ids (creation order), then every other
         // breakpoint in the VS instance under a positional, list-only id.
-        var items = new List<BreakpointInfo>();
-        var gone = new List<OwnedBreakpoint>();
+        var (items, gone) = PartitionOwned(owned, specs);
+        items.AddRange(ListForeign(live, owned));
+
+        CleanupGone(sessionId, gone);
+
+        return (items, _modeOf(debugger), _lastHitOf(debugger), log);
+    }
+
+    private static List<Breakpoint> CollectLive(
+        Debugger debugger)
+    {
         var live = new List<Breakpoint>();
+
         foreach (Breakpoint bp in debugger.Breakpoints)
             live.Add(bp);
+
+        return live;
+    }
+
+    private static (List<BreakpointInfo> Items, List<OwnedBreakpoint> Gone) PartitionOwned(
+        List<OwnedBreakpoint> owned,
+        List<LogpointSpec> specs)
+    {
+        var items = new List<BreakpointInfo>();
+        var gone = new List<OwnedBreakpoint>();
 
         foreach (var o in owned)
         {
@@ -138,28 +158,53 @@ internal sealed class BreakpointKeeper
                 gone.Add(o);
                 continue;
             }
-            var spec = specs.FirstOrDefault(s => s.Id == o.Id);
-            var info = SnapshotBreakpoint(o.Breakpoint, o.Id);
-            items.Add(spec is null ? info : info with
-            {
-                LogMessage = spec.LogMessage
-            });
+
+            items.Add(WithSpec(o, specs));
         }
+
+        return (items, gone);
+    }
+
+    private static BreakpointInfo WithSpec(
+        OwnedBreakpoint o,
+        List<LogpointSpec> specs)
+    {
+        var spec = specs.FirstOrDefault(s => s.Id == o.Id);
+        var info = SnapshotBreakpoint(o.Breakpoint, o.Id);
+
+        return spec is null ? info : info with
+        {
+            LogMessage = spec.LogMessage
+        };
+    }
+
+    private static List<BreakpointInfo> ListForeign(
+        List<Breakpoint> live,
+        List<OwnedBreakpoint> owned)
+    {
+        var foreign = new List<BreakpointInfo>();
+
         for (var i = 0; i < live.Count; i++)
         {
             if (owned.Any(o => SameBreakpoint(live[i], o.Breakpoint)))
                 continue;
-            items.Add(SnapshotBreakpoint(live[i], BreakpointOptions.ForeignId(i + 1))
+
+            foreign.Add(SnapshotBreakpoint(live[i], BreakpointOptions.ForeignId(i + 1))
                 with
             {
                 Warning = BreakpointOptions.ForeignWarning
             });
         }
 
+        return foreign;
+    }
+
+    private void CleanupGone(
+        string sessionId,
+        List<OwnedBreakpoint> gone)
+    {
         if (gone.Count > 0)
             _registry.Forget(sessionId, gone.Select(g => g.Id));
-
-        return (items, _modeOf(debugger), _lastHitOf(debugger), log);
     }
 
     public (string RemovedId, string Mode, string? LastHit) Remove(

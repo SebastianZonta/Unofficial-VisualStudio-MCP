@@ -123,6 +123,24 @@ public sealed class BreakpointTests
     }
 
     [Fact]
+    public async Task Hand_deleted_breakpoint_is_forgotten_and_its_id_never_reused()
+    {
+        var (bridge, sessionId) = await AttachedAsync();
+        var first = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "A.cs", 1, CancellationToken.None);
+        bridge.DeleteOwnedOutOfBand(sessionId, first.Breakpoint.Id);
+
+        var list = await BreakpointTools.ListBreakpointsAsync(bridge, sessionId, CancellationToken.None);
+        Assert.DoesNotContain(list.Breakpoints, b => b.Id == first.Breakpoint.Id);
+
+        var stale = await Assert.ThrowsAsync<McpException>(() =>
+            BreakpointTools.RemoveBreakpointAsync(bridge, sessionId, first.Breakpoint.Id, CancellationToken.None));
+        Assert.Contains("breakpoint-not-found", stale.Message);
+
+        var next = await BreakpointTools.SetBreakpointAsync(bridge, sessionId, "A.cs", 1, CancellationToken.None);
+        Assert.NotEqual(first.Breakpoint.Id, next.Breakpoint.Id);
+    }
+
+    [Fact]
     public async Task Unknown_session_fails_named_no_session()
     {
         var bridge = new FakeDebugBridge();
