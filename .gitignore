@@ -12,3 +12,5 @@ publish/
 .codegraph/
 .scratch/e2e-runs/
 .claude/settings.local.json
+
+.archify/
