@@ -13,7 +13,9 @@ jobs:
       - name: Installer syntax
         run: |
           bash -n install.sh
-          python3 -c "import re,sys;src=open('install.ps1',encoding='utf-8-sig').read();sys.exit(0 if re.search(r'param\s*\(',src) else 1)"
+          pwsh -NoProfile -Command '$e = $null; [void][System.Management.Automation.Language.Parser]::ParseFile("$PWD/install.ps1", [ref]$null, [ref]$e); $e | ForEach-Object { "::error file=install.ps1,line=$($_.Extent.StartLineNumber)::$($_.Message)" }; exit [int]($e.Count -gt 0)'
+          # Windows PowerShell 5.1 reads BOM-less files as ANSI, so any non-ASCII char breaks `irm | iex`.
+          if grep -nP '[^\x00-\x7F]' install.ps1; then echo "::error file=install.ps1::must be pure ASCII"; exit 1; fi
 
       - name: Installer/doc drift guard
         run: |
