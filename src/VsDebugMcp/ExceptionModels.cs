@@ -24,7 +24,7 @@ internal static class ExceptionConfig
 {
     public const string ExceptionPath = "$exception";
     public const string MessageUnreadableNote = "exception message unreadable without side effects; probe $exception via read_variables or evaluate";
-    private const int MaxValueLength = 500;
+    internal const int MaxValueLength = 500;
 
     /// <summary>Settings edits happen in break or design mode only; there is no queued apply.</summary>
     public static void RequireNotRunning(string mode) =>

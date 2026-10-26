@@ -233,7 +233,7 @@ public sealed class FakeDebugBridge : IDebugBridge
     public async Task<ExecutionResult> PauseAsync(string sessionId, CancellationToken ct)
     {
         var session = await RequireAsync(sessionId, ct);
-        RequireRunMode(session.Mode);
+        DebuggerModes.RequireRunMode(session.Mode);
         session.Mode = "break";
         return new ExecutionResult(session.Mode, session.LastHit, Status: "ok", Note: "paused on request");
     }
@@ -243,7 +243,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         var session = await RequireAsync(sessionId, ct);
         _ = timeoutMs;
         ct.ThrowIfCancellationRequested();
-        RequireNotRunMode(session.Mode);
+        DebuggerModes.RequireNotRunMode(session.Mode);
         if (ForceTimeout)
             return new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "resume exceeded timeoutMs; still waiting");
         return RunUntilStop(session);
@@ -328,8 +328,8 @@ public sealed class FakeDebugBridge : IDebugBridge
         var session = await RequireAsync(sessionId, ct);
         _ = timeoutMs;
         ct.ThrowIfCancellationRequested();
-        RequireBreakMode(session.Mode);
-        RequireStepDirection(direction);
+        DebuggerModes.RequireBreakMode(session.Mode);
+        DebuggerModes.RequireStepDirection(direction);
         // One shape on fast and over-budget paths: the post-step snapshot.
         if (ForceTimeout)
             return new ExecutionResult(session.Mode, session.LastHit, Status: "timeout", Note: "step exceeded timeoutMs; mode unchanged, retry or pause");
@@ -359,37 +359,7 @@ public sealed class FakeDebugBridge : IDebugBridge
         bp.Condition is null || (bp.Condition.Trim() is var cond
             && !cond.Equals("false", StringComparison.OrdinalIgnoreCase) && cond != "0");
 
-    // Mode guards, private to this bridge (shared-rules files are owned elsewhere);
-    // DteDebugBridge carries the same four for its debugger modes.
-    private static void RequireRunMode(string mode)
-    {
-        if (mode != "run")
-            throw new DebugDomainException(
-                "not-running", $"debuggee is {mode}, nothing to pause", "resume first, then pause while running");
-    }
-
-    private static void RequireNotRunMode(string mode)
-    {
-        if (mode == "run")
-            throw new DebugDomainException(
-                "already-running", "debuggee is already running", "pause first to inspect");
-    }
-
-    private static void RequireBreakMode(string mode)
-    {
-        if (mode != "break")
-            throw new DebugDomainException(
-                "not-in-break-mode", $"debuggee is {mode}",
-                "resume to a breakpoint or pause first; only inspect and step in break mode");
-    }
-
-    private static void RequireStepDirection(string direction)
-    {
-        if (direction is not ("over" or "into" or "out"))
-            throw new DebugDomainException(ErrorCodes.InvalidArgument, $"unknown step direction {direction}", "pass over, into, or out");
-    }
-
-    private static void RequireBreak(FakeSession session) => RequireBreakMode(session.Mode);
+    private static void RequireBreak(FakeSession session) => DebuggerModes.RequireBreakMode(session.Mode);
 
     private static IReadOnlyList<StackFrameInfo> CannedFrames() =>
     [
@@ -490,8 +460,9 @@ public sealed class FakeDebugBridge : IDebugBridge
             throw VariableWrite.ReadOnly(frameId, path, "get-only property");
         // Echo what VS would re-read: the coerced value as displayed, not the agent's spelling.
         var shown = VariableWrite.Shown(VariableWrite.Coerce(target.Type, value));
-        session.Writes[(frameId, target.Name)] = (shown, target.Type);
-        return new SetVariableResult(frameId, path, shown, target.Type, session.Mode, session.LastHit);
+        var stored = ExceptionConfig.Truncate(shown) ?? shown;
+        session.Writes[(frameId, target.Name)] = (stored, target.Type);
+        return new SetVariableResult(frameId, path, stored, target.Type, session.Mode, session.LastHit);
     }
 
     public async Task<EvaluateResult> EvaluateAsync(string sessionId, string expression, int timeoutMs, CancellationToken ct)

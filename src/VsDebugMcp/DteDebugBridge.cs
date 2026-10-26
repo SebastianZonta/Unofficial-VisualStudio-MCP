@@ -583,7 +583,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             new ExecutionResult("run", null, "timeout", "pause request timed out while reading debugger state; retry"), ct);
         if (modeTimeout is not null)
             return modeTimeout;
-        RequireRunMode(currentMode!);
+        DebuggerModes.RequireRunMode(currentMode!);
         try
         {
             // Non-blocking break: Break(true) would park the dispatcher until break
@@ -626,7 +626,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             new ExecutionResult("unknown", null, "timeout", "resume request timed out while reading debugger state; mode unknown, retry"), ct);
         if (modeTimeout is not null)
             return modeTimeout;
-        RequireNotRunMode(currentMode!);
+        DebuggerModes.RequireNotRunMode(currentMode!);
         if (currentMode == "break")
         {
             // A hit already pending may be a logpoint: log-and-continue it instead
@@ -856,8 +856,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             new ExecutionResult("unknown", null, "timeout", "step request timed out while reading debugger state; mode unknown, retry or pause"), ct);
         if (modeTimeout is not null)
             return modeTimeout;
-        RequireBreakMode(currentMode!);
-        RequireStepDirection(direction);
+        DebuggerModes.RequireBreakMode(currentMode!);
+        DebuggerModes.RequireStepDirection(direction);
         try
         {
             // Non-blocking step for the same reason as Go(false): never park the
@@ -1033,7 +1033,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     : now == before && !VariableWrite.IsSameShownValue(before, literal))
                     throw VariableWrite.ReadOnly(frameId, path, "the value did not change");
                 return new SetVariableResult(frameId, path,
-                    now.Length > MaxValueLength ? now[..MaxValueLength] + " [truncated]" : now, SafeGet(() => after.Type) ?? type,
+                    ExceptionConfig.Truncate(now) ?? now, SafeGet(() => after.Type) ?? type,
                     ModeOf(debugger), LastHitOf(debugger));
             }
             finally
@@ -1200,37 +1200,7 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private static Debugger DebuggerOf(DTE dte) => dte.Debugger;
 
-    // Mode guards, private to this bridge (shared-rules files are owned elsewhere);
-    // FakeDebugBridge carries the same four for its string modes.
-    private static void RequireRunMode(string mode)
-    {
-        if (mode != "run")
-            throw new DebugDomainException(
-                "not-running", $"debuggee is {mode}, nothing to pause", "resume first, then pause while running");
-    }
-
-    private static void RequireNotRunMode(string mode)
-    {
-        if (mode == "run")
-            throw new DebugDomainException(
-                "already-running", "debuggee is already running", "pause first to inspect");
-    }
-
-    private static void RequireBreakMode(string mode)
-    {
-        if (mode != "break")
-            throw new DebugDomainException(
-                "not-in-break-mode", $"debuggee is {mode}",
-                "resume to a breakpoint or pause first; only inspect and step in break mode");
-    }
-
-    private static void RequireStepDirection(string direction)
-    {
-        if (direction is not ("over" or "into" or "out"))
-            throw new DebugDomainException(ErrorCodes.InvalidArgument, $"unknown step direction {direction}", "pass over, into, or out");
-    }
-
-    private static void RequireBreak(Debugger debugger) => RequireBreakMode(ModeOf(debugger));
+    private static void RequireBreak(Debugger debugger) => DebuggerModes.RequireBreakMode(ModeOf(debugger));
 
     private static string ModeOf(Debugger debugger) => ModeName(debugger.CurrentMode);
 
@@ -1473,8 +1443,6 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         return int.TryParse(frameId[1..], out n) && n >= 0;
     }
 
-    private const int MaxValueLength = 500;
-
     // Drill paths are fed straight back to the C# evaluator, so they must be
     // valid C#: an indexer attaches without a dot (order.Items[0], never
     // order.Items.[0]).
@@ -1484,22 +1452,22 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     private ValueInfo SnapshotValue(Expression e, string? path)
     {
         var raw = SafeGet(() => e.Value) ?? "(unavailable)";
-        var truncated = raw.Length > MaxValueLength;
+        var value = ExceptionConfig.Truncate(raw) ?? raw;
         // A path is only useful when the value drills down: terminal values
         // (like the fake bridge) carry none, so dead expandables never surface.
-        var expandable = truncated || HasMembers(e);
+        var expandable = value.Length != raw.Length || HasMembers(e);
         return new ValueInfo(e.Name, SafeGet(() => e.Type) ?? "(unknown)",
-            truncated ? raw[..MaxValueLength] + " [truncated]" : raw,
+            value,
             expandable, expandable ? path : null);
     }
 
     private EvaluateResult SnapshotEvaluation(Expression e, string expression, string mode, string? lastHit)
     {
         var raw = SafeGet(() => e.Value) ?? "(unavailable)";
-        var truncated = raw.Length > MaxValueLength;
+        var value = ExceptionConfig.Truncate(raw) ?? raw;
         return new EvaluateResult(expression,
-            truncated ? raw[..MaxValueLength] + " [truncated]" : raw,
-            SafeGet(() => e.Type) ?? "(unknown)", truncated || HasMembers(e), mode, lastHit);
+            value,
+            SafeGet(() => e.Type) ?? "(unknown)", value.Length != raw.Length || HasMembers(e), mode, lastHit);
     }
 
     private List<ValueInfo> SnapshotMembers(Expression parent, string path, int max)

@@ -17,6 +17,20 @@ internal static class DebuggerModes
         if (mode == forbidden)
             throw DebugDomainException.Fail(code, detail, remediation);
     }
+
+    public static void RequireRunMode(string mode) =>
+        Require(mode, ErrorCodes.NotRunning, $"debuggee is {mode}, nothing to pause", "resume first, then pause while running", "run");
+
+    public static void RequireNotRunMode(string mode) =>
+        RequireNot(mode, "run", ErrorCodes.AlreadyRunning, "debuggee is already running", "pause first to inspect");
+
+    public static void RequireBreakMode(string mode) =>
+        Require(mode, ErrorCodes.NotInBreakMode, $"debuggee is {mode}",
+            "resume to a breakpoint or pause first; only inspect and step in break mode", "break");
+
+    public static void RequireStepDirection(string direction) =>
+        Require(direction, ErrorCodes.InvalidArgument, $"unknown step direction {direction}", "pass over, into, or out",
+            "over", "into", "out");
 }
 
 /// <summary>Single home for trim/substring/order list rules: haystacks and ordering stay with the caller.</summary>
