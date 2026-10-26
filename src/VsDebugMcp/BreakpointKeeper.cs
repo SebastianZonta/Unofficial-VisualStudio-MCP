@@ -12,7 +12,10 @@ internal sealed class BreakpointKeeper
     private readonly Func<Debugger, string> _modeOf;
     private readonly Func<Debugger, string?> _lastHitOf;
 
-    public BreakpointKeeper(SessionRegistry registry, Func<Debugger, string> modeOf, Func<Debugger, string?> lastHitOf)
+    public BreakpointKeeper(
+        SessionRegistry registry,
+        Func<Debugger, string> modeOf,
+        Func<Debugger, string?> lastHitOf)
     {
         _registry = registry;
         _modeOf = modeOf;
@@ -20,8 +23,14 @@ internal sealed class BreakpointKeeper
     }
 
     public (BreakpointInfo Info, string Mode, string? LastHit, bool Created) Set(
-        Debugger debugger, string sessionId, string file, int line,
-        string? cond, int? count, string? mode, string? log)
+        Debugger debugger,
+        string sessionId,
+        string file,
+        int line,
+        string? cond,
+        int? count,
+        string? mode,
+        string? log)
     {
         // VS hands back the existing breakpoint for an occupied location, so owning what Add
         // returns would let remove/detach delete the user's. Check first: an own repeat
@@ -29,21 +38,27 @@ internal sealed class BreakpointKeeper
         var live = new List<Breakpoint>();
         foreach (Breakpoint b in debugger.Breakpoints)
             live.Add(b);
+
         var snapshot = _registry.SnapshotOwned(sessionId);
         List<OwnedBreakpoint> owned = snapshot.Owned;
         List<LogpointSpec> specs = snapshot.Specs;
+
         (BreakpointInfo Info, string Mode, string? LastHit, bool Created) Occupied(int i)
         {
             var mine = owned.FirstOrDefault(o => SameBreakpoint(live[i], o.Breakpoint))
                 ?? throw BreakpointOptions.Exists(BreakpointOptions.ForeignId(i + 1), file, line);
             var spec = specs.FirstOrDefault(s => s.Id == mine.Id);
-            var info = SnapshotBreakpoint(live[i], mine.Id) with { LogMessage = spec?.LogMessage };
+            var info = SnapshotBreakpoint(live[i], mine.Id) with
+            {
+                LogMessage = spec?.LogMessage
+            };
             BreakpointOptions.RequireSameOptions(info, cond, count, mode, log);
             return (info, _modeOf(debugger), _lastHitOf(debugger), false);
         }
         var occupied = live.FindIndex(b => BreakpointOptions.SameLocation(b.File, b.FileLine, file, line));
         if (occupied >= 0)
             return Occupied(occupied);
+
         var created = debugger.Breakpoints.Add(
             Function: "", File: file, Line: line, Column: 1,
             Condition: cond ?? "", ConditionType: dbgBreakpointConditionType.dbgBreakpointConditionTypeWhenTrue,
@@ -60,6 +75,7 @@ internal sealed class BreakpointKeeper
         var handedBack = live.FindIndex(b => SameBreakpoint(b, bp));
         if (handedBack >= 0)
             return Occupied(handedBack);
+
         try
         {
             // Automation cannot observe pending-vs-bound (Concord-only); a successful Add means VS accepted it.
@@ -75,28 +91,42 @@ internal sealed class BreakpointKeeper
             {
                 // Nobody could ever remove this breakpoint (it would list as
                 // other<N>), so delete it before the error surfaces, never afterwards.
-                try { bp.Delete(); } catch { /* best effort */ }
+                try
+                {
+                    bp.Delete();
+                }
+                catch { /* best effort */ }
                 Release(bp);
                 throw;
             }
-            return (Info: info with { Id = id, Bound = true }, Mode: _modeOf(debugger), LastHit: _lastHitOf(debugger), Created: true);
+            return (Info: info with
+            {
+                Id = id,
+                Bound = true
+            }, Mode: _modeOf(debugger), LastHit: _lastHitOf(debugger), Created: true);
         }
         catch (COMException)
         {
             // Add succeeded but the call fails (e.g. busy): no id will own it, so it would
             // linger as other<N>. Delete it best-effort before the error surfaces.
-            try { bp.Delete(); } catch (COMException) { /* best effort */ }
+            try
+            {
+                bp.Delete();
+            }
+            catch (COMException) { /* best effort */ }
             throw;
         }
     }
 
     public (List<BreakpointInfo> Items, string Mode, string? LastHit, List<BreakpointLogEntry> Log) List(
-        Debugger debugger, string sessionId)
+        Debugger debugger,
+        string sessionId)
     {
         var snapshot = _registry.SnapshotOwned(sessionId);
         List<OwnedBreakpoint> owned = snapshot.Owned;
         List<LogpointSpec> specs = snapshot.Specs;
         List<BreakpointLogEntry> log = snapshot.Log;
+
         // Owned breakpoints under their stable ids (creation order), then every other
         // breakpoint in the VS instance under a positional, list-only id.
         var items = new List<BreakpointInfo>();
@@ -104,6 +134,7 @@ internal sealed class BreakpointKeeper
         var live = new List<Breakpoint>();
         foreach (Breakpoint bp in debugger.Breakpoints)
             live.Add(bp);
+
         foreach (var o in owned)
         {
             if (!StillExists(o.Breakpoint))
@@ -114,7 +145,10 @@ internal sealed class BreakpointKeeper
             }
             var spec = specs.FirstOrDefault(s => s.Id == o.Id);
             var info = SnapshotBreakpoint(o.Breakpoint, o.Id);
-            items.Add(spec is null ? info : info with { LogMessage = spec.LogMessage });
+            items.Add(spec is null ? info : info with
+            {
+                LogMessage = spec.LogMessage
+            });
         }
         for (var i = 0; i < live.Count; i++)
         {
@@ -122,15 +156,21 @@ internal sealed class BreakpointKeeper
                 continue;
             items.Add(SnapshotBreakpoint(live[i], BreakpointOptions.ForeignId(i + 1))
                 with
-            { Warning = BreakpointOptions.ForeignWarning });
+            {
+                Warning = BreakpointOptions.ForeignWarning
+            });
         }
+
         if (gone.Count > 0)
             _registry.Forget(sessionId, gone.Select(g => g.Id));
+
         return (items, _modeOf(debugger), _lastHitOf(debugger), log);
     }
 
     public (string RemovedId, string Mode, string? LastHit) Remove(
-        Debugger debugger, string sessionId, string breakpointId)
+        Debugger debugger,
+        string sessionId,
+        string breakpointId)
     {
         // Only ids this session minted resolve: a stale, positional or foreign id never
         // reaches a breakpoint the user (or another session) set.
@@ -157,7 +197,11 @@ internal sealed class BreakpointKeeper
     {
         foreach (var bp in owned.Select(o => o.Breakpoint))
         {
-            try { bp.Delete(); } catch { /* best effort */ }
+            try
+            {
+                bp.Delete();
+            }
+            catch { /* best effort */ }
             Release(bp);
         }
     }
@@ -166,7 +210,8 @@ internal sealed class BreakpointKeeper
     {
         // Hits accrue on the bound children; the pending parent always reports 0.
         var hits = 0;
-        foreach (Breakpoint child in bp.Children) hits += child.CurrentHits;
+        foreach (Breakpoint child in bp.Children)
+            hits += child.CurrentHits;
         return hits;
     }
 
@@ -187,12 +232,8 @@ internal sealed class BreakpointKeeper
 
     /// <summary>COM identity: the same breakpoint object may surface through a fresh RCW
     /// on each enumeration, so compare IUnknown pointers, not references.</summary>
-    private static bool SameBreakpoint(Breakpoint a, Breakpoint b)
-    {
-        if (ReferenceEquals(a, b))
-            return true;
-        return HaveSameIUnknown(a, b);
-    }
+    private static bool SameBreakpoint(Breakpoint a, Breakpoint b) =>
+        ReferenceEquals(a, b) || HaveSameIUnknown(a, b);
 
     private static bool HaveSameIUnknown(Breakpoint a, Breakpoint b)
     {
@@ -217,10 +258,13 @@ internal sealed class BreakpointKeeper
 
     private static void ReleasePointer(nint p)
     {
-        if (p != nint.Zero) Marshal.Release(p);
+        if (p != nint.Zero)
+            Marshal.Release(p);
     }
 
-    private static BreakpointInfo SnapshotBreakpoint(Breakpoint bp, string id)
+    private static BreakpointInfo SnapshotBreakpoint(
+        Breakpoint bp,
+        string id)
     {
         // Bind state is eventual and invisible to automation: a successful Add means accepted.
         // Option reads are best-effort; a transient COM failure falls back to the plain shape.
@@ -260,6 +304,10 @@ internal sealed class BreakpointKeeper
     /// <summary>Best-effort RCW release; failures are ignored by design.</summary>
     private static void Release(object obj)
     {
-        try { Marshal.ReleaseComObject(obj); } catch { /* best effort */ }
+        try
+        {
+            Marshal.ReleaseComObject(obj);
+        }
+        catch { /* best effort */ }
     }
 }

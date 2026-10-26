@@ -7,17 +7,29 @@ namespace VsDebugMcp;
 /// Dte is null once the instance is known dead; the record stays until detach.</summary>
 internal sealed class SessionEntry
 {
-    public DTE? Dte { get; set; }
+    public DTE? Dte
+    {
+        get; set;
+    }
     public string DisplayName { get; set; } = "";
-    public int Pid { get; set; }
-    public bool Dead { get; set; }
+    public int Pid
+    {
+        get; set;
+    }
+    public bool Dead
+    {
+        get; set;
+    }
     /// <summary>Breakpoints this session created, in creation order, under stable ids
     /// (never positions, never reused). The single record for remove, list and detach
     /// cleanup (deleted on detach so no stale conditional breakpoint surprises a later
     /// session). Guarded by the registry lock; RCWs touched on the dispatcher only.</summary>
     public List<OwnedBreakpoint> Owned { get; } = new();
     /// <summary>Mints bp&lt;N&gt; ids; only goes up.</summary>
-    public int BreakpointCounter { get; set; }
+    public int BreakpointCounter
+    {
+        get; set;
+    }
     /// <summary>Logpoints are emulated evaluate-then-decide (native log output lands in
     /// the VS Output window, which automation cannot read), so the Resume loop needs
     /// the template per breakpoint id. Guarded by the registry lock.</summary>
@@ -118,13 +130,18 @@ internal sealed class SessionRegistry
 
     public static bool ProbeAlive(DTE? dte)
     {
-        if (dte is null) return false;
+        if (dte is null)
+            return false;
         return IsResponsive(dte);
     }
 
     private static bool IsResponsive(DTE dte)
     {
-        try { _ = dte.Name; return true; }
+        try
+        {
+            _ = dte.Name;
+            return true;
+        }
         catch (Exception ex) when (ex is COMException or InvalidComObjectException) { return false; }
     }
 
@@ -141,7 +158,8 @@ internal sealed class SessionRegistry
 
     private static void ClearIfOwned(SessionEntry entry, DTE dte)
     {
-        if (!ReferenceEquals(entry.Dte, dte)) return;
+        if (!ReferenceEquals(entry.Dte, dte))
+            return;
         entry.Dte = null;
         entry.Dead = true;
     }

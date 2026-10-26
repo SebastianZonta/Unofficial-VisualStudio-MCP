@@ -47,6 +47,17 @@ jobs:
       - name: Build
         run: dotnet build VsDebugMcp.slnx
 
+      - name: Format gate (changed files only)
+        shell: pwsh
+        run: |
+          # .editorconfig as code: files the PR touches must be whitespace-clean.
+          # Repo-wide verify is unpassable (pre-format history), and full
+          # `dotnet format` also reports pre-existing analyzer suggestions, so the
+          # gate stays on the whitespace subcommand with a changed-file scope.
+          $base = (git merge-base HEAD origin/main 2>$null); if (-not $base) { $base = 'HEAD~1' }
+          $files = @(git diff --name-only --diff-filter=ACMRT $base HEAD -- '*.cs') | Where-Object { $_ -ne '' }
+          if ($files) { $inc = @(); foreach ($f in $files) { $inc += '--include'; $inc += $f }; dotnet format whitespace VsDebugMcp.slnx --verify-no-changes --no-restore @inc }
+
       - name: Test
         run: dotnet test VsDebugMcp.slnx --no-build
 

@@ -3,6 +3,7 @@
 ```powershell
 dotnet build VsDebugMcp.slnx              # solution is .slnx, not .sln; .NET 10 SDK (see global.json)
 dotnet test VsDebugMcp.slnx --no-build    # same order as CI (.github/workflows/ci.yml)
+dotnet format whitespace VsDebugMcp.slnx --include <touched-file.cs> --verify-no-changes --no-restore  # format gate for touched files only
 dotnet test --filter "FullyQualifiedName~<TestClass>"  # single suite
 dotnet tool restore                       # local crap4csharp (pinned in dotnet-tools.json)
 dotnet tool run crap4csharp --changed --no-coverage --no-progress --top 30  # fast triage, no test run

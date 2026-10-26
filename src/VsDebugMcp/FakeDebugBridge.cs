@@ -8,17 +8,29 @@ public sealed class FakeDebugBridge : IDebugBridge
     {
         public string InstanceKey { get; set; } = "";
         public string Mode { get; set; } = "design";
-        public string? LastHit { get; set; }
+        public string? LastHit
+        {
+            get; set;
+        }
         /// <summary>Breakpoints this session created, keyed by stable id.</summary>
         public Dictionary<string, FakeBreakpoint> Breakpoints { get; } = new();
         /// <summary>Per-session id counter: only goes up, so ids are never reused.</summary>
-        public int BreakpointCounter { get; set; }
+        public int BreakpointCounter
+        {
+            get; set;
+        }
         /// <summary>Rest of the VS instance's breakpoint list: set by the user or another session.</summary>
         public List<(string File, int Line)> ForeignBreakpoints { get; } = new();
         public List<BreakpointLogEntry> Log { get; } = new();
-        public bool Dead { get; set; }
+        public bool Dead
+        {
+            get; set;
+        }
         /// <summary>Target PID bound via attach_process or launch_process; null while unbound.</summary>
-        public int? TargetPid { get; set; }
+        public int? TargetPid
+        {
+            get; set;
+        }
         /// <summary>Seeded module table of the session's target process.</summary>
         public List<ModuleInfo> Modules { get; } = new();
         /// <summary>Exception-break settings, copied from the catalog at attach: per session, never shared.</summary>
@@ -26,9 +38,15 @@ public sealed class FakeDebugBridge : IDebugBridge
         /// <summary>Break-when-thrown values this session found at attach, so default restores them.</summary>
         public Dictionary<string, string> FoundExceptionModes { get; } = new(StringComparer.Ordinal);
         /// <summary>Throw armed for the next run; a null Message simulates a read refused under nse.</summary>
-        public FakeThrow? PendingThrow { get; set; }
+        public FakeThrow? PendingThrow
+        {
+            get; set;
+        }
         /// <summary>Exception the session is stopped on; null on every other stop.</summary>
-        public FakeThrow? CurrentException { get; set; }
+        public FakeThrow? CurrentException
+        {
+            get; set;
+        }
         /// <summary>Values written via set_variable, keyed by (frameId, variable name): per session, never shared.</summary>
         public Dictionary<(string FrameId, string Name), (string Value, string Type)> Writes { get; } = new();
     }
@@ -40,7 +58,10 @@ public sealed class FakeDebugBridge : IDebugBridge
         int HitCount, string? LogMessage)
     {
         public FakeBreakpoint WithHitCount(int hitCount) =>
-            this with { HitCount = hitCount };
+            this with
+            {
+                HitCount = hitCount
+            };
     }
 
     private readonly Dictionary<string, FakeSession> _sessions = new();
@@ -57,18 +78,30 @@ public sealed class FakeDebugBridge : IDebugBridge
     public bool SymbolsLoaded { get; set; } = true;
 
     /// <summary>Fake for an over-budget wait. When true, resume/step return a timeout status without changing mode.</summary>
-    public bool ForceTimeout { get; set; }
+    public bool ForceTimeout
+    {
+        get; set;
+    }
 
     /// <summary>Fake for a busy VS: the next N remove_breakpoint calls fail with vs-busy and delete nothing.</summary>
-    public int RemoveBusyFailures { get; set; }
+    public int RemoveBusyFailures
+    {
+        get; set;
+    }
 
     /// <summary>Fake for a parsed-but-not-evaluable expression. When true, evaluate returns invalid-expression.</summary>
-    public bool ForceInvalidExpression { get; set; }
+    public bool ForceInvalidExpression
+    {
+        get; set;
+    }
 
     public List<VsInstanceInfo> Instances { get; } = new();
 
     /// <summary>Exception types every new session starts with, and their default break mode.</summary>
-    public Dictionary<string, string> ExceptionCatalog { get; } = new(StringComparer.Ordinal)
+    public Dictionary<string, string> ExceptionCatalog
+    {
+        get;
+    } = new(StringComparer.Ordinal)
     {
         ["System.ArgumentException"] = ExceptionBreakModes.UnhandledOnly,
         ["System.InvalidOperationException"] = ExceptionBreakModes.UnhandledOnly,

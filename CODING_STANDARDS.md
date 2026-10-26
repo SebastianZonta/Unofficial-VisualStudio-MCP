@@ -41,3 +41,23 @@ adding a third.
 
 Behaviour that differs from the spec because the platform cannot do what it
 asks gets an ADR in `docs/adr/` and a pointer from the spec line it contradicts.
+
+## Formatting
+
+Readability rules for review; `.editorconfig` at the root is the mechanical
+half (CI's format gate runs `dotnet format whitespace` on changed `.cs`
+files only — full `dotnet format` also reports pre-existing analyzer
+suggestions, so the gate stays whitespace-scoped), this section is the
+judgement half.
+
+- Purpose-blocks breathe: one blank line before and after each `if`/`for`/`while`/`try`
+separating it from surrounding statements; statements serving one goal stay
+together with no blank lines inside.
+- Signatures: 0–1 params stay on the method line; 2+ params go one per line,
+indented, closing paren on its own line. New code follows it; existing long
+signatures reflow only when their file is touched for another reason.
+- Sugar: collapsed returns (`return a || b();`), target-typed `new`, and
+collection expressions where the file already uses them. The `.editorconfig`
+already carries them as warnings (they surface in the IDE, never break the
+build since `EnforceCodeStyleInBuild` is unset); promote one to `error` only
+with a cleanup commit that fixes every hit.

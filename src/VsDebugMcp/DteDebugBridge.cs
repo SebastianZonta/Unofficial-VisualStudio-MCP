@@ -134,7 +134,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     /// <summary>Best-effort RCW release; failures are ignored by design.</summary>
     private static void Release(object obj)
     {
-        try { Marshal.ReleaseComObject(obj); } catch { /* best effort */ }
+        try
+        {
+            Marshal.ReleaseComObject(obj);
+        }
+        catch { /* best effort */ }
     }
 
     private void ReleaseOnDispatcher(DTE dte)
@@ -221,7 +225,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 EnvDTE.Process? target = null;
                 foreach (EnvDTE.Process candidate in debugger.LocalProcesses)
                 {
-                    if (candidate.ProcessID == processId) { target = candidate; break; }
+                    if (candidate.ProcessID == processId)
+                    {
+                        target = candidate;
+                        break;
+                    }
                 }
                 if (target is null)
                 {
@@ -293,7 +301,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                         EnvDTE80.Process2? target = null;
                         foreach (EnvDTE80.Process2 candidate in debugger.LocalProcesses)
                         {
-                            if (candidate.ProcessID == started.Pid) { target = candidate; break; }
+                            if (candidate.ProcessID == started.Pid)
+                            {
+                                target = candidate;
+                                break;
+                            }
                         }
                         if (target is null)
                             throw new DebugDomainException(
@@ -351,7 +363,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             return new SetBreakpointResult(Info, Mode, LastHit, Created: false);
         // Round-trip the logpoint template on set: the VS-side log action is not
         // automation-readable, so the session spec is the source for LogMessage.
-        return new SetBreakpointResult(Info with { LogMessage = log }, Mode, LastHit, Created: true);
+        return new SetBreakpointResult(Info with
+        {
+            LogMessage = log
+        }, Mode, LastHit, Created: true);
     }
 
     public async Task<ListBreakpointsResult> ListBreakpointsAsync(string sessionId, CancellationToken ct)
@@ -370,7 +385,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             var modules = new List<ModuleInfo>();
             foreach (EnvDTE.Process process in debugger.DebuggedProcesses)
             {
-                if (process is not EnvDTE90.Process3 p3) continue;
+                if (process is not EnvDTE90.Process3 p3)
+                    continue;
                 foreach (EnvDTE90.Module module in p3.Modules)
                     modules.Add(SnapshotModule(module));
             }
@@ -502,10 +518,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     private async Task<ExecutionResult> PollResumeAsync(string sessionId, DateTime deadline, int timeoutMs, int logged, CancellationToken ct)
     {
         var seenRun = false;
+
         while (true)
         {
             ct.ThrowIfCancellationRequested();
             var remaining = deadline - DateTime.UtcNow;
+
             if (remaining <= TimeSpan.Zero)
             {
                 // Go was issued and the dispatcher is free: still-running is success.
@@ -519,11 +537,14 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     return new ExecutionResult("run", null, "ok", "resume issued; debuggee still running, dispatcher is free");
                 return new ExecutionResult("unknown", null, "timeout", "resume exceeded timeoutMs; debugger state unreadable, dispatcher is free, retry or pause");
             }
+
             await Task.Delay(ClampDelay(remaining), ct);
             await RequireSessionAsync(sessionId, ct);
             var (mode, lastHit) = await TrySnapshotAsync(sessionId, ct);
+
             if (mode == "run")
                 seenRun = true;
+
             if (mode == "break")
             {
                 // Emulated logpoint: buffer the formatted template and keep going;
@@ -540,9 +561,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 var (confirmMode, confirmHit) = await TrySnapshotAsync(sessionId, ct);
                 if (confirmMode != "break" || !string.Equals(confirmHit, lastHit, StringComparison.OrdinalIgnoreCase))
                     continue;
+
                 return new ExecutionResult(mode, lastHit, "ok",
                     logged > 0 ? $"hit breakpoint; logged {logged} logpoint hits" : "hit breakpoint");
             }
+
             if (mode == "design")
                 return new ExecutionResult(mode, null, "ok", "run ended back in design mode");
         }
@@ -580,7 +603,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                     }
                 });
                 var tid = -1;
-                try { tid = debugger.CurrentThread?.ID ?? -1; } catch (COMException) { }
+                try
+                {
+                    tid = debugger.CurrentThread?.ID ?? -1;
+                }
+                catch (COMException) { }
                 return ((string, string, int, int)?)(captured.Id, message, BreakpointKeeper.HitsOf(owner.Breakpoint), tid);
             }, 10_000, ct);
         }
@@ -654,9 +681,16 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 if (mode != "break")
                     return (mode, (string?)null, -1, -1);
                 var tid = -1;
-                try { tid = debugger.CurrentThread?.ID ?? -1; } catch (COMException) { }
+                try
+                {
+                    tid = debugger.CurrentThread?.ID ?? -1;
+                }
+                catch (COMException) { }
                 var hits = -1;
-                try { hits = BreakpointKeeper.HitsOf(owner.Breakpoint); }
+                try
+                {
+                    hits = BreakpointKeeper.HitsOf(owner.Breakpoint);
+                }
                 catch (Exception ex) when (ex is COMException or InvalidComObjectException) { }
                 return (mode, LastHitOf(debugger), tid, hits);
             }, 10_000, ct);
@@ -761,7 +795,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             var index = 0;
             foreach (StackFrame frame in debugger.CurrentThread.StackFrames)
             {
-                if (frames.Count >= maxFrames) break;
+                if (frames.Count >= maxFrames)
+                    break;
                 // EnvDTE exposes no file/line on stack frames (Concord-only); function+module identify the frame.
                 frames.Add(new StackFrameInfo($"f{index++}", frame.FunctionName, frame.Module, null, null));
             }
@@ -795,13 +830,17 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 var vars = new List<ValueInfo>();
                 foreach (Expression local in frame.Locals)
                 {
-                    if (vars.Count >= maxVariables) break;
-                    if (seen.Add(local.Name)) vars.Add(SnapshotValue(local, local.Name));
+                    if (vars.Count >= maxVariables)
+                        break;
+                    if (seen.Add(local.Name))
+                        vars.Add(SnapshotValue(local, local.Name));
                 }
                 foreach (Expression arg in frame.Arguments)
                 {
-                    if (vars.Count >= maxVariables) break;
-                    if (seen.Add(arg.Name)) vars.Add(SnapshotValue(arg, arg.Name));
+                    if (vars.Count >= maxVariables)
+                        break;
+                    if (seen.Add(arg.Name))
+                        vars.Add(SnapshotValue(arg, arg.Name));
                 }
                 return new ReadVariablesResult(frameId, null, vars, ModeOf(debugger), LastHitOf(debugger));
             }
@@ -950,7 +989,12 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 () => SnapshotException(DebuggerOf(SessionDte(sessionId))), 10_000, ct);
             // lastHit is for breakpoint hits only; BreakpointLastHit may still name an earlier one.
             return snapshot is not { } s ? result
-                : result with { LastHit = null, Note = ExceptionConfig.BreakNote(s.Reason, s.Info), Exception = s.Info };
+                : result with
+                {
+                    LastHit = null,
+                    Note = ExceptionConfig.BreakNote(s.Reason, s.Info),
+                    Exception = s.Info
+                };
         }
         catch (Exception ex) when (ex is COMException or TimeoutException)
         {
@@ -1038,7 +1082,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private static string ModeName(dbgDebugMode mode)
     {
-        if (mode == dbgDebugMode.dbgBreakMode) return "break";
+        if (mode == dbgDebugMode.dbgBreakMode)
+            return "break";
         return RunOrDesign(mode);
     }
 
@@ -1217,7 +1262,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         var index = 0;
         foreach (StackFrame frame in debugger.CurrentThread.StackFrames)
         {
-            if (index++ == n) return frame;
+            if (index++ == n)
+                return frame;
         }
         return null;
     }
@@ -1264,7 +1310,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         {
             foreach (Expression child in parent.DataMembers)
             {
-                if (items.Count >= max) break;
+                if (items.Count >= max)
+                    break;
                 items.Add(SnapshotValue(child, JoinMemberPath(path, child.Name)));
             }
         }
@@ -1277,13 +1324,19 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private static bool HasMembers(Expression e)
     {
-        try { return e.DataMembers.Count > 0; }
+        try
+        {
+            return e.DataMembers.Count > 0;
+        }
         catch (COMException) { return false; }
     }
 
     private string? SafeGet(Func<string> read)
     {
-        try { return read(); }
+        try
+        {
+            return read();
+        }
         catch (COMException ex)
         {
             // Disconnects are per-session death, never fallback text: rethrow so the
@@ -1379,7 +1432,11 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             }
             finally
             {
-                try { proc.Dispose(); } catch { /* best effort */ }
+                try
+                {
+                    proc.Dispose();
+                }
+                catch { /* best effort */ }
             }
             var owner = owners.TryGetValue(pid, out var o) ? o : null;
             // Unknown owner fails closed: not mine, hidden under the owned-only default,
@@ -1475,7 +1532,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
                 try
                 {
                     moniker.GetDisplayName(ctx, null, out var name);
-                    if (name != displayName) continue;
+                    if (name != displayName)
+                        continue;
                     rot.GetObject(moniker, out var obj);
                     return obj;
                 }
@@ -1519,7 +1577,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         }
         finally
         {
-            if (dte is not null) Release(dte);
+            if (dte is not null)
+                Release(dte);
         }
     }
 
@@ -1527,7 +1586,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         if (solutionPath.Length == 0)
             return "";
-        try { return Path.GetFileNameWithoutExtension(solutionPath) ?? ""; }
+        try
+        {
+            return Path.GetFileNameWithoutExtension(solutionPath) ?? "";
+        }
         catch (Exception) { return ""; }
     }
 
@@ -1556,7 +1618,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     {
         foreach (Project project in projects)
         {
-            try { CollectProject(project, projectNames); }
+            try
+            {
+                CollectProject(project, projectNames);
+            }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
                 TraceFallback(ex, "skipping unreadable project during listing");
@@ -1574,13 +1639,17 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
             return;
         }
         var items = TryGetFolderItems(project);
-        if (items is null) return;
+        if (items is null)
+            return;
         CollectFolderChildren(items, projectNames);
     }
 
     private bool TryGetProjectKind(Project project, out string kind)
     {
-        try { kind = project.Kind ?? ""; }
+        try
+        {
+            kind = project.Kind ?? "";
+        }
         catch (COMException ex)
         {
             TraceFallback(ex, "skipping project with unreadable kind");
@@ -1592,7 +1661,10 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     private ProjectItems? TryGetFolderItems(Project project)
     {
-        try { return project.ProjectItems; }
+        try
+        {
+            return project.ProjectItems;
+        }
         catch (COMException ex)
         {
             TraceFallback(ex, "skipping solution folder with unreadable items");
@@ -1611,7 +1683,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         try
         {
             var sub = item.SubProject;
-            if (sub is not null) CollectProject(sub, projectNames);
+            if (sub is not null)
+                CollectProject(sub, projectNames);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1624,7 +1697,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
         try
         {
             var name = project.Name;
-            if (!string.IsNullOrWhiteSpace(name)) projectNames.Add(name);
+            if (!string.IsNullOrWhiteSpace(name))
+                projectNames.Add(name);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1634,7 +1708,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (_disposed)
+            return;
         _disposed = true;
         var live = _registry.Drain();
         // One best-effort release-all serialized on the dispatcher (never the caller thread).
@@ -1657,7 +1732,8 @@ internal sealed partial class DteDebugBridge : IDebugBridge, IDisposable
     /// <summary>Trace log for every silent fallback (CA1848: LoggerMessage delegate, no formatting cost when disabled).</summary>
     private void TraceFallback(Exception ex, string reason)
     {
-        if (_logger is { } logger) LogSilentFallback(logger, ex, reason);
+        if (_logger is { } logger)
+            LogSilentFallback(logger, ex, reason);
     }
 
     [LoggerMessage(Level = LogLevel.Trace, Message = "Silent fallback: {reason}")]
