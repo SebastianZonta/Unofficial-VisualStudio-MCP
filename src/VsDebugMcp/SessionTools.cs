@@ -8,7 +8,7 @@ public sealed class SessionTools
 {
     [McpServerTool(Name = "attach")]
     [Description("Attach to the running VS 2026 instance and open a debug session. Returns a sessionId scoping all later calls.")]
-// TODO: add ILogger when tools become instance classes; static entry points keep no logger by design.
+    // TODO: add ILogger when tools become instance classes; static entry points keep no logger by design.
     public static Task<AttachResult> AttachAsync(
         IDebugBridge bridge,
         [Description("Optional explicit VS instance override. Omit to bind the newest running VS 2026.")]
@@ -39,7 +39,7 @@ public sealed class SessionTools
         => ToolPipeline.RunSessionAsync(sessionId, () => bridge.DetachAsync(sessionId, cancellationToken));
 
     [McpServerTool(Name = "list_processes")]
-    [Description("List local target processes (program under test candidates). Session-less and read-only; attach with the entry's pid plus consent:true.")]
+    [Description("List local target processes (program under test candidates). Session-less and read-only; pid+name only, no command line (N x dotnet is normal — prefer launch_process with absolute exe path); attach with the entry's pid plus consent:true.")]
     public static Task<ListProcessesResult> ListProcessesAsync(
         IDebugBridge bridge,
         [Description("Optional case-insensitive substring filter on process name.")] string? nameFilter = null,

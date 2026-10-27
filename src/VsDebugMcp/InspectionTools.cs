@@ -49,7 +49,7 @@ public sealed class InspectionTools
         }, () => bridge.SetVariableAsync(sessionId, frameId, path, value, consent, cancellationToken));
 
     [McpServerTool(Name = "evaluate")]
-    [Description("Evaluate a read-only expression in the top frame (f0) of the active session. Requires break mode. Assignment, ++/--, and statements are rejected; calls with side effects are refused.")]
+    [Description("Evaluate a read-only expression in the top frame (f0) of the active session. Requires break mode. Assignment, ++/--, and statements are rejected; calls with side effects are refused under , nse (e.g. exception.ToString()) — drill via read_variables $exception instead.")]
     public static Task<EvaluateResult> EvaluateAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,

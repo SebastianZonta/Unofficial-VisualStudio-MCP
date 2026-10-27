@@ -15,7 +15,7 @@ public sealed class ExecutionTools
         => ToolPipeline.RunSessionAsync(sessionId, () => bridge.PauseAsync(sessionId, cancellationToken));
 
     [McpServerTool(Name = "resume")]
-    [Description("Resume execution in the active session until a breakpoint or the timeout. An over-budget wait returns a timeout status, never a hang.")]
+    [Description("Resume execution in the active session until a breakpoint or the timeout. An over-budget wait returns a timeout status, never a hang. An earlier or foreign (other<N>) breakpoint hit wins.")]
     public static Task<ExecutionResult> ResumeAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,
@@ -24,7 +24,7 @@ public sealed class ExecutionTools
         => ToolPipeline.RunSessionTimeoutAsync(sessionId, timeoutMs, () => bridge.ResumeAsync(sessionId, timeoutMs, cancellationToken));
 
     [McpServerTool(Name = "run_to_cursor")]
-    [Description("Run the debuggee in the active session to a file/line via a temporary breakpoint, removed on every exit. Requires break or run mode; an earlier breakpoint hit wins; an over-budget wait returns like resume.")]
+    [Description("Run the debuggee in the active session to a file/line via a temporary breakpoint, removed on every exit. Requires break or run mode; an earlier or foreign (other<N>) breakpoint hit wins; an over-budget wait returns like resume.")]
     public static Task<ExecutionResult> RunToCursorAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,

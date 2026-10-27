@@ -7,7 +7,7 @@ namespace VsDebugMcp;
 public sealed class BreakpointTools
 {
     [McpServerTool(Name = "set_breakpoint")]
-    [Description("Set a file/line breakpoint in the active session. Returns immediately with bind state; an unbound breakpoint carries a warning, never an error. Optional condition (read-only expression, break only when true), hitCount with hitCountMode exact/every, or logMessage template with {expression} holes (a logpoint never stops).")]
+    [Description("Set a file/line breakpoint in the active session. Returns immediately with bind state; an unbound breakpoint carries a warning, never an error (unbound is not failure — check list_modules; lambdas/minimal-API often stay unbound while exception breaks still fire). Optional condition (read-only expression, break only when true), hitCount with hitCountMode exact/every, or logMessage template with {expression} holes (a logpoint never stops).")]
     public static Task<SetBreakpointResult> SetBreakpointAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,
