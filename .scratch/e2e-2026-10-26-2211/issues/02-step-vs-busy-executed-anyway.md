@@ -68,8 +68,19 @@ see `GLOSSARY.md`.
   passed / 0 failed (E2E 9 skipped, manual-only). Format clean on the src
   file; the test file's xUnit1031 warning (line 82, blocking call) pre-exists
   and is untouched.
-- Live T1–T5 re-check folded into the next normal pass, not run standalone:
-  the change is behavior-free (strings + docs), the race cannot be induced on
-  demand (0 vs-busy occurrences in the 6 prior scoped launches), and a live
-  run needs a user host-restart window anyway. The next vs-busy-on-step in
-  any pass exercises the new rule.
+- Live T1–T5 re-check (2026-10-27, fresh binary
+  `standalone-step-vsbusy\VsDebugMcp.exe`, VS 18.0 pid 41572, session
+  `1d4098e5…`): breakpoint at `STEP_START` (Scenarios.cs:56), launch `step`
+  → break. No `vs-busy` occurred (consistent with its rarity: 0 in the 6
+  prior scoped launches), so the snapshot-first rule had nothing to trigger
+  on — the flow it guards was exercised cleanly instead:
+
+  | Id | Result |
+  |---|---|
+  | T1 | PASS: `a` 0 → step over `ok` → `a` 1 |
+  | T2 | PASS: step into → `f0` contains `Add` |
+  | T3 | PASS: step out → `f0` contains `Step` (the R2 double-step shape, clean this time) |
+  | T4 | PASS: `c` = 4 after 2 overs |
+  | T5 | PASS: `sideways` → `invalid-argument` |
+
+  Breakpoint removed, resume → `design`; detached, VS stopped.
