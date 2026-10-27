@@ -1,6 +1,6 @@
 # 03: E28 manual run-to-cursor window + phase H (needs a person at the keyboard)
 
-**Status:** ready-for-human
+**Status:** resolved (ran live 2026-10-27 with the user at the keyboard: H1–H5 + E28 all PASS, evidence in `.scratch/e2e-runs/2026-10-26-2211.md` Phase H section; VS A stopped, no instances/sessions/sandbox processes left)
 
 **What (E2E 2026-10-26-2211-R3, E28 BLOCKED):**
 E28 needs a person setting a breakpoint in VS mid-`run_to_cursor` List–Set
