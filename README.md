@@ -29,6 +29,12 @@ curl -fsSL https://raw.githubusercontent.com/SebastianZonta/Unofficial-VisualStu
 Requires 64-bit Windows + VS 2026 running as the same user as the MCP host.
 Full setup — manual publish, client registration, smoke test — lives in [INSTALL.md](INSTALL.md).
 
+> [!WARNING]
+> Run your agent host (terminal, sandbox, MCP client) as the same Windows user
+> and elevation as VS 2026. The server inherits the host's token, so a mismatch
+> fails closed (`user-mismatch`, COM unreachable): admin VS needs an admin host,
+> and sandboxes (WSL/Docker/elevated split tokens) cannot reach a desktop VS.
+
 ## What it does
 
 An agent workflow looks like this:
