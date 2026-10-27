@@ -209,6 +209,8 @@ present; the workflow resolves it via `vswhere` → `VSINSTALLDIR` (same as
 `ci.yml`). Releases attach binaries to a tag
 ([managing releases](https://docs.github.com/en/repositories/releasing-projects-on-github/managing-releases-in-a-repository)).
 
+Ship with `git tag vX.Y.Z && git push origin vX.Y.Z` (semver with `v` prefix; the workflow validates `^\d+\.\d+\.\d+$`): test → `publish-fresh.ps1 -SingleFile` → smoke test → `gh release create` with the zip + `SHA256SUMS.txt` + installers. Precondition: CI green on the tagged commit. The installers download from `releases/latest`, so without a published release they have nothing to install.
+
 ### 4. Coworker install scripts (landed: `install.ps1` + `install.sh` at repo root)
 
 The original sketch was the starting point; the landed scripts additionally

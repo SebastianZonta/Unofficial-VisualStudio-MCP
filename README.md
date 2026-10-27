@@ -1,5 +1,9 @@
 # VsDebugMcp
 
+[![CI](https://github.com/SebastianZonta/Unofficial-VisualStudio-MCP/actions/workflows/ci.yml/badge.svg)](https://github.com/SebastianZonta/Unofficial-VisualStudio-MCP/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/SebastianZonta/Unofficial-VisualStudio-MCP)](https://github.com/SebastianZonta/Unofficial-VisualStudio-MCP/releases/latest)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
 Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, inspect, and resume a local debuggee, all through 21 tools over stdio.
 
 > **Unofficial project. Not affiliated with, sponsored, or endorsed by Microsoft.**
@@ -7,11 +11,23 @@ Drive a running Visual Studio 2026 debugger from an MCP client: attach, break, i
 > This server talks to a VS you already have running via its public COM automation
 > (`EnvDTE`) interface. It is a community integration, not a Microsoft product, and it
 > ships with no warranty. Licensed under Apache 2.0 — see [LICENSE](LICENSE).
-See [INSTALL.md](INSTALL.md) for setup.
 
-## Documentation
+## Installation
 
-Everything is indexed in [docs/README.md](docs/README.md): tool reference ([TOOLS.md](docs/TOOLS.md)), failures ([TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)), decisions ([ADRs](docs/adr/README.md)), agent workflow, and work tracking.
+```powershell
+irm https://raw.githubusercontent.com/SebastianZonta/Unofficial-VisualStudio-MCP/main/install.ps1 | iex
+```
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/SebastianZonta/Unofficial-VisualStudio-MCP/main/install.sh | bash
+```
+
+> [!TIP]
+> Close the MCP host first (it locks the exe). Creating `C:\Tools\VsDebugMcp`
+> normally needs an elevated shell — or pass `-Dest`/`--dest` under your profile.
+
+Requires 64-bit Windows + VS 2026 running as the same user as the MCP host.
+Full setup — manual publish, client registration, smoke test — lives in [INSTALL.md](INSTALL.md).
 
 ## What it does
 
@@ -24,6 +40,9 @@ An agent workflow looks like this:
 5. `set_breakpoint` → `resume` → `read_stack` / `read_variables` / `evaluate` → `resume`.
 
 ## Tools (21)
+
+<details>
+<summary>Full tool list</summary>
 
 | Tool | One line |
 |---|---|
@@ -49,25 +68,21 @@ An agent workflow looks like this:
 | `set_variable` | Write one variable (frame + `read_variables` path). Needs `consent: true` on every call; strict typing. Requires break mode. |
 | `evaluate` | Read-only expression. No assignments, no statements. Requires break mode. |
 
+</details>
+
 Failures are structured: `code: detail; remediation: …` (e.g. `consent-required`,
-`user-mismatch`, `process-not-found`, `already-bound`, `no-session`, `vs-not-running`); the full list is the
-[error catalog](docs/TOOLS.md#error-catalog). See
-[GLOSSARY.md](GLOSSARY.md) for the vocabulary these messages use
+`user-mismatch`, `process-not-found`, `already-bound`, `no-session`, `vs-not-running`).
+See [GLOSSARY.md](GLOSSARY.md) for the vocabulary these messages use
 (VS instance vs debug session vs target process vs instance override).
 
 ## Requirements
 
-- 64-bit Windows, Visual Studio 2026 running as the same user as the MCP host.
 - For running from source: .NET 10 SDK. A non-default VS install path needs
-  `VSINSTALLDIR` set ([TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md#build-envdte-hintpath-misses)).
+  `VSINSTALLDIR` set.
 - No VS needed for the unit tests (they run against an in-memory fake bridge).
-
-Full setup — one-line install, manual publish, client
-registration, smoke test — lives in [INSTALL.md](INSTALL.md).
 
 ## Develop
 
-Build, test, and publish live in [docs/agents/build.md](docs/agents/build.md) —
 `dotnet build` / `dotnet test` need no VS (fake bridge); publish only via
 `scripts/publish-fresh.ps1` to a fresh empty folder with the client stopped.
 
