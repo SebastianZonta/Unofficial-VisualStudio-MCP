@@ -160,7 +160,10 @@ if (-not $ConfigOnly) {
   $zip = "$env:TEMP\VsDebugMcp-win-x64.zip"
   Write-Host "Downloading $Base/VsDebugMcp-win-x64.zip ..."
   Invoke-WebRequest -Uri "$Base/VsDebugMcp-win-x64.zip" -OutFile $zip -UseBasicParsing
-  $line = ((Invoke-WebRequest -Uri "$Base/SHA256SUMS.txt" -UseBasicParsing).Content -split "`n") | Where-Object { $_ -match '^[0-9a-fA-F]{64}\s+[* ]?VsDebugMcp-win-x64\.zip\s*$' } | Select-Object -First 1
+  # Windows PowerShell 5.1 may hand back bytes for .Content: decode before splitting
+  $resp = Invoke-WebRequest -Uri "$Base/SHA256SUMS.txt" -UseBasicParsing
+  $sums = if ($resp.Content -is [byte[]]) { [System.Text.Encoding]::UTF8.GetString($resp.Content) } else { [string]$resp.Content }
+  $line = ($sums -split "`n") | Where-Object { $_ -match '^[0-9a-fA-F]{64}\s+[* ]?VsDebugMcp-win-x64\.zip\s*$' } | Select-Object -First 1
   if (-not $line) { throw 'No VsDebugMcp-win-x64.zip entry in SHA256SUMS.txt - has a release been published yet?' }
   $expected = ($line -split '\s+')[0].ToLower()
   $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
