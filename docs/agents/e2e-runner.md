@@ -115,7 +115,10 @@ P9/P3 cases; they have no automated audit case.
 - **Evidence.** For each case, quote the relevant fields of the tool result (or
   the error `code: detail`).
 - **Retries.** Retry once on `vs-busy` or a `timeout` status before calling it a
-  FAIL. Never retry an assertion until it passes.
+  FAIL. Never retry an assertion until it passes. After `vs-busy` (or `timeout`)
+  on a non-idempotent tool (`step`; `resume`/`run_to_cursor` already re-snapshot
+  by design), re-snapshot state first (`read_stack` / mode+lastHit) and retry
+  only if still in the pre-call state.
 - **Isolation.** Every `attach` passes `instanceOverride` (the display name of an
   instance you started). The only exception is M1, which targets the newest
   instance on purpose. Never touch a VS instance, debug session or target

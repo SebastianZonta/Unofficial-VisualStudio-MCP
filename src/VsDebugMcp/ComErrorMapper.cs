@@ -17,7 +17,7 @@ internal static class ComErrorMapper
     public static bool IsDisconnected(COMException ex) => ex.HResult is
         RpcEDisconnected or RpcSServerUnavailable or RpcSUnknownIf or RpcEServerCallRetryLater;
 
-    /// <summary>True when VS refused the call (busy): nothing happened, so the target is unchanged.</summary>
+    /// <summary>True when VS refused the call (busy): RPC_E_CALL_REJECTED after the retry window.</summary>
     public static bool IsCallRejected(COMException ex) => ex.HResult == RpcECallRejected;
 
     /// <summary>True only for a genuine evaluator refusal (E_FAIL): the only shape mapped
@@ -28,7 +28,7 @@ internal static class ComErrorMapper
     {
         RpcECallRejected => new DebugDomainException(
             ErrorCodes.VsBusy, $"Visual Studio rejected the automation call (HRESULT 0x{RpcECallRejected:X8}; modal dialog or busy UI thread)",
-            "dismiss any modal dialog in VS and retry", ex),
+            "dismiss any modal dialog in VS and retry; for step-class calls, re-read state first: a rejected call may still have executed", ex),
         EAccessDenied => new DebugDomainException(
             ErrorCodes.ElevationMismatch, $"access denied talking to Visual Studio (HRESULT 0x{EAccessDenied:X8}; integrity-level mismatch)",
             "restart the bridge at the same elevation as VS (both elevated or both not)", ex),

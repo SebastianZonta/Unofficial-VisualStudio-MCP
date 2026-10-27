@@ -11,6 +11,7 @@ public sealed class ComPlumbingTests
 
         Assert.Equal(ErrorCodes.VsBusy, ex.Code);
         Assert.Contains("0x80010001", ex.Message);
+        Assert.Contains("re-read state first", ex.Message);
     }
 
     [Fact]
