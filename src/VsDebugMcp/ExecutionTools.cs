@@ -15,7 +15,7 @@ public sealed class ExecutionTools
         => ToolPipeline.RunSessionAsync(sessionId, () => bridge.PauseAsync(sessionId, cancellationToken));
 
     [McpServerTool(Name = "resume")]
-    [Description("Resume execution in the active session until a breakpoint or the timeout. An over-budget wait returns a timeout status, never a hang. An earlier or foreign (other<N>) breakpoint hit wins.")]
+    [Description("Resume execution in the active session until a breakpoint or the timeout. An over-budget wait returns a timeout status, never a hang. An earlier or foreign (other<N>) breakpoint hit wins. If the result mode is break, inspect directly — pausing a stopped debuggee fails.")]
     public static Task<ExecutionResult> ResumeAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,
@@ -51,7 +51,7 @@ public sealed class ExecutionTools
         }, () => bridge.StepAsync(sessionId, direction, timeoutMs, cancellationToken));
 
     [McpServerTool(Name = "list_exception_settings")]
-    [Description("List the session's CLR exception-break settings: first-chance (break when thrown) or unhandled-only. Read-only; any mode, including run.")]
+    [Description("List the session's CLR exception-break settings: first-chance (break when thrown) or unhandled-only. Read-only; any mode, including run. The unfiltered list is large; pass nameFilter.")]
     public static Task<ListExceptionSettingsResult> ListExceptionSettingsAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,

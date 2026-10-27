@@ -39,7 +39,7 @@ public sealed class SessionTools
         => ToolPipeline.RunSessionAsync(sessionId, () => bridge.DetachAsync(sessionId, cancellationToken));
 
     [McpServerTool(Name = "list_processes")]
-    [Description("List local target processes (program under test candidates). Session-less and read-only; pid+name only, no command line (N x dotnet is normal — prefer launch_process with absolute exe path); attach with the entry's pid plus consent:true.")]
+    [Description("List local target processes (program under test candidates). Session-less and read-only; pid+name only, no command line — same-name processes are normal, disambiguate via launch_process with absolute exe path; attach with the entry's pid plus consent:true.")]
     public static Task<ListProcessesResult> ListProcessesAsync(
         IDebugBridge bridge,
         [Description("Optional case-insensitive substring filter on process name.")] string? nameFilter = null,
