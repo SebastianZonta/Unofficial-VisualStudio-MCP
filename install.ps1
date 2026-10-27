@@ -45,7 +45,7 @@ function To-Hashtable($o) {
 }
 
 function Merge-JsonFile([string]$Path, [scriptblock]$Merge) {
-  $dir = Split-Path -LiteralPath $Path -Parent
+  $dir = [System.IO.Path]::GetDirectoryName($Path)  # Split-Path -LiteralPath -Parent is ambiguous on Windows PowerShell 5.1
   if ($dir -and -not (Test-Path -LiteralPath $dir)) { [System.IO.Directory]::CreateDirectory($dir) | Out-Null }
   $obj = @{}
   if (Test-Path -LiteralPath $Path) {
@@ -53,14 +53,14 @@ function Merge-JsonFile([string]$Path, [scriptblock]$Merge) {
       $raw = [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding $false, $true))  # strict: invalid bytes throw (skip) instead of silently sanitizing, matching install.sh
       if (-not [string]::IsNullOrWhiteSpace($raw)) { $obj = To-Hashtable ($raw | ConvertFrom-Json) }
       if (-not ($obj -is [hashtable])) {
-        Write-Warning "Skipping $Path: root is not a JSON object; left untouched"
+        Write-Warning "Skipping ${Path}: root is not a JSON object; left untouched"
         return $false
       }
     }
-    catch { Write-Warning "Skipping $Path: not valid JSON ($($_.Exception.Message))"; return $false }
+    catch { Write-Warning "Skipping ${Path}: not valid JSON ($($_.Exception.Message))"; return $false }
   }
   try { $obj = & $Merge $obj }
-  catch { Write-Warning "Skipping $Path: $($_.Exception.Message)"; return $false }
+  catch { Write-Warning "Skipping ${Path}: $($_.Exception.Message)"; return $false }
   if ((Test-Path -LiteralPath $Path) -and -not (Test-Path -LiteralPath "$Path.bak")) { Copy-Item -LiteralPath $Path "$Path.bak" -Force }  # keep the pre-installer original, written once
   [System.IO.File]::WriteAllText($Path, (($obj | ConvertTo-Json -Depth 100) + "`n"), (New-Object System.Text.UTF8Encoding $false))  # BOM-less + trailing LF (matches install.sh)
   return $true
@@ -140,11 +140,11 @@ function Wire-Clients([string]$Exe) {
 
   # Windsurf (probe the parent dir, like install.sh: dir-exists-but-no-file still wires)
   $p = Join-Path $homeDir '.codeium\windsurf\mcp_config.json'
-  if (Test-Client 'windsurf' (Split-Path -LiteralPath (Split-Path -LiteralPath $p -Parent) -Parent)) { if (Add-McpServer 'Windsurf' $p 'mcpServers' $Exe) { $wired++ } }
+  if (Test-Client 'windsurf' ([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetDirectoryName($p)))) { if (Add-McpServer 'Windsurf' $p 'mcpServers' $Exe) { $wired++ } }
 
   # Gemini CLI (probe the parent dir, like install.sh)
   $p = Join-Path $homeDir '.gemini\settings.json'
-  if (Test-Client 'gemini' (Split-Path -LiteralPath $p -Parent)) { if (Add-McpServer 'Gemini CLI' $p 'mcpServers' $Exe) { $wired++ } }
+  if (Test-Client 'gemini' ([System.IO.Path]::GetDirectoryName($p))) { if (Add-McpServer 'Gemini CLI' $p 'mcpServers' $Exe) { $wired++ } }
 
   if ($wired -eq 0) {
     Write-Host 'No supported client detected. Register manually:'
@@ -156,15 +156,15 @@ function Wire-Clients([string]$Exe) {
 
 $exe = if ($Exe) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Exe) } else { Join-Path $Dest $ExeName }
 if (-not $ConfigOnly) {
-  if (Get-Process VsDebugMcp -ErrorAction SilentlyContinue) { throw 'Close the MCP host first — VsDebugMcp.exe is still running.' }
+  if (Get-Process VsDebugMcp -ErrorAction SilentlyContinue) { throw 'Close the MCP host first - VsDebugMcp.exe is still running.' }
   $zip = "$env:TEMP\VsDebugMcp-win-x64.zip"
   Write-Host "Downloading $Base/VsDebugMcp-win-x64.zip ..."
   Invoke-WebRequest -Uri "$Base/VsDebugMcp-win-x64.zip" -OutFile $zip -UseBasicParsing
   $line = ((Invoke-WebRequest -Uri "$Base/SHA256SUMS.txt" -UseBasicParsing).Content -split "`n") | Where-Object { $_ -match '^[0-9a-fA-F]{64}\s+[* ]?VsDebugMcp-win-x64\.zip\s*$' } | Select-Object -First 1
-  if (-not $line) { throw 'No VsDebugMcp-win-x64.zip entry in SHA256SUMS.txt — has a release been published yet?' }
+  if (-not $line) { throw 'No VsDebugMcp-win-x64.zip entry in SHA256SUMS.txt - has a release been published yet?' }
   $expected = ($line -split '\s+')[0].ToLower()
   $actual = (Get-FileHash $zip -Algorithm SHA256).Hash.ToLower()
-  if ($actual -ne $expected) { throw "Checksum mismatch — delete $zip and retry." }
+  if ($actual -ne $expected) { throw "Checksum mismatch - delete $zip and retry." }
   if (Test-Path -LiteralPath $Dest) { Remove-Item -LiteralPath $Dest -Recurse -Force }
   Expand-Archive -LiteralPath $zip -DestinationPath $Dest
   Remove-Item -LiteralPath $zip -Force
@@ -173,5 +173,5 @@ if (-not $ConfigOnly) {
   Write-Host "Installed to $Dest."
 }
 
-if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "No server at $exe — run without -ConfigOnly first, or pass -Dest <folder with $ExeName>." }
+if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "No server at $exe - run without -ConfigOnly first, or pass -Dest <folder with $ExeName>." }
 Wire-Clients $exe
