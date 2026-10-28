@@ -15,7 +15,7 @@ Root files: [README](../README.md) (what the server is, tool list) · [AGENTS.md
 
 ## Decisions
 
-- [adr/README.md](adr/README.md): Index of the twelve ADRs with status and one-line decision; read before changing an area, and flag any conflict.
+- [adr/README.md](adr/README.md): Index of the fourteen ADRs with status and one-line decision; read before changing an area, and flag any conflict.
 
 ## Agent workflow
 

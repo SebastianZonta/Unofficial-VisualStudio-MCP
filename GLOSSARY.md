@@ -143,3 +143,84 @@ is never an attach target. The target PID identifies the program under test
 (from `list_processes`, or returned by `launch_process`) and is the only valid
 `attach_process` argument.
 _Avoid_: pid (unqualified — always say which)
+
+### Flow testing
+
+**Flow testing**:
+Checking that a developer's own app behaves as intended by driving it under
+the VS debugger against a flow plan, ending in a verdict. Distinct from the
+E2E pass, which checks this server itself against the Sandbox.
+_Avoid_: E2E, e2e case (when meaning a developer's own flows)
+
+**Flow**:
+One behaviour of the developer's app, start to finish, as the code carries it
+out (e.g. checkout), including the work it sets off elsewhere: in-process jobs
+and event handlers, and other target processes.
+_Avoid_: feature, scenario, path
+
+**Use case**:
+One route through a flow, an ordered sequence of triggers and checkpoints
+with an expected outcome (e.g. checkout with a declined card).
+_Avoid_: case, scenario, path, variant
+
+**Trigger**:
+An action that makes the app do work within a use case: a launch of the target
+process, a command run against the running target process, or a step only a
+human can perform. The first trigger starts the use case; later ones continue
+it.
+_Avoid_: input, start
+
+**Human-gated**:
+A use case that needs a person: one of its triggers is human, or it needs
+attach consent.
+_Avoid_: manual, interactive (when meaning human-gated)
+
+**Checkpoint**:
+A code location a use case must reach, or must not reach, plus what must hold
+there, in a named target process. A breakpoint carries it out; the checkpoint
+is the plan's intent. A deferred checkpoint hits after the trigger's outcome,
+within a wait budget.
+_Avoid_: breakpoint (when meaning the plan's intent), assertion, stop
+
+**Capture**:
+A value a checkpoint records under a name (e.g. `orderId`) so later
+checkpoints count only the hits this use case caused, not unrelated work.
+_Avoid_: variable, binding (when meaning a capture)
+
+**Kick**:
+A command trigger that makes scheduled work run now, so a deferred checkpoint
+can hit within its wait budget.
+_Avoid_: poke, nudge
+
+**Anchor**:
+How a checkpoint names its code location: file, enclosing member and a short
+unique snippet, resolved to a line at every flow run, never stored as a line
+number. A stale anchor (snippet gone or ambiguous) blocks its checkpoint.
+_Avoid_: marker, line (when meaning an anchor)
+
+**Flow plan**:
+The one written description of a flow: its code references, its use cases and
+their checkpoints.
+_Avoid_: spec, test script, e2e case
+
+**Flow standards**:
+The developer's checkable criteria that hold for every use case of every flow
+(e.g. no unhandled exception), kept once per repo and referenced, never
+copied, by flow plans.
+_Avoid_: acceptance criteria (when meaning the repo-wide set), coding standards
+
+**Waiver**:
+A use case's named exemption from one flow standard, with a one-line reason,
+listed in every verdict it affects.
+_Avoid_: exception, override (when meaning a waiver)
+
+**Flow run**:
+One execution of a flow plan, all of its use cases or named ones, against the
+developer's open VS instance, ending in a verdict.
+_Avoid_: runner (the E2E slice subagent), test run
+
+**Verdict**:
+The overall PASS or FAIL of an E2E pass or a flow run, backed by a status
+(PASS, FAIL, BLOCKED, OBS) and quoted tool evidence for every case or
+checkpoint. PASS only when nothing FAILs or BLOCKs.
+_Avoid_: result, report (when meaning the outcome)

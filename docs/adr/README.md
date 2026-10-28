@@ -16,3 +16,5 @@ Architecture decisions, oldest first. Bodies are historical: a superseded ADR st
 | 0010 | [No-side-effects evaluation](0010-no-side-effects-eval.md) | accepted (supersedes 0005) | One read-only rule for every expression: text rule first, then live `, nse`. |
 | 0011 | [Exception settings in the VS instance](0011-exception-settings-in-vs-instance.md) | accepted | Exception-break settings live in the VS instance's table; breaks carry an `exception` payload. |
 | 0012 | [Consent-gated `set_variable`](0012-consent-gated-set-variable.md) | accepted | One write per call with its own consent; strict typed literals; refined 0010's read-only rule to cover reads only. |
+| 0013 | [Flow runs borrow the developer's open VS](0013-flow-runs-borrow-open-vs.md) | accepted | Flow runs bind already-open VS instances, never start or close one, and leave each as found. |
+| 0014 | [Skills ship inside the release](0014-skills-ship-in-release.md) | accepted | The installer installs the flow-testing skills from the release zip, version-locked to the exe. |
