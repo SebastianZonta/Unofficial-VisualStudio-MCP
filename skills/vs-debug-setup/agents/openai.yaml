@@ -1,0 +1,5 @@
+interface:
+  display_name: "VS debug setup"
+  short_description: "User-only: record and smoke-check this repo's VsDebugMcp flow-testing setup"
+policy:
+  allow_implicit_invocation: false

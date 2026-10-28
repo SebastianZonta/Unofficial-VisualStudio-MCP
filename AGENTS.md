@@ -11,5 +11,6 @@ Agent entry point — index only. Canonical detail lives in the linked file; do 
 - Docs index: [docs/README.md](docs/README.md).
 - E2E: after a feature, run the real-VS pass in [docs/agents/e2e.md](docs/agents/e2e.md) (R1/R2/R3 fanout, each its own VS instances; bar: every case PASS).
 - `Sandbox/` is the E2E debug target: outside the solution, its own `Directory.Build.props` (no analyzers), breakpoint lines found by `// E2E:<NAME>` markers. When you change a scenario, update the e2e.md marker table too.
+- Flow-testing skills (`skills/`): [docs/agents/skills.md](docs/agents/skills.md) (layout, tool-naming convention the contract test pins, skills pass).
 - After a feature: follow [docs/agents/definition-of-done.md](docs/agents/definition-of-done.md). Review standards: `CODING_STANDARDS.md`.
 - After a feature, update this file if it changed agent-facing facts — one line, no restating docs.

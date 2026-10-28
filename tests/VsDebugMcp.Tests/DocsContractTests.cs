@@ -108,6 +108,30 @@ public sealed class DocsContractTests
     }
 
     [Fact]
+    public void Every_tool_and_parameter_a_skill_names_is_registered()
+    {
+        // Convention (docs/agents/skills.md): a tool is a backticked snake_case name or a
+        // backticked call `tool(param, param: value)`; every call param must be the tool's.
+        var paramsByTool = ToolMethods().ToDictionary(t => t.Name, t => DocParams(t.Method).Select(p => p.Name).ToHashSet());
+        var docs = Directory.GetFiles(Path.Combine(Root, "skills"), "*.md", SearchOption.AllDirectories);
+        Assert.NotEmpty(docs);
+
+        foreach (var doc in docs)
+        {
+            var rel = Path.GetRelativePath(Root, doc);
+
+            foreach (Match m in Regex.Matches(File.ReadAllText(doc), @"`([a-z]+(?:_[a-z]+)+|[a-z]+(?=\())(?:\(([^)`]*)\))?`"))
+            {
+                var tool = m.Groups[1].Value;
+                Assert.True(paramsByTool.ContainsKey(tool), $"{rel} names unregistered tool `{tool}`");
+                var args = m.Groups[2].Value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                Assert.All(args.Select(a => a.Split(':', '=')[0].Trim()), p =>
+                    Assert.True(paramsByTool[tool].Contains(p), $"{rel} names unregistered parameter `{p}` of `{tool}`"));
+            }
+        }
+    }
+
+    [Fact]
     public void Result_envelope_is_mode_lastHit_and_exception_only()
     {
         // Session-less lists and the detach echo carry no mode; every other

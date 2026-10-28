@@ -24,6 +24,7 @@ Root files: [README](../README.md) (what the server is, tool list) · [AGENTS.md
 - [agents/architecture.md](agents/architecture.md): `IDebugBridge` seam, live vs fake, STA dispatcher; read before changing bridge or tool code.
 - [agents/live-verify.md](agents/live-verify.md): `--live-check*` harnesses and per-tool live verify lines; read before verifying against real VS.
 - [agents/e2e.md](agents/e2e.md): Index for the real-VS pass against `Sandbox/` (roles, slice map, report format); it points at the runner and phase files — read the index plus only your slice. Read after a feature or when a case fails.
+- [agents/skills.md](agents/skills.md): The shipped flow-testing skills (layout, how to change one, the skills pass against a Sandbox copy); read before changing anything under `skills/`.
 - [agents/issue-tracker.md](agents/issue-tracker.md): The `.scratch/` file conventions (spec, issues, `Status:` values, wayfinding maps); read before creating or claiming work.
 
 ## Work tracking
