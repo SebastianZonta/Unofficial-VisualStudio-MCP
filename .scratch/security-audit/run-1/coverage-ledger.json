@@ -1,0 +1,500 @@
+[
+  {
+    "coverage_id": "install.sh%23wire_clients::src%2FVsDebugMcp%2FVsDebugMcp.csproj%23EnvDTE::scripts%2Binstall::ATTACK-CLASSES.md%23Obvious%20things",
+    "canonical_refs": {
+      "surface": "install.sh#wire_clients",
+      "boundary": "src/VsDebugMcp/VsDebugMcp.csproj#EnvDTE",
+      "subsystem": "scripts+install",
+      "attack_class": "ATTACK-CLASSES.md#Obvious things"
+    },
+    "surface": "install.sh#wire_clients",
+    "boundary": "src/VsDebugMcp/VsDebugMcp.csproj#EnvDTE",
+    "subsystem": "scripts+install",
+    "attack_class": "ATTACK-CLASSES.md#Obvious things",
+    "starting_paths": [
+      "install.sh",
+      "install.ps1",
+      "scripts/publish-fresh.ps1",
+      "src/VsDebugMcp/VsDebugMcp.csproj",
+      ".github/workflows/release.yml"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Obvious things",
+    "selected_companion_blocks": [
+      "SUPPLY-CHAIN-AND-RELEASE.md#Core discipline",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Universal moves",
+      "SUPPLY-CHAIN-AND-RELEASE.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+        "reason": "no network auth surface in installer"
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-supply",
+    "reviewed_paths": [
+      "src/VsDebugMcp/VsDiscovery.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/ComDispatcher.cs",
+      "src/VsDebugMcp/Program.cs",
+      "install.sh",
+      "install.ps1",
+      "scripts/publish-fresh.ps1",
+      "src/VsDebugMcp/VsDebugMcp.csproj"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-supply",
+        "reviewed_paths": [
+          "src/VsDebugMcp/VsDiscovery.cs",
+          "src/VsDebugMcp/DteDebugBridge.cs",
+          "src/VsDebugMcp/ComDispatcher.cs",
+          "src/VsDebugMcp/Program.cs"
+        ],
+        "invariant": "no cross-principal boundary crossed (part 1)",
+        "method": "source",
+        "result": "source review part 1: same-user authority only",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-supply",
+        "reviewed_paths": [
+          "install.sh",
+          "install.ps1",
+          "scripts/publish-fresh.ps1",
+          "src/VsDebugMcp/VsDebugMcp.csproj"
+        ],
+        "invariant": "no cross-principal boundary crossed (part 2)",
+        "method": "source",
+        "result": "source review part 2: installer same-origin checksum over TLS; no live Windows execution available",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2FVsDebugMcp%2FBreakpointTools.cs%23set_breakpoint::src%2FVsDebugMcp%2FBreakpointOptions.cs%23SameLocation::src%2FVsDebugMcp::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "src/VsDebugMcp/BreakpointTools.cs#set_breakpoint",
+      "boundary": "src/VsDebugMcp/BreakpointOptions.cs#SameLocation",
+      "subsystem": "src/VsDebugMcp",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "src/VsDebugMcp/BreakpointTools.cs#set_breakpoint",
+    "boundary": "src/VsDebugMcp/BreakpointOptions.cs#SameLocation",
+    "subsystem": "src/VsDebugMcp",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "src/VsDebugMcp/BreakpointTools.cs",
+      "src/VsDebugMcp/BreakpointOptions.cs",
+      "src/VsDebugMcp/RunToCursor.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [],
+    "excluded_blocks": [
+      {
+        "block": "DATA-ISOLATION-AND-LIFECYCLE.md#Core discipline",
+        "reason": "single-user sessions; no multi-tenant store"
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter-fix",
+    "reviewed_paths": [
+      "src/VsDebugMcp/BreakpointTools.cs",
+      "src/VsDebugMcp/BreakpointOptions.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/FakeDebugBridge.cs"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-fix",
+        "reviewed_paths": [
+          "src/VsDebugMcp/BreakpointTools.cs",
+          "src/VsDebugMcp/BreakpointOptions.cs",
+          "src/VsDebugMcp/DteDebugBridge.cs",
+          "src/VsDebugMcp/FakeDebugBridge.cs"
+        ],
+        "invariant": "owned bpN vs foreign otherN; foreign-occupied refused; repeats need identical options; ExactLocation in RunToCursor; suffix over-match fails closed",
+        "method": "source",
+        "result": "owned bpN vs foreign otherN; foreign-occupied refused; repeats need identical options; ExactLocation in RunToCursor; suffix over-match fails closed",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2FVsDebugMcp%2FExecutionTools.cs%23run_to_cursor::src%2FVsDebugMcp%2FRunToCursor.cs%23RunAsync::src%2FVsDebugMcp::ATTACK-CLASSES.md%23Business%20logic",
+    "canonical_refs": {
+      "surface": "src/VsDebugMcp/ExecutionTools.cs#run_to_cursor",
+      "boundary": "src/VsDebugMcp/RunToCursor.cs#RunAsync",
+      "subsystem": "src/VsDebugMcp",
+      "attack_class": "ATTACK-CLASSES.md#Business logic"
+    },
+    "surface": "src/VsDebugMcp/ExecutionTools.cs#run_to_cursor",
+    "boundary": "src/VsDebugMcp/RunToCursor.cs#RunAsync",
+    "subsystem": "src/VsDebugMcp",
+    "attack_class": "ATTACK-CLASSES.md#Business logic",
+    "starting_paths": [
+      "src/VsDebugMcp/ExecutionTools.cs",
+      "src/VsDebugMcp/RunToCursor.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Business logic",
+    "selected_companion_blocks": [
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "AI-AND-LLM.md#Core discipline",
+        "reason": "execution stepping is deterministic; no model-context trust decision"
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter-fix",
+    "reviewed_paths": [
+      "src/VsDebugMcp/ExecutionTools.cs",
+      "src/VsDebugMcp/RunToCursor.cs",
+      "src/VsDebugMcp/BreakpointOptions.cs"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-fix",
+        "reviewed_paths": [
+          "src/VsDebugMcp/ExecutionTools.cs",
+          "src/VsDebugMcp/RunToCursor.cs",
+          "src/VsDebugMcp/BreakpointOptions.cs"
+        ],
+        "invariant": "mode gate before side effects; exact-location reuse; uncancellable owned-only remove with vs-busy retry; lost-Go-race narrowed join",
+        "method": "source",
+        "result": "mode gate before side effects; exact-location reuse; uncancellable owned-only remove with vs-busy retry; lost-Go-race narrowed join",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2FVsDebugMcp%2FInspectionTools.cs%23evaluate::src%2FVsDebugMcp%2FBreakpointOptions.cs%23CheckExpression::src%2FVsDebugMcp::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "src/VsDebugMcp/InspectionTools.cs#evaluate",
+      "boundary": "src/VsDebugMcp/BreakpointOptions.cs#CheckExpression",
+      "subsystem": "src/VsDebugMcp",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "src/VsDebugMcp/InspectionTools.cs#evaluate",
+    "boundary": "src/VsDebugMcp/BreakpointOptions.cs#CheckExpression",
+    "subsystem": "src/VsDebugMcp",
+    "attack_class": "ATTACK-CLASSES.md#Injection",
+    "starting_paths": [
+      "src/VsDebugMcp/InspectionTools.cs",
+      "src/VsDebugMcp/BreakpointOptions.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "WEB-PROTOCOL-AND-AUTH.md#Core discipline",
+        "reason": "no HTTP surface; stdio only"
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter-fix",
+    "reviewed_paths": [
+      "src/VsDebugMcp/BreakpointOptions.cs",
+      "src/VsDebugMcp/ArgumentValidator.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/InspectionTools.cs"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-fix",
+        "reviewed_paths": [
+          "src/VsDebugMcp/BreakpointOptions.cs",
+          "src/VsDebugMcp/ArgumentValidator.cs",
+          "src/VsDebugMcp/DteDebugBridge.cs",
+          "src/VsDebugMcp/InspectionTools.cs"
+        ],
+        "invariant": "evaluate accepts only single-line read-only expressions with live ,nse backstop; no deterministic text-gate bypass found",
+        "method": "source",
+        "result": "evaluate accepts only single-line read-only expressions with live ,nse backstop; no deterministic text-gate bypass found",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2FVsDebugMcp%2FInspectionTools.cs%23set_variable::src%2FVsDebugMcp%2FVariableWrite.cs%23Coerce::src%2FVsDebugMcp::ATTACK-CLASSES.md%23Injection",
+    "canonical_refs": {
+      "surface": "src/VsDebugMcp/InspectionTools.cs#set_variable",
+      "boundary": "src/VsDebugMcp/VariableWrite.cs#Coerce",
+      "subsystem": "src/VsDebugMcp",
+      "attack_class": "ATTACK-CLASSES.md#Injection"
+    },
+    "surface": "src/VsDebugMcp/InspectionTools.cs#set_variable",
+    "boundary": "src/VsDebugMcp/VariableWrite.cs#Coerce",
+    "subsystem": "src/VsDebugMcp",
+    "attack_class": "ATTACK-CLASSES.md#Injection",
+    "starting_paths": [
+      "src/VsDebugMcp/InspectionTools.cs",
+      "src/VsDebugMcp/VariableWrite.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Injection",
+    "selected_companion_blocks": [
+      "AI-AND-LLM.md#Core discipline",
+      "AI-AND-LLM.md#Universal moves",
+      "AI-AND-LLM.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLIENT-SIDE.md#Core discipline",
+        "reason": "no browser surface"
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter-fix",
+    "reviewed_paths": [
+      "src/VsDebugMcp/VariableWrite.cs",
+      "src/VsDebugMcp/ArgumentValidator.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/InspectionTools.cs"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-fix",
+        "reviewed_paths": [
+          "src/VsDebugMcp/VariableWrite.cs",
+          "src/VsDebugMcp/ArgumentValidator.cs",
+          "src/VsDebugMcp/DteDebugBridge.cs",
+          "src/VsDebugMcp/InspectionTools.cs"
+        ],
+        "invariant": "per-call consent first; strict Coerce to single inert literal; nse probe + re-read verification; no literal-breakout payload",
+        "method": "source",
+        "result": "per-call consent first; strict Coerce to single inert literal; nse probe + re-read verification; no literal-breakout payload",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2FVsDebugMcp%2FSessionTools.cs%23attach_process::src%2FVsDebugMcp%2FProcessOwner.cs%23OwnerOf::src%2FVsDebugMcp::ATTACK-CLASSES.md%23Access%20control",
+    "canonical_refs": {
+      "surface": "src/VsDebugMcp/SessionTools.cs#attach_process",
+      "boundary": "src/VsDebugMcp/ProcessOwner.cs#OwnerOf",
+      "subsystem": "src/VsDebugMcp",
+      "attack_class": "ATTACK-CLASSES.md#Access control"
+    },
+    "surface": "src/VsDebugMcp/SessionTools.cs#attach_process",
+    "boundary": "src/VsDebugMcp/ProcessOwner.cs#OwnerOf",
+    "subsystem": "src/VsDebugMcp",
+    "attack_class": "ATTACK-CLASSES.md#Access control",
+    "starting_paths": [
+      "src/VsDebugMcp/SessionTools.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/ProcessOwner.cs",
+      "src/VsDebugMcp/ProcessLaunch.cs"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Access control",
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "CLOUD-AND-DEPLOYMENT.md#Core discipline",
+        "reason": "no cloud IAM in source"
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter-fix",
+    "reviewed_paths": [
+      "src/VsDebugMcp/SessionTools.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/ProcessOwner.cs",
+      "src/VsDebugMcp/ProcessLaunch.cs",
+      "src/VsDebugMcp/FakeDebugBridge.cs"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-fix",
+        "reviewed_paths": [
+          "src/VsDebugMcp/SessionTools.cs",
+          "src/VsDebugMcp/DteDebugBridge.cs",
+          "src/VsDebugMcp/ProcessOwner.cs",
+          "src/VsDebugMcp/ProcessLaunch.cs",
+          "src/VsDebugMcp/FakeDebugBridge.cs"
+        ],
+        "invariant": "consent-first, devenv refuse, expectedName on recycled PID, same-user fail-closed, AlreadyBound; recycle-without-name and 2s cache staleness are same-principal hardening only",
+        "method": "source",
+        "result": "consent-first, devenv refuse, expectedName on recycled PID, same-user fail-closed, AlreadyBound; recycle-without-name and 2s cache staleness are same-principal hardening only",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2FVsDebugMcp%2FSessionTools.cs%23launch_process::src%2FVsDebugMcp%2FProcessLaunch.cs%23CheckStart::src%2FVsDebugMcp::ATTACK-CLASSES.md%23Resource%20and%20file%20handling",
+    "canonical_refs": {
+      "surface": "src/VsDebugMcp/SessionTools.cs#launch_process",
+      "boundary": "src/VsDebugMcp/ProcessLaunch.cs#CheckStart",
+      "subsystem": "src/VsDebugMcp",
+      "attack_class": "ATTACK-CLASSES.md#Resource and file handling"
+    },
+    "surface": "src/VsDebugMcp/SessionTools.cs#launch_process",
+    "boundary": "src/VsDebugMcp/ProcessLaunch.cs#CheckStart",
+    "subsystem": "src/VsDebugMcp",
+    "attack_class": "ATTACK-CLASSES.md#Resource and file handling",
+    "starting_paths": [
+      "src/VsDebugMcp/SessionTools.cs",
+      "src/VsDebugMcp/ProcessLaunch.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Resource and file handling",
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules",
+      "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md#Core discipline"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "MEMORY-SAFETY-AND-BINARY.md#Core discipline",
+        "reason": "managed C# only; no binary parser in launch path"
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 2,
+    "status": "covered",
+    "agent_id": "hunter-fix",
+    "reviewed_paths": [
+      "src/VsDebugMcp/SessionTools.cs",
+      "src/VsDebugMcp/ProcessLaunch.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/ArgumentValidator.cs"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-fix",
+        "reviewed_paths": [
+          "src/VsDebugMcp/SessionTools.cs",
+          "src/VsDebugMcp/ProcessLaunch.cs",
+          "src/VsDebugMcp/DteDebugBridge.cs",
+          "src/VsDebugMcp/ArgumentValidator.cs"
+        ],
+        "invariant": "absolute .NET exe + runtimeconfig, cwd exists, NUL-safe env, suspended no-shell start, AlreadyBound in dispatcher, Kill/abandoned; TOCTOU/inherited-env/verbatim-args are same-principal by design",
+        "method": "source",
+        "result": "absolute .NET exe + runtimeconfig, cwd exists, NUL-safe env, suspended no-shell start, AlreadyBound in dispatcher, Kill/abandoned; TOCTOU/inherited-env/verbatim-args are same-principal by design",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  },
+  {
+    "coverage_id": "src%2FVsDebugMcp%2FVsDiscovery.cs%23SelectCandidate::src%2FVsDebugMcp%2FDteDebugBridge.cs%23AttachAsync::src%2FVsDebugMcp::ATTACK-CLASSES.md%23Chained%20vulnerabilities%20and%20trust%20boundaries",
+    "canonical_refs": {
+      "surface": "src/VsDebugMcp/VsDiscovery.cs#SelectCandidate",
+      "boundary": "src/VsDebugMcp/DteDebugBridge.cs#AttachAsync",
+      "subsystem": "src/VsDebugMcp",
+      "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries"
+    },
+    "surface": "src/VsDebugMcp/VsDiscovery.cs#SelectCandidate",
+    "boundary": "src/VsDebugMcp/DteDebugBridge.cs#AttachAsync",
+    "subsystem": "src/VsDebugMcp",
+    "attack_class": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "starting_paths": [
+      "src/VsDebugMcp/VsDiscovery.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/ComDispatcher.cs",
+      "src/VsDebugMcp/SessionTools.cs"
+    ],
+    "ordinary_attack_class_block": "ATTACK-CLASSES.md#Chained vulnerabilities and trust boundaries",
+    "selected_companion_blocks": [
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Core discipline",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Universal moves",
+      "DESKTOP-MOBILE-AND-LOCAL-IPC.md#Validation rules"
+    ],
+    "excluded_blocks": [
+      {
+        "block": "PROTOCOLS-RPC-AND-MESSAGING.md#Core discipline",
+        "reason": "ROT/COM is local IPC, not networked RPC DSL"
+      }
+    ],
+    "prior_status": "none",
+    "attempts": [],
+    "wave": 1,
+    "status": "covered",
+    "agent_id": "hunter-supply",
+    "reviewed_paths": [
+      "src/VsDebugMcp/VsDiscovery.cs",
+      "src/VsDebugMcp/DteDebugBridge.cs",
+      "src/VsDebugMcp/ComDispatcher.cs",
+      "src/VsDebugMcp/Program.cs",
+      "install.sh",
+      "install.ps1",
+      "scripts/publish-fresh.ps1",
+      "src/VsDebugMcp/VsDebugMcp.csproj"
+    ],
+    "local_checks": [
+      {
+        "agent_id": "hunter-supply",
+        "reviewed_paths": [
+          "src/VsDebugMcp/VsDiscovery.cs",
+          "src/VsDebugMcp/DteDebugBridge.cs",
+          "src/VsDebugMcp/ComDispatcher.cs",
+          "src/VsDebugMcp/Program.cs"
+        ],
+        "invariant": "no cross-principal boundary crossed (part 1)",
+        "method": "source",
+        "result": "source review part 1: same-user authority only",
+        "artifact": null
+      },
+      {
+        "agent_id": "hunter-supply",
+        "reviewed_paths": [
+          "install.sh",
+          "install.ps1",
+          "scripts/publish-fresh.ps1",
+          "src/VsDebugMcp/VsDebugMcp.csproj"
+        ],
+        "invariant": "no cross-principal boundary crossed (part 2)",
+        "method": "source",
+        "result": "source review part 2: installer same-origin checksum over TLS; no live Windows execution available",
+        "artifact": null
+      }
+    ],
+    "result_fingerprints": [],
+    "unresolved": []
+  }
+]
