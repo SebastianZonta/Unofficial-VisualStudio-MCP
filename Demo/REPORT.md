@@ -1,43 +1,28 @@
-> **Staleness notice:** the body below is evidence from a previous live run
-> recorded before the MediatR restructure. Its quoted `Program.cs` line numbers
-> predate the move of the checkpoints to
-> `Demo/Pricing.Engine/Application/GetPriceHandler.cs` (line 18) and
-> `Demo/Orders.Api/Application/CreateOrderHandler.cs` (line 11), and its cache
-> references predate `Demo/Pricing.Engine/Infrastructure/PriceCache.cs`. Do not
-> treat it as current evidence — a fresh two-VS live pass regenerates this file.
-
 # Flow verdict report
 
-**Verdict:** PASS
+**Verdict:** FAIL
 
 ## Use case 1 — small order (cache miss)
 
 - Trigger: `POST /orders {"productId":"widget","quantity":1}`
-- Checkpoint pricing (session B): `mode`/`lastHit` + quoted evidence:
-  - `{"mode":"break","lastHit":"C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\Demo\\Pricing.Engine\\Program.cs:26"}`
-  - `req.ProductId` → `"widget"` (`mode`:`break`, same `lastHit` :26); `req.Quantity` → `1`; `req.Coupon` → `null`; `cache.Count` → `0`; `cached` → `null` — cache miss, nothing stored yet.
-- Checkpoint orders (session A): `mode`/`lastHit` + quoted evidence:
-  - `{"mode":"break","lastHit":"C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\Demo\\Orders.Api\\Program.cs:17"}`
-  - `orderId` → `"7ff8a370"`; `priced.Total` → `108.00`; `priced.Cached` → `false`; `priced.Discount` → `0` (same `mode`:`break`, `lastHit` :17).
-- Observed `orderId`, `total`, `cached`: `{"orderId":"7ff8a370",...,"total":108.00,"cached":false}` — matches the debugger capture `7ff8a370`; correct (100 × 1 × 1.08).
+- Checkpoint pricing (session B): breakpoint `bp1` `GetPriceHandler.cs:19` `{"bound":true,"hitCount":1}`, session `"mode":"run"` after the stop (list_breakpoints). The stop itself was continued by an operator `resume` before inspection — see Waivers. Corroborating miss-path proof: session A evaluated `priced` as `{PriceResponse { UnitPrice = 100, Discount = 0, Total = 108.00, Cached = False }}` with `"mode":"break","lastHit":".../Orders.Api/Application/CreateOrderHandler.cs:13"`.
+- Checkpoint orders (session A): `"mode":"break","lastHit":"C:\Users\Sebastián\Desktop\Opencode\Unofficial-VisualStudio-MCP\Unofficial-VisualStudio-MCP\Demo\Orders.Api\Application/CreateOrderHandler.cs:13"`, `cmd` = `{CreateOrderCommand { ProductId = widget, Quantity = 1, Coupon =  }}`, `priced` = `{PriceResponse { UnitPrice = 100, Discount = 0, Total = 108.00, Cached = False }}`, stepped to `orderId` = `"9bc8f4f4"` (`"mode":"break"`).
+- Observed `orderId`, `total`, `cached`: HTTP `{"orderId":"9bc8f4f4","productId":"widget","quantity":1,"coupon":null,"unitPrice":100,"discount":0,"total":108.00,"cached":false}` — matches debugger capture (`9bc8f4f4`), correct total 108.00. This response **poisoned the cache** with the qty-1/no-coupon entry.
 
 ## Use case 2 — large couponed order (stale hit)
 
 - Trigger: `POST /orders {"productId":"widget","quantity":10,"coupon":"SAVE20"}`
-- Checkpoint pricing (session B): `mode`/`lastHit` + quoted evidence:
-  - `{"mode":"break","lastHit":"C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\Demo\\Pricing.Engine\\Program.cs:26"}`
-  - `req.ProductId` → `"widget"`; `req.Quantity` → `10`; `req.Coupon` → `"SAVE20"`; `cache.Count` → `1` (warmed by use case 1, same `mode`:`break`).
-  - After one debugger step-over of line 26: `System.Collections.Concurrent.ConcurrentDictionary<TKey, TValue>.TryGetValue returned` → `true`, and `cached` → `{PriceResponse { UnitPrice = 100, Discount = 0, Total = 108.00, Cached = False }}` — the use-case-1 entry (qty 1, no discount) served for a qty-10 SAVE20 request.
-- Checkpoint orders (session A): `mode`/`lastHit` + quoted evidence:
-  - `{"mode":"break","lastHit":"C:\\Users\\Sebastián\\Desktop\\Opencode\\Unofficial-VisualStudio-MCP\\Unofficial-VisualStudio-MCP\\Demo\\Orders.Api\\Program.cs:17"}`
-  - `orderId` → `"2c755480"`; `priced.Total` → `108.00`; `priced.Cached` → `true`; `priced.Discount` → `0`; `req.Quantity` → `10`; `req.Coupon` → `"SAVE20"` (same `mode`:`break`, `lastHit` :17).
-- Observed `orderId`, `total`, `cached`: `{"orderId":"2c755480",...,"total":108.00,"cached":true}` — matches the debugger capture `2c755480`; WRONG, correct would be `100 × 10 × (1 − 0.30) × 1.08 = 756.00`.
+- Checkpoint pricing (session B): `"mode":"break","lastHit":"C:\Users\Sebastián\Desktop\Opencode\Unofficial-VisualStudio-MCP\Unofficial-VisualStudio-MCP\Demo\Pricing.Engine/Application/GetPriceHandler.cs:19"`, `request` = `{GetPriceQuery { ProductId = widget, Quantity = 10, Coupon = SAVE20 }}`, `request.Quantity` = `10`, `request.Coupon` = `"SAVE20"`, with `unitPrice` = `100`, `couponDiscount` = `0.20` resolved — yet one step-over of `cache.TryGet(request.ProductId, …)` yielded `cached` = `{PriceResult { UnitPrice = 100, Discount = 0, Total = 108.00, Cached = False }}` (`"mode":"break"`): the qty-1/no-coupon entry, keyed by productId alone.
+- Checkpoint orders (session A): `"mode":"break","lastHit":".../Orders.Api/Application/CreateOrderHandler.cs:13"`, `cmd` = `{CreateOrderCommand { ProductId = widget, Quantity = 10, Coupon = SAVE20 }}`, `priced` = `{PriceResponse { UnitPrice = 100, Discount = 0, Total = 108.00, Cached = True }}`, stepped to `orderId` = `"0716ee6c"` (first attempt `orderId` = `"573d4908"` with identical payload evidence).
+- Observed `orderId`, `total`, `cached`: HTTP `{"orderId":"0716ee6c","productId":"widget","quantity":10,"coupon":"SAVE20","unitPrice":100,"discount":0,"total":108.00,"cached":true}` (first attempt `{"orderId":"573d4908",…,"total":108.00,"cached":true}`) — expected `756.00`. Plausible-but-wrong: stale `108.00` served with `cached:true`, `orderId` matching the debugger capture.
 
 ## Root cause
 
-- Cache key used vs cache key required: used `req.ProductId` alone (`cache.TryGetValue(req.ProductId, …)` / `cache[req.ProductId] = response`); required a key covering every input the total depends on — product + quantity tier + coupon (e.g. `widget|10|SAVE20`), or no cache. The stale `108.00` entry from the qty-1 order was returned with `Cached = true` for the qty-10 SAVE20 order.
-- Why static reading alone could not close it: the source shows the product-only key but not that this path executes live — only the debugger proved use case 1 warms the cache (`Count` 0→1) and use case 2 takes the `TryGetValue == true` early return with the stale entry for the same `orderId` flow.
+- Cache key used vs cache key required: used `request.ProductId` only (`cache.TryGet(request.ProductId, …)` / `cache.Store(request.ProductId, …)`); required product + quantity + coupon. Debugger proof: request carried `Quantity = 10, Coupon = SAVE20` (discount `0.20` resolved) but the lookup returned the stored `{Total = 108.00}` entry and the handler returned it with `Cached = true`, relayed end-to-end with matching `orderId`.
+- Why static reading alone could not close it: the source shows the key shape, but only live state proves the stored entry's stale payload is what order 2 actually served (`Cached = True` in the engine and on the wire, same `orderId`), ruling out recompute, relay, or rounding hypotheses.
 
 ## Waivers
 
-- None.
+- Launch via apphost `Pricing.Engine.exe` / `Orders.Api.exe` (same build output) instead of `dotnet.exe <dll>`: the bridge rejects `dotnet.exe` (`invalid-argument: … is not a .NET 5+ app (no .runtimeconfig.json beside it)`). Launch evidence quoted: `{"processId":32244,"mode":"run","status":"ok",…}` (engine), `{"processId":8292,"mode":"run","status":"ok",…}` (frontend).
+- Orders breakpoint at code line 13 (first statement after the pricing `await`) for comment line 11, so `priced` + `orderId` are observable at the stop; pricing breakpoint at code line 19 for comment line 18. Both reported `{"bound":true}` before launch.
+- UC1 and first UC2 pricing stops were continued by an operator `resume` before inspection (`hitCount` `1` then `2` proves both stops); trigger 2 was repeated once with the identical payload — a read-only stale hit that neither stores nor clears — to capture the pricing stop with full `mode`/`lastHit` evidence. No edit, rebuild, or restart; cache poisoned once by trigger 1, never cleared. Both sessions `detach`ed; no target left stopped, no session left bound.
