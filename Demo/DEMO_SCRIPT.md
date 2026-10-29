@@ -15,8 +15,10 @@ Two Solutions, one VS instance each: `Orders.Api` (http://localhost:5201) and
 
 ## 3. Checkpoints (one breakpoint per target process)
 
-- Session B: breakpoint at the `// CHECKPOINT (pricing)` cache lookup in `Program.cs`.
-- Session A: breakpoint at the `// CHECKPOINT (orders)` line after the pricing call in `Program.cs`.
+- Session B: breakpoint at the `// CHECKPOINT (pricing)` cache lookup in
+  `Demo/Pricing.Engine/Application/GetPriceHandler.cs` (line 18).
+- Session A: breakpoint at the `// CHECKPOINT (orders)` line before the pricing
+  call in `Demo/Orders.Api/Application/CreateOrderHandler.cs` (line 11).
 
 ## 4. Repro (triggers, plain HTTP — run in this order)
 
@@ -51,3 +53,19 @@ Invoke-RestMethod -Method Post -Uri http://localhost:5201/orders `
 
 Fill `REPORT.md` from `REPORT_TEMPLATE.md`: PASS/FAIL backed by quoted
 `mode`/`lastHit` per checkpoint. A PASS without quoted evidence does not count.
+
+## 8. Stretch (OPTIONAL, time-permitting, only AFTER the verdict)
+
+Error probes proving the validation relay — not part of the ~10 min main tour:
+
+```powershell
+# Unknown coupon → 400 relayed verbatim from the engine
+Invoke-RestMethod -Method Post -Uri http://localhost:5201/orders `
+  -ContentType 'application/json' -Body '{"productId":"widget","quantity":1,"coupon":"BOGUS"}'
+# quantity < 1 → 400 (orders validates locally, engine never called)
+Invoke-RestMethod -Method Post -Uri http://localhost:5201/orders `
+  -ContentType 'application/json' -Body '{"productId":"widget","quantity":0}'
+# Unknown product → 404 relayed verbatim from the engine
+Invoke-RestMethod -Method Post -Uri http://localhost:5201/orders `
+  -ContentType 'application/json' -Body '{"productId":"nothin","quantity":1}'
+```

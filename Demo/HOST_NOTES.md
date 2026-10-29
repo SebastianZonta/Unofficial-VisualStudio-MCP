@@ -1,5 +1,14 @@
 # Host notes (DO NOT show the audience)
 
+## Coupon catalog (`Pricing.Engine/Domain/PriceCalculator.cs`, case-insensitive)
+
+| Coupon | Discount |
+|--------|----------|
+| SAVE20 | 20% |
+| SAVE10 | 10% |
+| WELCOME5 | 5% |
+| (null/empty) | 0% — valid, no coupon |
+
 ## Expected totals
 
 - Trigger 1 `widget x1, no coupon` → `total 108.00`, `cached false` (correct:
@@ -10,17 +19,33 @@
 
 ## Root cause (the agent must find this live)
 
-`Pricing.Engine/Program.cs` caches by product alone
-(`cache.TryGetValue(req.ProductId, ...)`), ignoring quantity and coupon.
-Trigger 1 warms the entry; trigger 2 serves it stale. The surrounding comments
-present it as a perf optimization, so static reading stays ambiguous — only a
-stopped target process showing the wrong-key hit plus the `cached: true`
-payload in the frontend proves it.
+Singleton `Pricing.Engine/Infrastructure/PriceCache.cs` is keyed by product
+alone (`TryGet(request.ProductId, ...)` / `Store(request.ProductId, ...)`),
+ignoring quantity and coupon. It is injected into
+`Pricing.Engine/Application/GetPriceHandler.cs`, whose
+`// CHECKPOINT (pricing)` cache lookup (line 18; lookup at line 19) serves the
+stale entry with `Cached = true`. The orders-side stop is the
+`// CHECKPOINT (orders)` line (line 11) in
+`Demo/Orders.Api/Application/CreateOrderHandler.cs`, just before the pricing
+HTTP call (line 12). Trigger 1 warms the entry; trigger 2 serves it stale.
+The surrounding comments present the cache as a perf optimization, so static
+reading stays ambiguous — only a stopped target process showing the
+wrong-key hit plus the `cached: true` payload in the frontend proves it.
 
 ## Fix (for after the demo, not during)
 
 Key the cache by product + quantity + coupon (or drop the cache). Do not apply
 before the show — the fault is the feature.
+
+## Error cases (validation relay — stretch only, not the main tour)
+
+- Unknown coupon → engine 400 `{"error":"unknown coupon '<v>'"}`, relayed
+  verbatim by orders with the same 400 status (via `EngineErrorException`).
+- `quantity < 1` → 400 `{"error":"quantity must be >= 1"}`. Orders validates
+  locally (`CreateOrderHandler`, no engine call); the engine validates too.
+- Unknown product → engine 404, relayed verbatim by orders.
+- Engine 5xx / transport failure → orders 502
+  `{"error":"pricing engine rejected the order"}`.
 
 ## Machine prep
 

@@ -1,3 +1,11 @@
+> **Staleness notice:** the body below is evidence from a previous live run
+> recorded before the MediatR restructure. Its quoted `Program.cs` line numbers
+> predate the move of the checkpoints to
+> `Demo/Pricing.Engine/Application/GetPriceHandler.cs` (line 18) and
+> `Demo/Orders.Api/Application/CreateOrderHandler.cs` (line 11), and its cache
+> references predate `Demo/Pricing.Engine/Infrastructure/PriceCache.cs`. Do not
+> treat it as current evidence — a fresh two-VS live pass regenerates this file.
+
 # Flow verdict report
 
 **Verdict:** PASS

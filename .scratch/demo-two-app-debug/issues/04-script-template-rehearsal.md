@@ -17,3 +17,21 @@ Delivered this session: `DEMO_SCRIPT.md` (audience tour), `HOST_NOTES.md`
 verdict). HTTP-level repro verified (see 03). The two-VS live pass is
 host-side: it needs VS 2026 + this MCP on the demo machine, which this
 environment doesn't have. Rehearse it tonight per the script.
+
+## Comments (restructure update)
+
+- Coupon catalog + validation relay added: SAVE20/SAVE10/WELCOME5
+  (case-insensitive, null/empty valid), unknown coupon → 400 relayed verbatim,
+  quantity<1 → 400 (orders validates locally, engine too), unknown product →
+  404 relayed verbatim, engine 5xx/transport → 502. Docs updated:
+  `HOST_NOTES.md` (coupon table, error cases, new checkpoint locations),
+  `DEMO_SCRIPT.md` (handler file refs, optional error-probe stretch).
+- Checkpoint lines moved to the handler files:
+  `Demo/Pricing.Engine/Application/GetPriceHandler.cs:18` (pricing) and
+  `Demo/Orders.Api/Application/CreateOrderHandler.cs:11` (orders); cache is now
+  singleton `Demo/Pricing.Engine/Infrastructure/PriceCache.cs` keyed by product
+  only. `Demo/AGENTS.md` needed no change (no stale file refs; DLL paths and
+  ports verified current).
+- `Demo/REPORT.md` body is stale (pre-restructure `Program.cs` line numbers):
+  staleness banner prepended, body untouched. A fresh two-VS live pass
+  regenerates it.
