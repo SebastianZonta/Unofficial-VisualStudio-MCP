@@ -52,8 +52,17 @@ it with quoted tool evidence.
    cache key + stored entry (session B) and the pricing payload + `orderId`
    (session A). The `orderId` is your capture — quote it to prove both stops
    belong to the same flow. `continue` after each stop.
-8. **Close**: `continue` to completion, `detach` both sessions. No target left
-   stopped, no session left bound.
+8. **Close** (leave the stage as you found it):
+- `remove_breakpoint` every breakpoint you created in both sessions (check with
+  `list_breakpoints` — the list must be empty for your sessions; never touch
+  `other<N>` entries).
+- `continue` to completion, `detach` both debug sessions.
+- Stop both target processes (they still hold 5201/5202 after detach): if you
+  have shell access, stop the processes listening on those ports yourself;
+  otherwise end with the line `HOST: kill the processes on 5201/5202`.
+- Leave both VS instances OPEN — never close `devenv`. The next run reuses
+  them. Done = no breakpoints yours, no session bound, no target running,
+  both VS instances still open.
 
 ## Verdict
 
