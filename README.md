@@ -107,3 +107,11 @@ to or disturbs anything.
   instance enumerate the same breakpoints; per-session bookkeeping (logpoint
   templates, session log) is MCP-side, and `detach` deletes the breakpoints the
   session created.
+
+## Security audit
+
+Deep-profile source audit (2026-10-29, commit `11ca4f6`): 0 confirmed findings
+across 8 coverage units (expression injection, `set_variable` coercion, process
+attach/launch, breakpoints, ROT/COM IPC, installer/supply chain). The full
+report is gitignored at [.scratch/security-audit/run-1/REPORT.md](.scratch/security-audit/run-1/REPORT.md);
+rerun the `security-audit` skill to regenerate it.

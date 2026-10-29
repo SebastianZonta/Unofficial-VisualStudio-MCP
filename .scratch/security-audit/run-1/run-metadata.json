@@ -1,0 +1,30 @@
+{
+  "agents_spent": 11,
+  "budget": null,
+  "execution_policy": "sandboxed-source-and-local-only",
+  "prior_runs": "none - ~/security-audit-skill/ has crap4csharp, vscode only; no compatible ledger/findings for Unofficial-VisualStudio-MCP",
+  "profile": "deep",
+  "repo": "Unofficial-VisualStudio-MCP",
+  "run_id": "run-1",
+  "run_status": "complete",
+  "scope_paths": [
+    "src/VsDebugMcp",
+    "tests/VsDebugMcp.Tests",
+    "scripts",
+    "install.sh",
+    "install.ps1",
+    "docs/TOOLS.md"
+  ],
+  "selected_companions": [
+    "AI-AND-LLM.md (MCP stdio tool-calling agent, prompt-injected tool args)",
+    "SUPPLY-CHAIN-AND-RELEASE.md (publish/install, NuGet/EnvDTE, MCP client wiring)",
+    "RESOURCE-EXHAUSTION-AND-AVAILABILITY.md (STA queue, timeouts, log caps)",
+    "DESKTOP-MOBILE-AND-LOCAL-IPC.md (ROT/COM/WMI local IPC, same-user boundary)"
+  ],
+  "source_ref": {
+    "commit": "11ca4f66c7174507667118286adba0453567c6d3",
+    "dirty": false
+  },
+  "target": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP",
+  "output_dir": ".scratch/security-audit/run-1 (in-repo, git-ignored)"
+}

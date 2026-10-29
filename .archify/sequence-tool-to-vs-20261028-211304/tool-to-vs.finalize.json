@@ -1,0 +1,387 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "skipped",
+  "type": "sequence",
+  "quality": "showcase",
+  "startedAt": "2026-10-29T00:14:37.706Z",
+  "specification": {
+    "path": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/candidate.json",
+    "sha256": "ffdee8b7ae19c4a5e11b5ead614dde55900da6f4287299c582ffc3a22f29e025",
+    "bytes": 5087
+  },
+  "artifact": {
+    "path": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+    "sha256": "1cf2cebf494520e10bfbbef6bdfbc127e2d274d22497fd5211e9d3502d3df8b3",
+    "bytes": 842592
+  },
+  "stages": {
+    "validate": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": null,
+      "execution": "embedded-in-deliver",
+      "command": [
+        "/home/coffpa/.nvs/node/24.9.0/x64/bin/node",
+        "/home/coffpa/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "sequence",
+        "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/candidate.json",
+        "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": true,
+        "command": "validate",
+        "specification": {
+          "sha256": "ffdee8b7ae19c4a5e11b5ead614dde55900da6f4287299c582ffc3a22f29e025",
+          "bytes": 5087
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        }
+      }
+    },
+    "deliver": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 515,
+      "command": [
+        "/home/coffpa/.nvs/node/24.9.0/x64/bin/node",
+        "/home/coffpa/.agents/skills/archify/bin/archify.mjs",
+        "deliver",
+        "sequence",
+        "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/candidate.json",
+        "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+        "--quality",
+        "showcase",
+        "--repo-root",
+        "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP",
+        "--json"
+      ],
+      "receipt": {
+        "schemaVersion": 1,
+        "receiptId": "8afdfcf9-b446-4c26-9525-42e79434e5cc",
+        "ok": true,
+        "command": "deliver",
+        "type": "sequence",
+        "input": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/candidate.json",
+        "output": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+        "specification": {
+          "sha256": "ffdee8b7ae19c4a5e11b5ead614dde55900da6f4287299c582ffc3a22f29e025",
+          "bytes": 5087
+        },
+        "artifact": {
+          "sha256": "1cf2cebf494520e10bfbbef6bdfbc127e2d274d22497fd5211e9d3502d3df8b3",
+          "bytes": 842592
+        },
+        "validation": {
+          "checksPassed": 9,
+          "checkCount": 9,
+          "compositionProfile": "showcase",
+          "compositionStatus": "pass",
+          "errors": 0,
+          "warnings": 0
+        },
+        "evidence": {
+          "verified": true,
+          "repository": "https://github.com/SebastianZonta/Unofficial-VisualStudio-MCP",
+          "revision": "11ca4f66c7174507667118286adba0453567c6d3",
+          "references": 10
+        },
+        "update": {
+          "status": "unavailable",
+          "installedVersion": null,
+          "availableVersion": null,
+          "releaseNotes": null,
+          "checkedAt": null,
+          "source": null,
+          "noticeRequired": false,
+          "noticeText": null,
+          "reason": "disabled"
+        }
+      }
+    },
+    "check": {
+      "status": "pass",
+      "exitCode": 0,
+      "durationMs": 223,
+      "command": [
+        "/home/coffpa/.nvs/node/24.9.0/x64/bin/node",
+        "/home/coffpa/.agents/skills/archify/bin/archify.mjs",
+        "check",
+        "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+        "--require-provenance"
+      ],
+      "receipt": {
+        "ok": true,
+        "file": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+        "artifact": {
+          "sha256": "1cf2cebf494520e10bfbbef6bdfbc127e2d274d22497fd5211e9d3502d3df8b3",
+          "bytes": 842592
+        },
+        "checks": [
+          {
+            "name": "single_svg",
+            "ok": true,
+            "details": [
+              "found 1 <svg> block(s)"
+            ]
+          },
+          {
+            "name": "finite_svg",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "orthogonal_arrows",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "label_route_clearance",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_crossings",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "relationship_corridors",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "container_border_runs",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "route_rhythm",
+            "ok": true,
+            "details": []
+          },
+          {
+            "name": "legend_clearance",
+            "ok": true,
+            "details": []
+          }
+        ],
+        "composition": {
+          "schemaVersion": 1,
+          "profile": "showcase",
+          "status": "pass",
+          "summary": {
+            "errors": 0,
+            "warnings": 0
+          },
+          "metrics": {
+            "properCrossings": 0,
+            "resolvedCrossovers": 0,
+            "ambiguousCorridors": 0,
+            "arrowheadCollisions": 0,
+            "containerBorderRuns": 0,
+            "labelRouteClearanceIssues": 0,
+            "labelCanvasOverflowIssues": 0,
+            "minLabelRouteClearance": 20,
+            "desktopReadabilityIssues": 0,
+            "viewportHeightIssues": 0,
+            "minProjectedNodeTextPx": 6.332684824902723,
+            "maxBends": 0,
+            "routesOverSuggestedBends": 0,
+            "maxStretch": 1,
+            "routesOverSuggestedStretch": 0,
+            "minSegmentPx": 145.8,
+            "minInteriorSegmentPx": null,
+            "shortSegmentCount": 0,
+            "shortEndpointSegmentCount": 0,
+            "shortInteriorSegmentCount": 0,
+            "microSegmentCount": 0
+          },
+          "suggestedLimits": {
+            "bendsPerRelationship": 2,
+            "stretch": 1.35,
+            "segmentPx": 16,
+            "microSegmentPx": 8
+          },
+          "routeReview": {
+            "crossings": [],
+            "detours": []
+          },
+          "leadingSpace": {
+            "measured": false,
+            "reviewSuggested": false
+          },
+          "sequenceColumnSpace": {
+            "measured": true,
+            "columnFit": "spread",
+            "participantCount": 6,
+            "occupiedRight": 988,
+            "viewBoxLeft": 0,
+            "canvasWidth": 1028,
+            "emptyRightPx": 40,
+            "emptyRightRatio": 0.039,
+            "typicalParticipantWidth": 127,
+            "reviewSuggested": false
+          },
+          "desktopReadability": {
+            "budgetBasis": "legacy-930",
+            "readerContract": "declared-wide-v1",
+            "availableDiagramWidth": 930,
+            "actualBudgetPx": 930,
+            "limit": "legacy",
+            "requestedTargetPx": null,
+            "requestedTargetMet": null,
+            "hardFloorPx": 6,
+            "hardFloorMet": true,
+            "minimumOwner": {
+              "kind": "edge",
+              "id": "invoke-tool",
+              "from": "agent",
+              "to": "server"
+            },
+            "minimumSourceTextPx": 7,
+            "minimumProjectedTextPx": 6.332684824902723,
+            "semanticTextCount": 29
+          },
+          "issues": []
+        },
+        "provenance": "current",
+        "deliveryReceiptId": "8afdfcf9-b446-4c26-9525-42e79434e5cc"
+      }
+    },
+    "browser-check": {
+      "status": "skipped",
+      "exitCode": 2,
+      "durationMs": 35,
+      "command": [
+        "/home/coffpa/.nvs/node/24.9.0/x64/bin/node",
+        "/home/coffpa/.agents/skills/archify/bin/archify.mjs",
+        "browser-check",
+        "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+        "--json",
+        "--require-provenance"
+      ],
+      "execution": "in-process",
+      "receipt": {
+        "schemaVersion": 1,
+        "ok": false,
+        "command": "browser-check",
+        "evidenceKind": "automated-browser",
+        "status": "skipped",
+        "visualReview": "not-requested",
+        "provenance": "current",
+        "deliveryReceiptId": "8afdfcf9-b446-4c26-9525-42e79434e5cc",
+        "artifact": {
+          "path": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+          "sha256": "1cf2cebf494520e10bfbbef6bdfbc127e2d274d22497fd5211e9d3502d3df8b3",
+          "bytes": 842592
+        },
+        "state": {
+          "detail": "read",
+          "motion": "still"
+        },
+        "chrome": {
+          "status": "unavailable",
+          "executable": null
+        },
+        "diagnostics": [
+          {
+            "code": "viewer/chrome-unavailable",
+            "severity": "warning",
+            "message": "No supported browser found. Install Chrome/Chromium (or Microsoft Edge), or set ARCHIFY_CHROME to its executable path.",
+            "subject": {
+              "artifact": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html"
+            },
+            "evidence": {
+              "executable": null
+            },
+            "supportedFixes": [
+              "set ARCHIFY_CHROME to a Chrome/Chromium executable (or Microsoft Edge) and rerun browser-check"
+            ]
+          }
+        ],
+        "containment": {
+          "status": "skipped",
+          "policy": "fit-or-reader-declared-readable-vertical-scroll",
+          "viewports": []
+        },
+        "themeStates": {
+          "status": "skipped",
+          "viewports": []
+        },
+        "readability": {
+          "status": "skipped",
+          "minimumProjectedNodeTextPx": 6,
+          "viewports": []
+        },
+        "viewerChrome": {
+          "status": "skipped",
+          "viewports": []
+        },
+        "captures": {
+          "status": "not-requested",
+          "screenshots": [],
+          "contactSheet": null
+        },
+        "sidecars": {
+          "receipt": "tool-to-vs.browser-check.json",
+          "files": []
+        },
+        "error": "No supported browser found. Install Chrome/Chromium (or Microsoft Edge), or set ARCHIFY_CHROME to its executable path."
+      }
+    }
+  },
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/chrome-unavailable",
+      "severity": "warning",
+      "message": "No supported browser found. Install Chrome/Chromium (or Microsoft Edge), or set ARCHIFY_CHROME to its executable path.",
+      "subject": {
+        "artifact": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html"
+      },
+      "evidence": {
+        "executable": null
+      },
+      "supportedFixes": [
+        "set ARCHIFY_CHROME to a Chrome/Chromium executable (or Microsoft Edge) and rerun browser-check"
+      ]
+    }
+  ],
+  "evidence": {
+    "receipt": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.finalize.json",
+    "summaryReceipt": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.finalize-summary.json",
+    "browserCheckReceipt": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.browser-check.json"
+  },
+  "visualReview": "not-requested",
+  "failedStage": "browser-check",
+  "finishedAt": "2026-10-29T00:14:38.617Z",
+  "durationMs": 911,
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-29T00:13:57.436Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "finalize",
+  "status": "skipped",
+  "type": "sequence",
+  "quality": "showcase",
+  "specification": {
+    "path": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/candidate.json",
+    "sha256": "ffdee8b7ae19c4a5e11b5ead614dde55900da6f4287299c582ffc3a22f29e025",
+    "bytes": 5087
+  },
+  "artifact": {
+    "path": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html",
+    "sha256": "1cf2cebf494520e10bfbbef6bdfbc127e2d274d22497fd5211e9d3502d3df8b3",
+    "bytes": 842592
+  },
+  "gates": {
+    "validate": "pass",
+    "deliver": "pass",
+    "check": "pass",
+    "browser-check": "skipped"
+  },
+  "failedStage": "browser-check",
+  "diagnostics": [
+    {
+      "code": "viewer/chrome-unavailable",
+      "severity": "warning",
+      "message": "No supported browser found. Install Chrome/Chromium (or Microsoft Edge), or set ARCHIFY_CHROME to its executable path.",
+      "subject": {
+        "artifact": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.html"
+      },
+      "evidence": {
+        "executable": null
+      },
+      "supportedFixes": [
+        "set ARCHIFY_CHROME to a Chrome/Chromium executable (or Microsoft Edge) and rerun browser-check"
+      ]
+    }
+  ],
+  "diagnosticSummary": {
+    "total": 1,
+    "shown": 1,
+    "truncated": false
+  },
+  "evidence": {
+    "receipt": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.finalize.json",
+    "summaryReceipt": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.finalize-summary.json",
+    "browserCheckReceipt": "/home/coffpa/Desktop/Investigacion/Unofficial-VisualStudio-MCP/.archify/sequence-tool-to-vs-20261028-211304/tool-to-vs.browser-check.json"
+  },
+  "update": {
+    "status": "current",
+    "installedVersion": "3.2.0",
+    "availableVersion": "3.2.0",
+    "releaseNotes": null,
+    "checkedAt": "2026-10-29T00:13:57.436Z",
+    "source": "cache",
+    "noticeRequired": false,
+    "noticeText": null
+  },
+  "visualReview": "not-requested",
+  "durationMs": 911,
+  "browserCheck": {
+    "requested": true,
+    "ran": false
+  }
+}
