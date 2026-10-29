@@ -1,7 +1,7 @@
 using System.Collections.Concurrent;
 
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://localhost:5202");
+// Listening URL lives in appsettings.json ("Urls"); launchSettings mirrors it.
 var app = builder.Build();
 
 // Catalog: the engine is the single owner of price math.

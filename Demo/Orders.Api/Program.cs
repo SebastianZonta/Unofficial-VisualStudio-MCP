@@ -1,6 +1,6 @@
 var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://localhost:5201");
-builder.Services.AddHttpClient("pricing", c => c.BaseAddress = new Uri("http://localhost:5202"));
+// Listening URL lives in appsettings.json ("Urls"); launchSettings mirrors it.
+builder.Services.AddHttpClient("pricing", c => c.BaseAddress = new Uri(builder.Configuration["Pricing:BaseUrl"]!));
 var app = builder.Build();
 
 app.MapGet("/health", () => Results.Ok(new { status = "ok", service = "orders" }));
