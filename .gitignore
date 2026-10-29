@@ -12,6 +12,7 @@ publish/
 .DS_Store
 .codegraph/
 .scratch/e2e-runs/
+.scratch/security-audit/
 .claude/settings.local.json
 
 .archify/
