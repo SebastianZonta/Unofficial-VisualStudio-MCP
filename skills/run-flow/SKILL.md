@@ -1,6 +1,6 @@
 ---
 name: run-flow
-description: "Run a flow plan against the VS debugger: a flow runner subagent builds, launches the target, checks every checkpoint, writes a run report, and returns the verdict. Use after plan-flow, when the developer names a flow to run."
+description: "Run a flow plan against the VS debugger: a flow runner subagent builds, binds the targets, fires the trigger, checks every checkpoint, writes a run report, and returns the verdict. Use after plan-flow, when the developer names a flow to run."
 disable-model-invocation: true
 ---
 
@@ -28,7 +28,7 @@ Repo root: <absolute repo root>
 Report: <report path>
 ```
 
-Done when the flow runner returns its `Verdict:` block.
+Keep the subagent's ID. When the flow runner returns `Waiting: <instruction>` (a `human` trigger), put the instruction to the developer verbatim and ask them to say when it is done; the debugger waits meanwhile. Resume the same flow runner with `SendMessage` (to its ID): `done`, or `could not: <the developer's reason>`. Done when the flow runner returns its `Verdict:` block.
 
 ## 4. Report
 

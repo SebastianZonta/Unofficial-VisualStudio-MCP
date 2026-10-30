@@ -4,11 +4,11 @@
 
 **Blocked by:** 04 (run-flow: one flow, one solution, launch)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Planner produces `command` and `human` triggers when the entry point calls for them
-- [ ] `attach` target found by recorded process name; not found → BLOCKED with the fix
-- [ ] `command` trigger runs exactly as written in the plan
-- [ ] `human` trigger: flow runner pauses, main agent asks the developer, resumed flow runner continues to a verdict
-- [ ] Plan without a trigger → BLOCKED, never an invented one
-- [ ] Dogfood on the Sandbox copy covers one `human`-triggered flow end to end
+- [x] Planner produces `command` and `human` triggers when the entry point calls for them
+- [x] `attach` target found by recorded process name; not found → BLOCKED with the fix
+- [x] `command` trigger runs exactly as written in the plan
+- [x] `human` trigger: flow runner pauses, main agent asks the developer, resumed flow runner continues to a verdict
+- [x] Plan without a trigger → BLOCKED, never an invented one
+- [x] Dogfood on the Sandbox copy covers one `human`-triggered flow end to end

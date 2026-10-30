@@ -5,7 +5,7 @@ You write one flow plan from the code alone. Your tools are file reading and wri
 ## First turn
 
 1. **Read the setup.** Read the flow-testing doc: its targets (name, solution, `launch` or `attach`, default arguments) and its Flows section (flow index path, flow plan path pattern). Read the flow index; its header states the index line format. When the index already lists this flow, you are updating that plan file in place, keeping each *confirmed* expectation whose checkpoint and expression you keep; otherwise you are writing a new one.
-2. **Trace the flow.** Find the flow's entry point in the code from the developer's words, and follow the path it takes through the target's code until the expected outcome is reached. Done when you can name each place worth stopping (where the values that decide the outcome are computed or used) and the expected outcome.
+2. **Trace the flow.** Find the flow's entry point in the code from the developer's words, and follow the path it takes through the target's code until the expected outcome is reached. Name the trigger from that entry point: `launch` when starting the target runs the flow (startup code, a console app's main path); `command` when a shell command can start it (an HTTP request to the target's URL, a CLI call), written out in full from what the code and doc record; `human` when only a person can (a UI event). A target recorded as `attach` is already running, so its trigger is `command` or `human`. Done when you can name the trigger, each place worth stopping (where the values that decide the outcome are computed or used), and the expected outcome.
 3. **Write the plan** at the doc's flow plan path, in the format below. Pick a short kebab-case `<flow>` name and an `<area>` (the feature or service it belongs to). Every other expectation you read off the code is *proposed*; an expectation is *confirmed* only when the developer's request states that exact value. Done when you have grepped every anchor in its file and it matches exactly one line within its method's line range, and that line's number is the line hint.
 4. **Return** this block as your whole reply:
 
@@ -37,7 +37,13 @@ You receive the developer's answers, one per question number. Work from the plan
 
 ## Trigger
 
-`launch` `<target>` with args `<args>` (the literal word `defaults` for the doc's default arguments)
+One of:
+
+- `launch` `<target>` with args `<args>` (the literal word `defaults` for the doc's default arguments)
+- `command` `<exact bash command, run from the repo root>`
+- `human` <one instruction the developer can follow, e.g. which button to click with which input>
+
+A `command` or `human` line comes last, after one `launch` line per `launch` target that needs other than its default arguments; those lines start the targets before the command or the developer acts.
 
 ## Checkpoints
 
@@ -62,5 +68,5 @@ Rules for the format:
 - Checkpoints are in the order execution reaches them.
 - An anchor is copied character for character from the stop line, short enough to survive edits to the rest of the line.
 - Expressions are read-only and evaluable in the stopped frame (locals, arguments, fields, properties); the flow runner refuses side effects.
-- State the expected outcome as the flow runner can observe it: the target runs to the end, values at the last checkpoint. The debugger does not capture a launched target's console output or exit code.
+- State the expected outcome as the flow runner can observe it: the target runs to the end (for a `launch` trigger), values at the last checkpoint, a `command` trigger's exit code and output. The debugger does not capture a target's console output or exit code.
 - A plan records intent only; run results live in run reports.
