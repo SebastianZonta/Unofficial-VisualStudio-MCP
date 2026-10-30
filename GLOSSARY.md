@@ -13,6 +13,11 @@ One of many live MCP-side handles; each binds exactly one VS instance to
 subsequent tool calls, isolated from sibling sessions. Released with `detach`.
 _Avoid_: connection, instance
 
+**Client session**:
+One MCP client connection to the server (e.g. one Claude conversation). It owns
+zero or more debug sessions and is the unit whose tool calls are viewed together.
+_Avoid_: session (unqualified), conversation, debug session
+
 **Instance override**:
 Optional ROT display-name prefix selecting which VS instance to bind.
 _Avoid_: instance id, instance name

@@ -31,15 +31,18 @@ it with quoted tool evidence.
    to the Orders VS instance (debug session A). One session per instance.
 4. **Breakpoints before launch** (this is the point — set them first):
    - Session B: breakpoint at the `// CHECKPOINT (pricing)` cache lookup.
-   - Session A: breakpoint at the `// CHECKPOINT (orders)` line after the
-     pricing HTTP call.
+   - Session A: breakpoint at the `// CHECKPOINT (orders)` line, just before
+     the pricing HTTP call. At the stop, step over the pricing `await` to read
+     `priced`, then on to `orderId`.
 5. **Launch** (one live target per debug session):
-   - Session B: `launch_process` the engine (`dotnet` exe, args =
-     `Demo/Pricing.Engine/bin/Debug/net10.0/Pricing.Engine.dll`, working
+   - Session B: `launch_process` the engine apphost (absolute path to
+     `Demo/Pricing.Engine/bin/Debug/net10.0/Pricing.Engine.exe`, working
      directory = `Demo/Pricing.Engine`).
-   - Session A: `launch_process` the frontend (`dotnet` exe, args =
-     `Demo/Orders.Api/bin/Debug/net10.0/Orders.Api.dll`, working directory
+   - Session A: `launch_process` the frontend apphost (absolute path to
+     `Demo/Orders.Api/bin/Debug/net10.0/Orders.Api.exe`, working directory
      = `Demo/Orders.Api`).
+   - Never launch `dotnet.exe <dll>`: the bridge rejects it (no
+     `.runtimeconfig.json` beside `dotnet.exe`).
    - Confirm each launch result carries the new target PID plus mode/lastHit.
 6. **Repro** (in this order, plain HTTP — narrate expected vs actual):
    - Trigger 1: `POST http://localhost:5201/orders`
