@@ -43,8 +43,12 @@ auto-detected (TOML `~/.codex/config.toml`, not JSON) — add it by hand
 command = "C:\\Tools\\VsDebugMcp\\VsDebugMcp.exe"
 ```
 then restart the client and verify like the Manual-install step 4 below.
-A plain re-run deletes the install folder, reinstalls it, and re-merges every detected
-client config — nothing else is touched.
+When Claude Code is detected, the installer also copies the flow-testing skills
+(the bundle's `skills\` folder: `setup-flow-testing`, …) into `~\.claude\skills\`,
+replacing only those folders; your other skills are left alone. `-ConfigOnly` copies
+them from the existing install (an older bundle without `skills\` just prints a skip).
+A plain re-run deletes the install folder, reinstalls it, re-merges every detected
+client config, and replaces the shipped skill folders — nothing else is touched.
 Needs a published release —
 push a `vX.Y.Z` tag (semver without the `v`; see `.github/workflows/release.yml`).
 
@@ -52,7 +56,7 @@ push a `vX.Y.Z` tag (semver without the `v`; see `.github/workflows/release.yml`
 |---|---|---|---|
 | dest | `-Dest <folder>` | `--dest <folder>` | Install folder (default `C:\Tools\VsDebugMcp`; `/c/Tools/VsDebugMcp` under Git Bash; `~/.local/share/vs-debug-mcp` elsewhere) |
 | exe | `-Exe <path>` | `--exe PATH` | Wire a different exe (an explicit relative `--exe` resolves against cwd, not `--dest`) |
-| config-only | `-ConfigOnly` | `--config-only` | Re-wire configs without re-downloading (needs the exe already in place) |
+| config-only | `-ConfigOnly` | `--config-only` | Re-wire configs and re-copy skills without re-downloading (needs the exe already in place) |
 | help (`install.sh` only) | — | `-h` / `--help` | List flags |
 
 ## Manual install

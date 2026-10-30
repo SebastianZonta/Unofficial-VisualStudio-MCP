@@ -43,6 +43,7 @@ jobs:
         run: |
           $version = $env:GITHUB_REF_NAME.Substring(1)
           ./scripts/publish-fresh.ps1 -OutDir publish/win-x64 -Version $version -SingleFile
+          Copy-Item -Recurse skills publish/win-x64/skills  # flow-testing skills ride the zip checksum
           Compress-Archive -Force publish/win-x64/* 'VsDebugMcp-win-x64.zip'
           [System.IO.File]::WriteAllText('SHA256SUMS.txt', ((Get-FileHash 'VsDebugMcp-win-x64.zip' -Algorithm SHA256).Hash.ToLower() + '  VsDebugMcp-win-x64.zip' + "`n"))  # LF-only: macOS shasum chokes on CRLF
 

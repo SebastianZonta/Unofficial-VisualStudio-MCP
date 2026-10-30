@@ -4,11 +4,11 @@
 
 **Blocked by:** 01 (setup-flow-testing skill)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Release workflow includes the skills directory in the zip
-- [ ] `install.ps1` copies the skill folders when Claude Code is detected, including under `-ConfigOnly`
-- [ ] `install.sh` behaves the same
-- [ ] Run against a temp HOME with a fake install plus an unrelated pre-existing user skill: three skill folders land, the unrelated skill is untouched, a rerun replaces the three folders
-- [ ] Missing skills directory in the install (older bundle) is a clear message, not a crash
-- [ ] `INSTALL.md` notes the skills copy
+- [x] Release workflow includes the skills directory in the zip
+- [x] `install.ps1` copies the skill folders when Claude Code is detected, including under `-ConfigOnly`
+- [x] `install.sh` behaves the same
+- [x] Run against a temp HOME with a fake install plus an unrelated pre-existing user skill: three skill folders land, the unrelated skill is untouched, a rerun replaces the three folders
+- [x] Missing skills directory in the install (older bundle) is a clear message, not a crash
+- [x] `INSTALL.md` notes the skills copy

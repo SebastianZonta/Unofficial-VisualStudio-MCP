@@ -13,7 +13,7 @@ Requires: 64-bit Windows, Visual Studio 2026 running as the same user as the MCP
 param(
   [string]$Dest = 'C:\Tools\VsDebugMcp', # install folder; override with -Dest <path>
   [string]$Exe = '',                      # server exe to wire (default $Dest\VsDebugMcp.exe)
-  [switch]$ConfigOnly                     # skip download: only (re)wire client configs
+  [switch]$ConfigOnly                     # skip download: only (re)wire client configs and copy skills
 )
 $ErrorActionPreference = 'Stop'
 
@@ -45,7 +45,7 @@ function To-Hashtable($o) {
 }
 
 function Merge-JsonFile([string]$Path, [scriptblock]$Merge) {
-  $dir = Split-Path -LiteralPath $Path -Parent
+  $dir = [System.IO.Path]::GetDirectoryName($Path)
   if ($dir -and -not (Test-Path -LiteralPath $dir)) { [System.IO.Directory]::CreateDirectory($dir) | Out-Null }
   $obj = @{}
   if (Test-Path -LiteralPath $Path) {
@@ -140,17 +140,35 @@ function Wire-Clients([string]$Exe) {
 
   # Windsurf (probe the parent dir, like install.sh: dir-exists-but-no-file still wires)
   $p = Join-Path $homeDir '.codeium\windsurf\mcp_config.json'
-  if (Test-Client 'windsurf' (Split-Path -LiteralPath (Split-Path -LiteralPath $p -Parent) -Parent)) { if (Add-McpServer 'Windsurf' $p 'mcpServers' $Exe) { $wired++ } }
+  if (Test-Client 'windsurf' ([System.IO.Path]::GetDirectoryName([System.IO.Path]::GetDirectoryName($p)))) { if (Add-McpServer 'Windsurf' $p 'mcpServers' $Exe) { $wired++ } }
 
   # Gemini CLI (probe the parent dir, like install.sh)
   $p = Join-Path $homeDir '.gemini\settings.json'
-  if (Test-Client 'gemini' (Split-Path -LiteralPath $p -Parent)) { if (Add-McpServer 'Gemini CLI' $p 'mcpServers' $Exe) { $wired++ } }
+  if (Test-Client 'gemini' ([System.IO.Path]::GetDirectoryName($p))) { if (Add-McpServer 'Gemini CLI' $p 'mcpServers' $Exe) { $wired++ } }
 
   if ($wired -eq 0) {
     Write-Host 'No supported client detected. Register manually:'
     Write-Host "  `"vs-debug`": { `"type`": `"local`", `"command`": [`"$($Exe -replace '\\', '\\')`"] }"
   } else {
     Write-Host "Wired $wired client(s). Restart each client, open VS 2026, and verify: attach should return a sessionId."
+  }
+}
+
+function Install-Skills([string]$InstallDir) {
+  # Flow-testing skills ship in the bundle's skills\ folder; replace only the folders we ship.
+  if (-not (Test-Client 'claude' (Join-Path $HOME '.claude.json'))) { return }
+  $src = Join-Path $InstallDir 'skills'
+  if (-not (Test-Path -LiteralPath $src -PathType Container)) {
+    Write-Host "  [skip] Claude Code skills: no skills folder in $InstallDir (older bundle); install the latest release to get them"
+    return
+  }
+  $dst = Join-Path $HOME '.claude\skills'
+  [System.IO.Directory]::CreateDirectory($dst) | Out-Null
+  foreach ($d in Get-ChildItem -LiteralPath $src -Directory) {
+    $t = Join-Path $dst $d.Name
+    if (Test-Path -LiteralPath $t) { Remove-Item -LiteralPath $t -Recurse -Force }
+    Copy-Item -LiteralPath $d.FullName -Destination $t -Recurse
+    Write-Host "  [skill] $($d.Name) ($t)"
   }
 }
 
@@ -175,3 +193,4 @@ if (-not $ConfigOnly) {
 
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) { throw "No server at $exe - run without -ConfigOnly first, or pass -Dest <folder with $ExeName>." }
 Wire-Clients $exe
+Install-Skills $Dest

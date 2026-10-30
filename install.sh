@@ -27,7 +27,7 @@ usage() {
   echo 'usage: install.sh [--dest DIR] [--exe PATH] [--config-only]'
   echo '  --dest DIR     install folder (default /c/Tools/VsDebugMcp on Windows, ~/.local/share/vs-debug-mcp elsewhere)'
   echo '  --exe PATH     server exe to wire (default $DEST/VsDebugMcp.exe; an explicit relative --exe resolves against cwd, not DEST)'
-  echo '  --config-only  skip download: only (re)wire client configs'
+  echo '  --config-only  skip download: only (re)wire client configs and copy skills'
 }
 
 while [ $# -gt 0 ]; do
@@ -201,6 +201,26 @@ else:
 EOF
 }
 
+install_skills() {
+  # Flow-testing skills ship in the bundle's skills/ folder; replace only the folders we ship.
+  local src dst d
+  command -v claude >/dev/null || [ -e "$HOME/.claude.json" ] || return 0
+  src="$1/skills"
+  if [ ! -d "$src" ]; then
+    echo "  [skip] Claude Code skills: no skills folder in $1 (older bundle); install the latest release to get them"
+    return 0
+  fi
+  dst="$HOME/.claude/skills"
+  mkdir -p "$dst"
+  for d in "$src"/*/; do
+    [ -d "$d" ] || continue
+    d="${d%/}"
+    rm -rf "${dst:?}/${d##*/}"
+    cp -R "$d" "$dst/"
+    echo "  [skill] ${d##*/} ($dst/${d##*/})"
+  done
+}
+
 if [ "$CONFIG_ONLY" -eq 0 ]; then
   for cmd in curl unzip mktemp; do
     command -v "$cmd" >/dev/null || { echo "missing required tool: $cmd" >&2; exit 1; }
@@ -238,3 +258,4 @@ if [ ! -f "$EXE" ]; then
   echo "No server at $EXE — run without --config-only first, or pass --dest <folder with $EXE_NAME>." >&2; exit 1
 fi
 wire_clients "$EXE"
+install_skills "$DEST"
