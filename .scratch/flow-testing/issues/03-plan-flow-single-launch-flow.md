@@ -4,12 +4,12 @@
 
 **Blocked by:** 01 (setup-flow-testing skill)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Planner instructions live as a reference file in the skill folder, read by the subagent only
-- [ ] No flow-testing doc → tells the developer to run setup, writes nothing
-- [ ] On the Sandbox copy, a named flow yields one plan file with a `launch` trigger and anchored checkpoints
-- [ ] Inferred expectations are marked *proposed* and returned as questions; the main agent never answers them itself
-- [ ] Resumed planner marks answered expectations *confirmed* without re-exploring
-- [ ] Flow index gains one line (name linking the plan, gist) under the area
-- [ ] Planner never calls an MCP tool
+- [x] Planner instructions live as a reference file in the skill folder, read by the subagent only
+- [x] No flow-testing doc → tells the developer to run setup, writes nothing
+- [x] On the Sandbox copy, a named flow yields one plan file with a `launch` trigger and anchored checkpoints
+- [x] Inferred expectations are marked *proposed* and returned as questions; the main agent never answers them itself
+- [x] Resumed planner marks answered expectations *confirmed* without re-exploring
+- [x] Flow index gains one line (name linking the plan, gist) under the area
+- [x] Planner never calls an MCP tool
