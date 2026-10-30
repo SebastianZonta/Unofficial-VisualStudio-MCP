@@ -1,4 +1,0 @@
-<Project>
-  <!-- Stops the repo-root props (TreatWarningsAsErrors, analysis) from reaching the
-       demo debug targets: they are throwaway stage apps, not product code. -->
-</Project>
