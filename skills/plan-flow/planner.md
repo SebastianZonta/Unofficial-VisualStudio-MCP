@@ -62,4 +62,5 @@ Rules for the format:
 - Checkpoints are in the order execution reaches them.
 - An anchor is copied character for character from the stop line, short enough to survive edits to the rest of the line.
 - Expressions are read-only and evaluable in the stopped frame (locals, arguments, fields, properties); the flow runner refuses side effects.
+- State the expected outcome as the flow runner can observe it: the target runs to the end, values at the last checkpoint. The debugger does not capture a launched target's console output or exit code.
 - A plan records intent only; run results live in run reports.
