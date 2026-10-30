@@ -149,8 +149,46 @@ is never an attach target. The target PID identifies the program under test
 `attach_process` argument.
 _Avoid_: pid (unqualified — always say which)
 
+**Flow / flow plan**:
+A flow is one behaviour of a developer's own app, exercised end to end under
+the debugger (e.g. "POST /orders applies the discount"). A flow plan is the
+single document describing it: a trigger, ordered checkpoints (a location plus
+the expressions to read there and their expected values), and the expected
+outcome. Written without the debugger, from the code alone.
+_Avoid_: spec (a feature spec for building this MCP), use case, test case
+
+**Checkpoint / expectation**:
+A checkpoint is one stop in a flow plan: a place in one named target's code,
+anchored by its surrounding code rather than a line number, plus the
+expectations to check there. An expectation is a value the developer intends at
+that checkpoint. It is _proposed_ until the developer confirms it; a flow plan
+with any proposed expectation is not runnable, because expectations read off
+the code would only test the code against itself. A checkpoint whose anchor no
+longer matches the code makes the plan _stale_.
+_Avoid_: assertion (when meaning an expectation), breakpoint (when meaning the checkpoint itself)
+
+**Flow index**:
+The one document listing every flow plan in a developer's repo, grouped by
+area, each with a one-line gist. An index, never a store: it links, never
+restates.
+_Avoid_: map (when meaning the flow index)
+
+**Trigger**:
+What makes a flow's code run under the debugger: `launch` (the target process
+started by `launch_process` with arguments), `command` (a shell command the
+flow runner executes, e.g. an HTTP request), or `human` (an action the
+developer performs when asked). A flow runner never invents a trigger the flow
+plan does not name.
+_Avoid_: input, stimulus
+
+**Flow runner**:
+The subagent that executes one flow plan against the debugger and returns its
+verdict. Distinct from an E2E **Runner**, which runs a slice of this MCP's own
+E2E pass.
+_Avoid_: runner (unqualified, when meaning the flow runner)
+
 **Verdict**:
-The overall PASS or FAIL of an E2E pass, backed by a status (PASS, FAIL,
+The overall PASS or FAIL of an E2E pass or a flow run, backed by a status (PASS, FAIL,
 BLOCKED, OBS) and quoted tool evidence for every case. PASS only when nothing
 FAILs or BLOCKs.
 _Avoid_: result, report (when meaning the outcome)
