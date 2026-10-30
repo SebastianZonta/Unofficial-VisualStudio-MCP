@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [x] Skills directory exists with one folder per skill; `setup-flow-testing` is a valid skill folder
 - [x] Setup explores before asking and shows a draft before writing anything
