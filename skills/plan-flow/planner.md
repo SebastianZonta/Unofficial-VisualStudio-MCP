@@ -4,20 +4,20 @@ You write one flow plan from the code alone. Your tools are file reading and wri
 
 ## First turn
 
-1. **Read the setup.** Read the flow-testing doc: its targets (name, solution, `launch` or `attach`, default arguments) and its Flows section (flow index path, flow plan path pattern). Read the flow index; its header states the index line format. When the index already lists this flow, you are updating that plan file in place; otherwise you are writing a new one.
+1. **Read the setup.** Read the flow-testing doc: its targets (name, solution, `launch` or `attach`, default arguments) and its Flows section (flow index path, flow plan path pattern). Read the flow index; its header states the index line format. When the index already lists this flow, you are updating that plan file in place, keeping each *confirmed* expectation whose checkpoint and expression you keep; otherwise you are writing a new one.
 2. **Trace the flow.** Find the flow's entry point in the code from the developer's words, and follow the path it takes through the target's code until the expected outcome is reached. Done when you can name each place worth stopping (where the values that decide the outcome are computed or used) and the expected outcome.
-3. **Write the plan** at the doc's flow plan path, in the format below. Pick a short kebab-case `<flow>` name and an `<area>` (the feature or service it belongs to). Every expectation you read off the code is *proposed*; an expectation is *confirmed* only when the developer's request states that exact value. Done when you have grepped every anchor in its file and it matches exactly one line within its method's line range, and that line's number is the line hint.
+3. **Write the plan** at the doc's flow plan path, in the format below. Pick a short kebab-case `<flow>` name and an `<area>` (the feature or service it belongs to). Every other expectation you read off the code is *proposed*; an expectation is *confirmed* only when the developer's request states that exact value. Done when you have grepped every anchor in its file and it matches exactly one line within its method's line range, and that line's number is the line hint.
 4. **Return** this block as your whole reply:
 
    ```
    Plan: <plan path>
    Index line (area <area>): <the flow's index line>
    Questions:
-   1. <where: checkpoint N `<expression>`, expected outcome, or the ambiguity>: proposed `<value>`. <why you read it that way, one line>
+   1. <where: checkpoint N `<expression>`, expected outcome, or the ambiguity>: proposed `<value>` (for an ambiguity, the options and your pick). <why you read it that way, one line>
    2. ...
    ```
 
-   One question per proposed expectation (including the expected outcome), plus one per ambiguity you could not settle from the code. When there are none, write `Questions: none`, do the finalise step now, and replace the `Index line` row with `Index: written`.
+   One question per proposed expectation (including the expected outcome), plus one per ambiguity you could not settle from the code. When there are none, write `Questions: none`, do the finalise step now, and add an `Index: written` row.
 
 ## Resumed turn
 
@@ -25,7 +25,7 @@ You receive the developer's answers, one per question number. Work from the plan
 
 1. Apply each answer: set the expectation to the developer's value and mark it *confirmed*. An answer of "unsure" (or none) leaves it *proposed*.
 2. **Finalise**: add the index line to the flow index under a `## <area>` heading (create the heading if missing; replace the flow's existing line rather than adding a second).
-3. Return `Plan: <path>`, `Index: written`, and `Still proposed:` with the remaining proposed expectations (or `none`). An answer that needs a checkpoint moved goes in a new `Questions:` list, as in the first turn.
+3. Return `Plan: <path>`, `Index line (area <area>): <the flow's index line>`, `Index: written`, and `Still proposed:` with the remaining proposed expectations (or `none`). An answer that would move a checkpoint leaves its expectations proposed; list them under `Still proposed:` with "checkpoint moves: rerun plan-flow with the corrected flow".
 
 ## Plan format
 
@@ -50,11 +50,11 @@ You receive the developer's answers, one per question number. Work from the plan
 - Line hint: <line number of the anchor now>
 - Stop when: `<read-only condition>` (only when the line runs more than once and the first hit is not the one to judge)
 - Read:
-  - `<expression>` = `<value>` (proposed)
+  - `<expression>` = `<value>` (proposed | confirmed)
 
 ## Expected outcome
 
-<what is true when the flow has finished, e.g. the exit code or the printed result> (proposed)
+<what is true when the flow has finished, e.g. the exit code or the printed result> (proposed | confirmed)
 ````
 
 Rules for the format:

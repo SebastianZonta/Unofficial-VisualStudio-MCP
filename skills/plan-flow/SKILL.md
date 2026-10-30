@@ -23,7 +23,7 @@ Flow-testing doc: <doc path>
 Repo root: <absolute repo root>
 ```
 
-Keep the subagent's ID for step 4. Done when the planner returns `Plan:`, `Index line` (or `Index: written`), and `Questions:`.
+Keep the subagent's ID for step 4. Done when the planner returns `Plan:`, `Index line`, and `Questions:`.
 
 ## 3. Ask the developer
 
@@ -31,7 +31,7 @@ When the planner returned `Questions: none`, go to step 5. Otherwise put every q
 
 ## 4. Resume the planner
 
-Send the answers to the same planner with `SendMessage` (to its ID), one line per question: question number, then the developer's answer verbatim. When it returns new questions, go back to step 3. Done when the planner returns `Index: written`.
+Send the answers to the same planner with `SendMessage` (to its ID), one line per question: question number, then the developer's answer verbatim. Done when the planner returns `Index: written`.
 
 ## 5. Report
 
