@@ -4,13 +4,13 @@
 
 **Blocked by:** 03 (plan-flow: one flow with a launch trigger)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Flow runner instructions live as a reference file in the skill folder
-- [ ] Unknown flow name → error, no guess; plan with a proposed expectation → refused before dispatch
-- [ ] Missing VS / solution not open / build failure → BLOCKED with the fix, no breakpoints set
-- [ ] On the Sandbox copy, the plan from 03 runs to a verdict with quoted evidence per checkpoint
-- [ ] Deliberately wrong expectation → FAIL; unexpected extra fact → OBS; verdict PASS only with no FAIL/BLOCKED
-- [ ] Report written to default directory; a request-named location overrides it for that run
-- [ ] Main agent receives only verdict, report path, non-PASS rows
-- [ ] After the run (success, failure, timeout), `list_breakpoints` in a fresh session shows none of the runner's breakpoints and no debug session is left open
+- [x] Flow runner instructions live as a reference file in the skill folder
+- [x] Unknown flow name → error, no guess; plan with a proposed expectation → refused before dispatch
+- [x] Missing VS / solution not open / build failure → BLOCKED with the fix, no breakpoints set
+- [x] On the Sandbox copy, the plan from 03 runs to a verdict with quoted evidence per checkpoint
+- [x] Deliberately wrong expectation → FAIL; unexpected extra fact → OBS; verdict PASS only with no FAIL/BLOCKED
+- [x] Report written to default directory; a request-named location overrides it for that run
+- [x] Main agent receives only verdict, report path, non-PASS rows
+- [x] After the run (success, failure, timeout), `list_breakpoints` in a fresh session shows none of the runner's breakpoints and no debug session is left open
