@@ -22,6 +22,7 @@ research [01](../research/01-skill-distribution.md).
 - [ ] For each of opencode, Claude Code, Cursor, VS Code Copilot, Windsurf, Gemini CLI and Codex: the folders it actually loads skills from, observed rather than quoted from docs.
 - [ ] For opencode, Cursor and Copilot: whether a same-name skill in both shared folders lists once or twice.
 - [ ] For every client: whether any flag stops the model from invoking a skill on its own, and which.
+- [ ] For every client: its subagent tool, whether a stopped subagent can be continued, and whether a `sessionId` one subagent opened is usable by the orchestrator and a later subagent (same MCP server process). A client with no continue uses a fresh subagent from file; one with no shared session moves abort cleanup into the subagent.
 - [ ] A recommended installer target set that lists each skill exactly once per client, with the reason.
 - [ ] The research note is written and linked from the spec's probe table, with P1 and P2 marked proven or with what stays unproven.
 - [ ] Dummy skills are removed from every folder afterwards.

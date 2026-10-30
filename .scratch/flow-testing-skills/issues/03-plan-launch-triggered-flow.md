@@ -24,5 +24,7 @@ Spec: [Plan](../spec.md#plan-vs-debug-plan-flow), [Flow plan format](../spec.md#
 - [ ] Questions cover only intent: right outcome, triggering input, which use cases matter.
 - [ ] The plan is one file per flow with one section per use case, written to the committed plan folder recorded in the setup doc.
 - [ ] Re-planning an existing flow refreshes anchors and references, keeps every id, asks only about changed behaviour, and appends new use cases.
-- [ ] The planner ends by offering a run; the run works in the same session or a fresh one.
+- [ ] Orchestration ([spec](../spec.md#orchestration)): a planner subagent charts, scouts and writes a draft flow plan with an `Open questions` section, then stops; the orchestrator asks those questions verbatim and continues it (or a fresh one on the draft); the final plan has no `Open questions`. The orchestrator never reads code or the plan.
+- [ ] The planner returns only the plan path and use case ids.
+- [ ] The planner ends by offering a run; on yes the orchestrator spawns a new run subagent, never the planner's.
 - [ ] Skills pass case: plan the `inspect` flow (scouting included), then run it with ticket 02's run: PASS.

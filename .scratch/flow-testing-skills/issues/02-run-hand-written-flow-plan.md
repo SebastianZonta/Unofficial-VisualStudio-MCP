@@ -24,4 +24,7 @@ Spec: [Flow plan format](../spec.md#flow-plan-format),
 - [ ] On every exit path: the session is detached (its breakpoints deleted), foreign breakpoints are untouched, and processes the run launched are stopped.
 - [ ] The verdict file lands in the gitignored verdict folder in the spec's format. The run reports the verdict, counts, every FAIL/BLOCKED with evidence and the path, offers next steps, and never edits the plan or the code.
 - [ ] Multi-threaded logpoints (issue 10): a logpoint stop is OBS and resumes; an `(unavailable)` entry counts as a hit with no value.
-- [ ] Skills pass cases: a hand-written `inspect` plan gives PASS; an edited snippet gives BLOCKED "re-plan"; a foreign breakpoint on the route gives OBS; VS is left as found.
+- [ ] Orchestration ([spec](../spec.md#orchestration)): one run subagent per flow run does the work; the main conversation receives only the verdict line with counts, FAIL/BLOCKED rows with evidence, and the path.
+- [ ] The verdict's `Run state` line (`sessionId`, launched PIDs, changed exception settings, next row) is written before the first VS-changing call and kept current.
+- [ ] Abort cleanup: when the subagent returns without a finished verdict, the orchestrator stops the listed PIDs, resets the listed settings, detaches, and reports BLOCKED "run aborted".
+- [ ] Skills pass cases: a hand-written `inspect` plan gives PASS; an edited snippet gives BLOCKED "re-plan"; a foreign breakpoint on the route gives OBS; VS is left as found; a run subagent cancelled midway leaves VS as found.

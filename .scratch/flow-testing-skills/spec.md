@@ -2,7 +2,7 @@
 
 Status: needs-info
 
-Blocked on probes P1–P4 (see [Capabilities and probes](#capabilities-and-probes)).
+Blocked on probes P1–P3 (see [Capabilities and probes](#capabilities-and-probes)).
 Vocabulary: [GLOSSARY.md](../../GLOSSARY.md#flow-testing). Decisions:
 [ADR-0013](../../docs/adr/0013-flow-runs-borrow-open-vs.md),
 [ADR-0014](../../docs/adr/0014-skills-ship-in-release.md). Research:
@@ -107,7 +107,7 @@ Run
 48. As a developer, I want command triggers run in the background with their output collected afterwards, so that a request paused at a checkpoint never reports a spurious timeout.
 49. As a developer, I want to be asked once per flow run for attach consent, naming the process and target PID, so that attaching stays a conscious act.
 50. As a developer at a human trigger, I want my targets running, the next checkpoints armed and the instruction filled with captured values ("approve order 1042"), so that my action is observed.
-51. As a developer, I want "done" at a human trigger to be the next armed checkpoint hitting or me saying done, whichever comes first, so that I don't have to report the obvious.
+51. As a developer, I want my action at a human trigger caught even if I act before saying done, so that the order of "act" and "done" doesn't matter.
 52. As an agent that just changed code, I want to run a flow plan on my own, doing every use case that needs no human first and asking before each human-gated one, so that I can verify without blocking on the developer early.
 53. As a developer, I want a check that fails to be recorded as FAIL while the use case continues, so that later checkpoints still give evidence.
 54. As a developer, I want a stop on my own breakpoint during a run recorded as an observation and resumed, so that my breakpoints never fail a run.
@@ -118,6 +118,8 @@ Run
 59. As a developer, I want redacted checkpoints to show only match or mismatch in the verdict, so that sensitive values stay out of it.
 60. As a developer, I want verdicts gitignored, so that run output never lands in a commit.
 61. As a developer, I want the run never to edit the plan or my code and to offer next steps (debug the FAIL, re-plan stale anchors), so that I stay in control of fixes.
+62. As a developer, I want planning and runs done by subagents, with my conversation holding only questions, answers and results, so that long flows don't fill my context.
+63. As a developer, I want a run that dies midway to still leave my VS as it found it, so that a crashed subagent never strands a debug session or a changed exception setting.
 
 Maintain
 
@@ -151,6 +153,25 @@ Maintain
   "run the X flow plan").
 - Skills name tools and parameters but never restate TOOLS.md. They tell the agent to
   load the vs-debug toolset, and they carry only the rules flow testing adds.
+
+### Orchestration
+
+- Setup runs in the main conversation: it is an interview plus a short smoke check.
+- Plan and run are orchestrated. The skill body tells the main agent (the
+  **orchestrator**) to delegate the heavy steps to a subagent through the client's own
+  subagent tool, named generically, never per client. No `context: fork` frontmatter:
+  it is client-specific and a forked skill can't hand control back.
+- Only the orchestrator talks to the developer. A subagent never asks: it stops and
+  returns what needs asking. The orchestrator relays it verbatim, then continues the
+  subagent with the answer. The orchestrator never reads code or plans; it handles
+  questions, answers, results and the abort cleanup below.
+- **Files are the handoff.** Continuing a stopped subagent is preferred; where the
+  client can't, a fresh subagent picks up from the file on disk (the draft flow plan
+  for the planner, the verdict's `Run state` line for the run), so both paths give the
+  same result.
+- **Returns stay small.** The planner returns the plan path and use case ids. The run
+  returns the verdict line with counts, every FAIL and BLOCKED row with evidence, and
+  the verdict path. The orchestrator opens neither file unless the developer asks.
 
 ### Setup (`vs-debug-setup`)
 
@@ -232,22 +253,40 @@ Maintain
 
 ### Plan (`vs-debug-plan-flow`)
 
-1. No setup doc: stop with one line telling the developer to run `vs-debug-setup`.
-2. Read the code to chart the flow and collect its references and candidate anchors.
+1. No setup doc: the orchestrator stops with one line telling the developer to run
+   `vs-debug-setup`.
+2. The orchestrator spawns the planner subagent with the flow named by the developer.
+   The subagent reads the code to chart the flow and collect its references and
+   candidate anchors.
 3. **Scouting run** (setup green, trigger not human): put logpoints on candidate
-   anchors, trigger once, and show which hit, in what order and with what values.
+   anchors, trigger once, and record which hit, in what order and with what values.
    Values are labelled observed and become expectations only when the developer
    confirms them.
-4. One short round of questions on intent only: the right outcome per use case, the
-   triggering input, which use cases matter, waivers.
-5. Write the plan. When an existing plan exists, update it in place (refresh anchors
-   and references, keep ids, ask only about changed behaviour). Offer to move any rule
-   stated for every flow into flow standards.
-6. Offer to run the plan. The run skill needs only the setup doc, flow standards and
-   the plan, so the same or a fresh session works.
+4. The subagent writes a **draft flow plan** in the plan location: references,
+   candidate use cases with their anchors, observed values, and an `Open questions`
+   section holding one short round on intent only (the right outcome per use case,
+   the triggering input, which use cases matter, waivers, and which observed values
+   to confirm). It stops and returns those questions.
+5. The orchestrator asks them verbatim and continues the subagent (or a fresh one on
+   the draft) with the answers. The subagent writes the final plan, dropping
+   `Open questions`. When a plan already exists, it is updated in place (refresh
+   anchors and references, keep ids, ask only about changed behaviour). A rule stated
+   for every flow is returned as an offer to move it into flow standards.
+6. The orchestrator offers to run the plan. On yes it spawns a new run subagent, never
+   the planner's: the run needs only the setup doc, flow standards and the plan.
 
 ### Run (`vs-debug-run-flow`) ([ADR-0013](../../docs/adr/0013-flow-runs-borrow-open-vs.md))
 
+- **One run subagent per flow run.** It owns the debug session, and targets are reused
+  across use cases as below. The orchestrator checks for the setup doc, spawns the
+  subagent, relays what it returns, and does the abort cleanup.
+- **Run state.** Before its first tool call that changes VS, the subagent writes a
+  `Run state` line at the top of the verdict file and keeps it current: `sessionId`,
+  the PIDs it launched, each exception setting it changed, and the next row to run.
+- **Abort cleanup.** If the subagent returns without a finished verdict (crash, context
+  limit, cancel), the orchestrator reads only the `Run state` line, stops those PIDs,
+  resets each listed setting with `set_exception_setting(sessionId, exceptionType, mode: default)`,
+  calls `detach(sessionId)`, and reports the flow run BLOCKED "run aborted".
 - **Preflight:**
   1. Setup doc present, else point to setup.
   2. Build.
@@ -257,14 +296,15 @@ Maintain
   6. An instance already debugging (not `design`) is BLOCKED; a missing second instance
      blocks its checkpoints with the instruction to open it.
   7. Attach consent, if any use case needs it, is asked once, naming the process and
-     target PID.
+     target PID: the subagent stops and returns `consent: attach <process> PID <pid>`,
+     and attaches only when continued with the developer's yes.
 - **VS state.** Never start or close VS. On every exit path, detach (which deletes the
   session's own breakpoints) and reset each exception setting the run changed (ADR-0011:
   detach does not). Foreign breakpoints are never touched.
 - **Order.** Use cases run one at a time in plan order, or only the named ones. When an
-  agent started the run on its own, ungated use cases go first, then the run asks
-  before each human-gated one ("ready for UC2? midway it needs you to approve an
-  order").
+  agent started the run on its own, ungated use cases go first, then the subagent
+  stops before each human-gated one and the orchestrator asks ("ready for UC2? midway
+  it needs you to approve an order").
 - **Targets.**
   - A target needed by command or human triggers is launched (or attached) once per
     flow run and reused across use cases.
@@ -279,10 +319,13 @@ Maintain
 - **Human triggers:**
   1. Ensure no target process is stopped.
   2. Arm the following checkpoints.
-  3. Print the instruction with captures filled in.
-  4. Wait in `resume` calls. "Done" is the next armed checkpoint hitting or the human
-     saying done, whichever comes first (P4).
-  5. The next checkpoint's deferred budget starts when the human trigger is done.
+  3. Stop and return `human: <instruction>` with captures filled in. The breakpoints
+     stay armed in VS while the subagent is stopped, so the action is caught even if
+     the developer acts before saying done.
+  4. The orchestrator prints the instruction and waits for the developer's "done",
+     then continues the subagent.
+  5. The subagent reads `mode`/`lastHit` first (the checkpoint may already have hit),
+     then carries on. The next checkpoint's deferred budget starts when it continues.
 - **Waiting.** `resume` accepts 1–60 s per call and already waits for the next stop
   while the target runs. Budgets beyond 60 s (deferred checkpoints, human triggers)
   are consecutive `resume` calls. Launch and resume use 30 s unless the plan says
@@ -363,10 +406,9 @@ Unproven (each needs a probe before the work that depends on it):
 
 | Probe | Question | How | Decides |
 |---|---|---|---|
-| P1 | Does a same-name skill in both `~/.claude/skills` and `~/.agents/skills` list twice in opencode, Cursor and Copilot? Does Windsurf load skills, and from where? | Spike: a dummy skill in both folders, listed in each client | Installer target folders |
+| P1 | Does a same-name skill in both `~/.claude/skills` and `~/.agents/skills` list twice in opencode, Cursor and Copilot? Does Windsurf load skills, and from where? Per client: what is its subagent tool, can a stopped subagent be continued, and is a `sessionId` one subagent opened usable by the orchestrator and a later subagent (same MCP server process)? | Spike: a dummy skill in both folders, listed in each client; a dummy skill that has a subagent `attach`, stop, and the orchestrator call `list_sessions` | Installer target folders; orchestration per client (no continue: fresh subagent from file; no shared session: the subagent owns its own abort cleanup) |
 | P2 | Do opencode, Cursor, Copilot and Gemini CLI honour any user-only flag? | Spike: a dummy skill with each candidate flag, then try model invocation | The setup skill's invocation promise per client (until proven: description says user-only) |
 | P3 | Does a command trigger started in the background stay pending while the target sits at a checkpoint, then complete after resume, with output collected from a file, from a non-elevated agent shell against a localhost listener that needs no URL reservation? | Spike on the new Sandbox `serve` scenario | The command-trigger mechanics and the Sandbox listener choice |
-| P4 | Does text the agent prints before a blocking `resume` reach the human while the call is pending? | Phase H human trigger, once per client | Human handover: if not shown mid-turn, the run ends its turn after printing and waits for "done" before resuming |
 
 ## Testing Decisions
 
@@ -385,7 +427,11 @@ Unproven (each needs a probe before the work that depends on it):
      checkpoint with a capture) and second consumer process (out-of-process leg across
      two VS instances): PASS;
   6. a foreign breakpoint along the route: OBS;
-  7. VS is left as found (no session breakpoints, exception settings reset).
+  7. VS is left as found (no session breakpoints, exception settings reset);
+  8. the run subagent is cancelled midway: the orchestrator's abort cleanup leaves VS
+     as found and reports BLOCKED "run aborted";
+  9. the main conversation holds only the planner's questions, the answers and the
+     returned results, never code or plan contents.
   Human triggers are verified in phase H. Prior art: the E2E pass (`e2e.md`,
   `e2e-runner.md` rules, report format) and P10's two-VS setup.
 - **Seam 2: the docs contract suite.** A new case checks that every tool name and
