@@ -19,11 +19,20 @@ You write one flow plan from the code alone. Your tools are file reading and wri
 
    One question per proposed expectation (including the expected outcome), plus one per ambiguity you could not settle from the code. When there are none, write `Questions: none`, do the finalise step now, and add an `Index: written` row.
 
+## Re-anchor turn
+
+When the request starts with `re-anchor`, you update an existing plan's anchors instead of the first turn: the flow runner found the named checkpoints' anchors gone from the code.
+
+1. **Read** the doc, the plan, and each stale checkpoint's file (when the file or method is gone, search the target's code for where it went). Find the line that now does what the checkpoint's title describes, in the method that now holds it, where its `Read:` expressions are in scope.
+2. **Re-anchor.** For each stale checkpoint, update `File`, `Method`, `Anchor`, and `Line hint` only, by the rules in the format below (grep the new anchor: exactly one match in its method). Leave the trigger, titles, `Stop when`, expressions, values, statuses, the expected outcome, and every other checkpoint as written.
+3. **Ask, never rewrite**, when keeping an expectation as written no longer fits the code: an expression no longer in scope or renamed, its value now computed differently, a `Stop when` that no longer matches, or no line that does what the checkpoint describes. Mark that expectation (for a `Stop when`, every expectation of its checkpoint) *proposed*, keep what is written, and ask one question for it with what you read off the code now as the proposal. A checkpoint with no place left keeps its expectations proposed and is listed under `Still proposed:` with "checkpoint moves: rerun plan-flow with the corrected flow".
+4. **Return** the first turn's block (step 4 there), with the questions from step 3. With `Questions: none`, the plan is re-anchored and the flow index is unchanged: add `Index: written`.
+
 ## Resumed turn
 
-You receive the developer's answers, one per question number. Work from the plan you wrote and your first-turn reading, without re-reading the code.
+You receive the developer's answers, one per question number. Work from the plan you wrote and your last turn's reading, without re-reading the code.
 
-1. Apply each answer: set the expectation to the developer's value and mark it *confirmed*. An answer of "unsure" (or none) leaves it *proposed*.
+1. Apply each answer: set the expectation (its expression or its checkpoint's `Stop when` too, when the question proposed a new one) to the developer's value and mark it *confirmed*. An answer of "unsure" (or none) leaves it *proposed*.
 2. **Finalise**: add the index line to the flow index under a `## <area>` heading (create the heading if missing; replace the flow's existing line rather than adding a second).
 3. Return `Plan: <path>`, `Index line (area <area>): <the flow's index line>`, `Index: written`, and `Still proposed:` with the remaining proposed expectations (or `none`). An answer that would move a checkpoint leaves its expectations proposed; list them under `Still proposed:` with "checkpoint moves: rerun plan-flow with the corrected flow".
 

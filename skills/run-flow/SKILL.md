@@ -32,4 +32,17 @@ Keep the subagent's ID. When the flow runner returns `Waiting: <instruction>` (a
 
 ## 4. Report
 
-Give the developer the verdict, the report path, and the FAIL / BLOCKED / OBS rows from the flow runner's `Verdict:` block, BLOCKED rows first with their fix leading. When it says `Stale: yes`, add that the plan's anchors no longer match the code and `plan-flow` can re-anchor it. Done when the developer has the verdict and the report path.
+Give the developer the verdict, the report path, and the FAIL / BLOCKED / OBS rows from the flow runner's `Verdict:` block, BLOCKED rows first with their fix leading. When it says `Stale: yes`, add that those checkpoints' anchors no longer match the code, and offer to send the planner back to re-anchor them; then stop and wait for the developer's answer. Never re-anchor on your own. Done when the developer has the verdict and the report path, and, for a stale plan, has answered the offer.
+
+## 5. Re-anchor (stale plan, developer said yes)
+
+Start one subagent with the `Agent` tool, `model: "sonnet"`, and this prompt (the reference path is `planner.md` in the `plan-flow` skill folder next to this skill's base directory, given as an absolute path):
+
+```
+You are the flow planner. Read <absolute path to planner.md> and follow it.
+Request: re-anchor <plan path>, stale checkpoints <N, ...>
+Flow-testing doc: <doc path>
+Repo root: <absolute repo root>
+```
+
+Keep the subagent's ID. When it returns questions, put each to the developer with its proposed value and resume the same planner with `SendMessage`, one line per question: number, then the developer's answer verbatim, until it returns `Index: written`. Tell the developer what moved, anything `Still proposed:` (the plan cannot run until it is confirmed), and offer to rerun the flow (steps 2 to 4). Done when the developer has the re-anchored plan and the rerun offer.
