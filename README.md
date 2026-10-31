@@ -23,6 +23,14 @@ An agent workflow looks like this:
 4. `attach_process` — aim the debugger at it (`consent: true`, same-user only). Or skip steps 3–4: `launch_process` starts the program with the debugger attached from birth, so startup breakpoints hit.
 5. `set_breakpoint` → `resume` → `read_stack` / `read_variables` / `evaluate` → `resume`.
 
+## Flow testing
+
+Three Claude Code skills (in [skills/](skills/); the installer copies them to `~/.claude/skills/`) turn the tools into repeatable checks of a flow through your app: where the debugger should stop and what the values should be there.
+
+1. `/setup-flow-testing` first, once per repo: records your solutions, build command, and targets in a flow-testing doc and creates the flow index. Example: `/setup-flow-testing`.
+2. `/plan-flow`: a planner reads the code and writes a flow plan (trigger, checkpoints, expectations); every value it infers comes back to you as a question. Example: `/plan-flow checkout in area orders: posting a cart to /orders applies the discount`.
+3. `/run-flow`: a flow runner per flow builds, starts or attaches the targets, fires the trigger, checks every checkpoint, and returns a PASS/FAIL verdict with a run report. Name a flow, an area, or `all`. Example: `/run-flow checkout`.
+
 ## Tools (21)
 
 | Tool | One line |
