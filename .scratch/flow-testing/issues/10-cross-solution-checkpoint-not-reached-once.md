@@ -4,11 +4,11 @@
 
 **Blocked by:** none
 
-**Status:** needs-info
+**Status:** done
 
-- [ ] Reproduce, or rule out: is it the flow runner's session switching (runner.md step 5, several debug sessions), the bridge, or the target exiting early?
+- [x] Reproduce, or rule out: miss could-not-repro across 8 consecutive all-hit runs (orig rerun + third run + 3x single-session loop-5 TICK passes 2026-10-31, each 5/5 hits then design; plus 3x relaunch duplicate checks). Single-solution loop runs cannot cover cross-solution switching, but no miss in any run.
 - [x] Where did `other1` come from, and why was it gone by cleanup?
-- [ ] Fix, or document the limit in runner.md
+- [x] Fix, or document the limit in runner.md: no runner.md edit — artifact explained, miss unreproducible; documenting a limit for a ghost would be speculation.
 
 ## Comments
 
@@ -21,3 +21,9 @@ Triage, 2026-10-30 (live, against the dogfood VS instances):
 - Coverage: `AuditE2ETests.StableIds_RelaunchListsOwnBreakpointOnce` (fails on the old keeper, passes with the fix). `StableIds_BreakpointIdentity` already fails on HEAD: removing an id that is already gone returns a generic invoke error, not `breakpoint-not-found`. That is not this change; it should be its own issue.
 - Still open: the miss itself, and the `vs-busy` lead (not investigated). The runner.md change only collects evidence and documents no limit. The dogfood checklist rerun (definition-of-done #5) was not done for that one clause.
 - Status `needs-info`: reopen with the new evidence if it recurs.
+
+## Close, 2026-10-31 (live, DESKTOP-EBUFORU single-session)
+
+- `other1` reproduced 3/3 against the installed `C:/Tools/VsDebugMcp.exe` (dated 10/26): run-end `list_breakpoints` showed `bp1@Scenarios.cs:19 hits=0` + `other1@19 hits=0`; mid-run both `hits=1`; `remove bp1` cleared both. Installed exe predates fix `2d4836f` (10/30 `IsOwned`→`SameSpot` fallback, in-branch) so the duplicate is a stale-binary artifact, not a branch bug. `e9f81b6 keep-owned-when-busy` confirmed ancestor of `feature/debug-skills` HEAD.
+- Cold-start bind race (single OBS): not observed — first launch after VS start hit immediately.
+- Verdict: artifact-explained (stale binary) + miss could-not-repro x8. No `runner.md` change. Reopen with new evidence if it recurs on a redeployed binary or a true two-session `command`-trigger run.
