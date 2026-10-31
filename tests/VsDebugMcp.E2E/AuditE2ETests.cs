@@ -356,6 +356,53 @@ public sealed class AuditE2ETests(E2EFixture fx)
     }
 
     [E2EFact]
+    public async Task StableIds_RelaunchListsOwnBreakpointOnce()
+    {
+        E2EFixture.Gate();
+        var ct = TestCt();
+        await E2EFixture.WithCleanupAsync<object?>(async cleanups =>
+        {
+            var sessionId = await AttachAsync(ct);
+            cleanups.Add(() => DetachAsync(sessionId, CancellationToken.None));
+            var set = await E2EFixture.CallAsync(fx.Client, "set_breakpoint",
+                Args(("sessionId", sessionId), ("file", fx.SandboxScenarios), ("line", fx.MarkerLine("INSPECT"))), ct);
+            var bp = Prop(ArrayProp(set, "breakpoint"), "id");
+            cleanups.Add(async () =>
+            {
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "remove_breakpoint", Args(("sessionId", sessionId), ("breakpointId", bp)), CancellationToken.None);
+                }
+                catch { }
+            });
+            cleanups.Add(async () =>
+            {
+                try
+                {
+                    await E2EFixture.CallAsync(fx.Client, "resume", Args(("sessionId", sessionId), ("timeoutMs", 30000)), CancellationToken.None);
+                }
+                catch { }
+            });
+            // A relaunch hands back the same breakpoint through a new VS wrapper (issue 10): it must not list as other<N>.
+            for (var run = 1; run <= 2; run++)
+            {
+                var launch = await E2EFixture.CallAsync(fx.Client, "launch_process",
+                    Args(("sessionId", sessionId), ("executablePath", fx.SandboxExe), ("arguments", "inspect"), ("timeoutMs", 30000)), ct);
+                Assert.Equal("break", E2EFixture.ModeOf(launch));
+
+                if (run == 1)
+                    Assert.Equal("design", E2EFixture.ModeOf(await E2EFixture.CallAsync(fx.Client, "resume",
+                        Args(("sessionId", sessionId), ("timeoutMs", 30000)), ct)));
+            }
+
+            var list = await E2EFixture.CallAsync(fx.Client, "list_breakpoints", Args(("sessionId", sessionId)), ct);
+            var only = Assert.Single(ArrayProp(list, "breakpoints").EnumerateArray());
+            Assert.Equal(bp, Prop(only, "id"));
+            return null;
+        });
+    }
+
+    [E2EFact]
     public async Task AttachMode_ReportsKnownMode()
     {
         E2EFixture.Gate();

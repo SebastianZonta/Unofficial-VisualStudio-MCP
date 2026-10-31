@@ -41,7 +41,7 @@ internal sealed class BreakpointKeeper
 
         (BreakpointInfo Info, string Mode, string? LastHit, bool Created) Occupied(int i)
         {
-            var mine = owned.FirstOrDefault(o => SameBreakpoint(live[i], o.Breakpoint))
+            var mine = owned.FirstOrDefault(o => IsOwned(live[i], o.Breakpoint))
                 ?? throw BreakpointOptions.Exists(BreakpointOptions.ForeignId(i + 1), file, line);
             var spec = specs.FirstOrDefault(s => s.Id == mine.Id);
             var info = SnapshotBreakpoint(live[i], mine.Id) with
@@ -67,7 +67,7 @@ internal sealed class BreakpointKeeper
         // of the global list", which could be a breakpoint the user set.
         var bp = created is { Count: > 0 } ? created.Item(1) : debugger.Breakpoints.Item(debugger.Breakpoints.Count);
         // Safety net for a path the location check missed: Add handed back an existing
-        // breakpoint. Never delete or own it.
+        // breakpoint. Never delete or own it. Identity only: a re-wrapped hand-back is already caught by the location check above.
         var handedBack = live.FindIndex(b => SameBreakpoint(b, bp));
         if (handedBack >= 0)
             return Occupied(handedBack);
@@ -186,7 +186,7 @@ internal sealed class BreakpointKeeper
 
         for (var i = 0; i < live.Count; i++)
         {
-            if (owned.Any(o => SameBreakpoint(live[i], o.Breakpoint)))
+            if (owned.Any(o => IsOwned(live[i], o.Breakpoint)))
                 continue;
 
             foreign.Add(SnapshotBreakpoint(live[i], BreakpointOptions.ForeignId(i + 1))
@@ -274,6 +274,30 @@ internal sealed class BreakpointKeeper
     /// on each enumeration, so compare IUnknown pointers, not references.</summary>
     private static bool SameBreakpoint(Breakpoint a, Breakpoint b) =>
         ReferenceEquals(a, b) || HaveSameIUnknown(a, b);
+
+    /// <summary>A live breakpoint is the owned one by COM identity or, failing that, by exact
+    /// file:line:column: a relaunch hands back the same breakpoint through a new wrapper
+    /// (seen live as a duplicate other&lt;N&gt; sharing the owned one's hits, issue 10).</summary>
+    // shortcut: two genuine breakpoints at one file:line:column would merge; VS's UI toggles an occupied spot, upgrade if a client can create one.
+    private static bool IsOwned(
+        Breakpoint live,
+        Breakpoint owned) =>
+        SameBreakpoint(live, owned) || SameSpot(live, owned);
+
+    private static bool SameSpot(
+        Breakpoint a,
+        Breakpoint b)
+    {
+        try
+        {
+            return a.FileLine == b.FileLine && a.FileColumn == b.FileColumn
+                && string.Equals(a.File, b.File, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex) when (ex is COMException or InvalidComObjectException)
+        {
+            return false;
+        }
+    }
 
     private static bool HaveSameIUnknown(Breakpoint a, Breakpoint b)
     {

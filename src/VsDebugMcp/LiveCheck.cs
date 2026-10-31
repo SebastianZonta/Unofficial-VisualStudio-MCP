@@ -70,14 +70,31 @@ internal static class LiveCheck
             var set = await bridge.SetBreakpointAsync(sessionId, rest[1], line, cts.Token);
             bpId = set.Breakpoint.Id;
             var cwd = Path.GetTempPath().TrimEnd('\\');
-            var launch = await bridge.LaunchProcessAsync(sessionId, rest[0], "a1 a2", cwd,
-                new Dictionary<string, string> { ["LIVE_CHECK"] = "launched" }, 30_000, cts.Token);
-            Console.WriteLine($"launch: pid={launch.ProcessId} status={launch.Status} mode={launch.Mode} lastHit={launch.LastHit}");
-            if (launch.Mode != "break")
+
+            // Twice: the relaunch hands back our breakpoint through a new VS wrapper, which must not list as other<N>.
+            for (var run = 1; run <= 2; run++)
             {
-                Console.Error.WriteLine("entry-point breakpoint did not hit at startup");
+                if (run == 2)
+                    await bridge.ResumeAsync(sessionId, 30_000, cts.Token);
+
+                var launch = await bridge.LaunchProcessAsync(sessionId, rest[0], "a1 a2", cwd,
+                    new Dictionary<string, string> { ["LIVE_CHECK"] = "launched" }, 30_000, cts.Token);
+                Console.WriteLine($"launch {run}: pid={launch.ProcessId} status={launch.Status} mode={launch.Mode} lastHit={launch.LastHit}");
+                if (launch.Mode != "break")
+                {
+                    Console.Error.WriteLine("entry-point breakpoint did not hit at startup");
+                    return 1;
+                }
+            }
+
+            var listed = (await bridge.ListBreakpointsAsync(sessionId, cts.Token)).Breakpoints;
+            Console.WriteLine($"listed after relaunch: {string.Join(", ", listed.Select(b => $"{b.Id}@{b.Line} hits={b.HitCount}"))}");
+            if (listed.Count != 1 || listed[0].Id != bpId)
+            {
+                Console.Error.WriteLine("own breakpoint did not list exactly once after relaunch");
                 return 1;
             }
+
             foreach (var expr in new[] { "args.Length", "args[1]", "System.Environment.CurrentDirectory", "System.Environment.GetEnvironmentVariable(\"LIVE_CHECK\")" })
             {
                 var eval = await bridge.EvaluateAsync(sessionId, expr, 10_000, cts.Token);
