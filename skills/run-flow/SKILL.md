@@ -18,7 +18,7 @@ Read each plan. A plan with any expectation (or the expected outcome) marked *pr
 
 ## 3. Dispatch the flow runners
 
-Run the flows one at a time, in order: dispatch the next only when the previous has returned its `Verdict:` block.
+A flow's solution set is the solutions, in the doc's Targets table, of every target its checkpoints name. Two flows may run at once only when their solution sets share no solution: one VS instance serves one flow runner at a time. Go through the flows in order: start each one whose solution set is disjoint from every running flow's (counting the ones just started), and queue the rest; start those of one pass in a single message, so they run at once. Each time a flow runner returns its `Verdict:` block, start the queued flows that are now disjoint, in order.
 
 For each, pick the report path: `<report dir>/<flow>-<run tag>.md`, where the report dir is a location the developer named in this request, else the doc's run report directory, and the run tag is the local time as `YYYYMMDD-HHMMSS`. Start one subagent with the `Agent` tool, `model: "sonnet"`, and this prompt (the reference path is `runner.md` in this skill's base directory, given as an absolute path):
 
@@ -30,11 +30,11 @@ Repo root: <absolute repo root>
 Report: <report path>
 ```
 
-Keep the subagent's ID. When the flow runner returns `Waiting: <instruction>` (a `human` trigger), put the instruction to the developer verbatim and ask them to say when it is done; the debugger waits meanwhile. Resume the same flow runner with `SendMessage` (to its ID): `done`, or `could not: <the developer's reason>`. Done when every flow runner has returned its `Verdict:` block.
+Keep each subagent's ID with its flow. When a flow runner returns `Waiting: <instruction>` (a `human` trigger), name its flow and put the instruction to the developer verbatim and ask them to say when it is done; the debugger waits meanwhile. Resume the same flow runner with `SendMessage` (to its ID): `done`, or `could not: <the developer's reason>`. Done when every flow runner has returned its `Verdict:` block.
 
 ## 4. Report
 
-For each flow, in run order, give the developer its verdict, the report path, and the FAIL / BLOCKED / OBS rows from its `Verdict:` block, BLOCKED rows first with their fix leading; then name the flows not run (step 2). For each flow whose block says `Stale: yes`, add that those checkpoints' anchors no longer match the code, and offer to send the planner back to re-anchor them; then stop and wait for the developer's answer. Never re-anchor on your own. Done when the developer has each verdict and report path, and, for a stale plan, has answered the offer.
+For each flow, in the order the flow runners returned, give the developer its verdict, the report path, and the FAIL / BLOCKED / OBS rows from its `Verdict:` block, BLOCKED rows first with their fix leading; then name the flows not run (step 2). For each flow whose block says `Stale: yes`, add that those checkpoints' anchors no longer match the code, and offer to send the planner back to re-anchor them; then stop and wait for the developer's answer. Never re-anchor on your own. Done when the developer has each verdict and report path, and, for a stale plan, has answered the offer.
 
 ## 5. Re-anchor (stale plan, developer said yes)
 

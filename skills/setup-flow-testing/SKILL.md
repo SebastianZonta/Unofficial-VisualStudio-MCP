@@ -14,7 +14,7 @@ Read the repo before asking anything. Done when every item below has an answer f
 
 - Every `.sln` / `.slnx` (skip `bin/`, `obj/`, `node_modules/`) and its projects; which projects are executables (`OutputType` `Exe`/`WinExe`, or `Microsoft.NET.Sdk.Web`).
 - For each executable project: its build output path for the default configuration, `launchSettings.json` profiles (arguments, working directory, URLs), and its assembly name (the process name an `attach` target is found by).
-- The build command the repo already uses (scripts, CI workflow, `README`); otherwise `dotnet build <solution>`.
+- The build command the repo already uses (scripts, CI workflow, `README`); otherwise `dotnet build <solution>`, one per solution that owns a target, joined by `&&`.
 - `CLAUDE.md` and `AGENTS.md` at the repo root: which exist, and whether either already holds a `Flow testing:` pointer line.
 - An existing agent-docs directory (`docs/agents/` or similar) and a prior `flow-testing.md` from an earlier run of this skill. On a rerun, the prior doc is the starting draft.
 - `.gitignore` at the repo root, and whether it already ignores a flow report directory.
