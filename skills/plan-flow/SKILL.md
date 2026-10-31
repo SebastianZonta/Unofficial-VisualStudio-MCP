@@ -1,12 +1,12 @@
 ---
 name: plan-flow
-description: "Write or update a flow plan for one behaviour of the developer's app: a planner subagent reads the code, every inferred expectation goes to the developer, then the plan is listed in the flow index. Use after setup-flow-testing, before run-flow."
+description: "Write or update flow plans for one behaviour or an area of the developer's app: a planner subagent reads the code, every inferred expectation goes to the developer, then each plan is listed in the flow index. Use after setup-flow-testing, before run-flow."
 disable-model-invocation: true
 ---
 
 # Plan flow
 
-Turn a flow the developer names in plain words into a committed flow plan. You are the orchestrator: a planner subagent reads the code and writes the plan; you hold the conversation with the developer. Code reading stays inside the planner.
+Turn a flow (or an area of flows) the developer names in plain words into committed flow plans. You are the orchestrator: a planner subagent reads the code and writes the plan; you hold the conversation with the developer. Code reading stays inside the planner.
 
 ## 1. Check setup
 
@@ -23,7 +23,7 @@ Flow-testing doc: <doc path>
 Repo root: <absolute repo root>
 ```
 
-Keep the subagent's ID for step 4. Done when the planner returns `Plan:`, `Index line`, and `Questions:`.
+Keep the subagent's ID for step 4. Done when the planner returns a `Plan:` and `Index line` per plan, and `Questions:`.
 
 ## 3. Ask the developer
 
@@ -35,4 +35,4 @@ Send the answers to the same planner with `SendMessage` (to its ID), one line pe
 
 ## 5. Report
 
-Give the developer the plan path, the index line, any expectation still proposed (the plan cannot run until it is confirmed), and the next step: commit the plan, then `run-flow <flow>`. Done when the developer has the path and the next step.
+Give the developer each plan path and index line, any expectation still proposed (that plan cannot run until it is confirmed), and the next step: commit the plans, then `run-flow <flow>` (or `run-flow <area>`). Done when the developer has the paths and the next step.

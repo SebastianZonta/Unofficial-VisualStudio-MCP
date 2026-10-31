@@ -1,24 +1,26 @@
 ---
 name: run-flow
-description: "Run a flow plan against the VS debugger: a flow runner subagent builds, binds the targets, fires the trigger, checks every checkpoint, writes a run report, and returns the verdict. Use after plan-flow, when the developer names a flow to run."
+description: "Run flow plans against the VS debugger: a flow runner subagent per flow builds, binds the targets, fires the trigger, checks every checkpoint, writes a run report, and returns the verdict. Use after plan-flow, when the developer names a flow, an area, or all to run."
 disable-model-invocation: true
 ---
 
 # Run flow
 
-Run one flow plan the developer names and hand back its verdict. You are the orchestrator: a flow runner subagent drives the debugger and writes the report; you resolve the request and relay the result. Debugger output stays inside the flow runner.
+Run the flow plans the developer names and hand back one verdict per flow. You are the orchestrator: a flow runner subagent per flow drives the debugger and writes the report; you resolve the request and relay the results. Debugger output stays inside the flow runners.
 
-## 1. Resolve the flow
+## 1. Resolve the flows
 
-Find the `Flow testing:` pointer line in the repo-root `CLAUDE.md` or `AGENTS.md` and the flow-testing doc it links; when either is missing, tell the developer to run `setup-flow-testing` first and stop. Look the flow name up in the flow index the doc names, by the exact link text of its line. When no line matches, tell the developer the name is not in the flow index, list the names that are, and stop; the developer picks. Done when you have the plan path.
+Find the `Flow testing:` pointer line in the repo-root `CLAUDE.md` or `AGENTS.md` and the flow-testing doc it links; when either is missing, tell the developer to run `setup-flow-testing` first and stop. Resolve the request in the flow index the doc names: a flow name matches the exact link text of a line (one flow); else an area matches the exact text of a `## <area>` heading (every flow under it, in index order); else `all` means every flow in the index, in index order. When nothing matches, tell the developer the name is not in the flow index, list the flow names and areas that are, and stop; the developer picks. Done when you have the plan paths.
 
-## 2. Check the plan
+## 2. Check the plans
 
-Read the plan. When any expectation (or the expected outcome) is marked *proposed*, list those to the developer, tell them to confirm them through `plan-flow`, and stop. Done when every expectation in the plan is *confirmed*.
+Read each plan. A plan with any expectation (or the expected outcome) marked *proposed* is not run: list those expectations to the developer and tell them to confirm them through `plan-flow`. When no plan is left, stop. Done when every plan left to run has only *confirmed* expectations.
 
-## 3. Dispatch the flow runner
+## 3. Dispatch the flow runners
 
-Pick the report path: `<report dir>/<flow>-<run tag>.md`, where the report dir is a location the developer named in this request, else the doc's run report directory, and the run tag is the local time as `YYYYMMDD-HHMMSS`. Start one subagent with the `Agent` tool, `model: "sonnet"`, and this prompt (the reference path is `runner.md` in this skill's base directory, given as an absolute path):
+Run the flows one at a time, in order: dispatch the next only when the previous has returned its `Verdict:` block.
+
+For each, pick the report path: `<report dir>/<flow>-<run tag>.md`, where the report dir is a location the developer named in this request, else the doc's run report directory, and the run tag is the local time as `YYYYMMDD-HHMMSS`. Start one subagent with the `Agent` tool, `model: "sonnet"`, and this prompt (the reference path is `runner.md` in this skill's base directory, given as an absolute path):
 
 ```
 You are the flow runner. Read <absolute path to runner.md> and follow it.
@@ -28,15 +30,15 @@ Repo root: <absolute repo root>
 Report: <report path>
 ```
 
-Keep the subagent's ID. When the flow runner returns `Waiting: <instruction>` (a `human` trigger), put the instruction to the developer verbatim and ask them to say when it is done; the debugger waits meanwhile. Resume the same flow runner with `SendMessage` (to its ID): `done`, or `could not: <the developer's reason>`. Done when the flow runner returns its `Verdict:` block.
+Keep the subagent's ID. When the flow runner returns `Waiting: <instruction>` (a `human` trigger), put the instruction to the developer verbatim and ask them to say when it is done; the debugger waits meanwhile. Resume the same flow runner with `SendMessage` (to its ID): `done`, or `could not: <the developer's reason>`. Done when every flow runner has returned its `Verdict:` block.
 
 ## 4. Report
 
-Give the developer the verdict, the report path, and the FAIL / BLOCKED / OBS rows from the flow runner's `Verdict:` block, BLOCKED rows first with their fix leading. When it says `Stale: yes`, add that those checkpoints' anchors no longer match the code, and offer to send the planner back to re-anchor them; then stop and wait for the developer's answer. Never re-anchor on your own. Done when the developer has the verdict and the report path, and, for a stale plan, has answered the offer.
+For each flow, in run order, give the developer its verdict, the report path, and the FAIL / BLOCKED / OBS rows from its `Verdict:` block, BLOCKED rows first with their fix leading; then name the flows not run (step 2). For each flow whose block says `Stale: yes`, add that those checkpoints' anchors no longer match the code, and offer to send the planner back to re-anchor them; then stop and wait for the developer's answer. Never re-anchor on your own. Done when the developer has each verdict and report path, and, for a stale plan, has answered the offer.
 
 ## 5. Re-anchor (stale plan, developer said yes)
 
-Start one subagent with the `Agent` tool, `model: "sonnet"`, and this prompt (the reference path is `planner.md` in the `plan-flow` skill folder next to this skill's base directory, given as an absolute path):
+For each stale flow the developer said yes to, one at a time, start one subagent with the `Agent` tool, `model: "sonnet"`, and this prompt (the reference path is `planner.md` in the `plan-flow` skill folder next to this skill's base directory, given as an absolute path):
 
 ```
 You are the flow planner. Read <absolute path to planner.md> and follow it.
@@ -45,4 +47,4 @@ Flow-testing doc: <doc path>
 Repo root: <absolute repo root>
 ```
 
-Keep the subagent's ID. When it returns questions, put each to the developer with its proposed value and resume the same planner with `SendMessage`, one line per question: number, then the developer's answer verbatim, until it returns `Index: written`. Tell the developer what moved, anything `Still proposed:` (the plan cannot run until it is confirmed), and offer to rerun the flow (steps 2 to 4). Done when the developer has the re-anchored plan and the rerun offer.
+Keep the subagent's ID. When it returns questions, put each to the developer with its proposed value and resume the same planner with `SendMessage`, one line per question: number, then the developer's answer verbatim, until it returns `Index: written`. Tell the developer what moved, anything `Still proposed:` (the plan cannot run until it is confirmed), and offer to rerun the re-anchored flows (steps 2 to 4). Done when the developer has the re-anchored plans and the rerun offer.
