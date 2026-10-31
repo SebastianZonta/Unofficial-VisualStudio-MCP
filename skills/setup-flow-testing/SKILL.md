@@ -1,19 +1,19 @@
 ---
 name: setup-flow-testing
 description: "Set up this repo for flow testing under the VS debugger: record solutions, build command, and targets, create the flow index, and point the agent-instruction file at it. Run once before plan-flow or run-flow."
-disable-model-invocation: true
 ---
 
 # Setup flow testing
 
-Record, once per repo, how a flow runner reaches the developer's app under the debugger, so `plan-flow` and `run-flow` start from a written record. Runs in the main conversation with the developer: explore, present a draft, confirm, then write.
+Record, once per repo, how a flow runner reaches the developer's app under the debugger, so `plan-flow` and `run-flow` start from a written record.
 
 ## 1. Explore
 
 Read the repo before asking anything. Done when every item below has an answer from the repo itself:
 
 - Every `.sln` / `.slnx` (skip `bin/`, `obj/`, `node_modules/`) and its projects; which projects are executables (`OutputType` `Exe`/`WinExe`, or `Microsoft.NET.Sdk.Web`).
-- For each executable project: its build output path for the default configuration, `launchSettings.json` profiles (arguments, working directory, URLs), and its assembly name (the process name an `attach` target is found by).
+- For each executable project: its build output path for the default configuration, `launchSettings.json` profiles (arguments, working directory, URLs), the effective URL when the exe is launched directly (it ignores `launchSettings.json:applicationUrl` — record it, plus the args such as `--urls` that replicate the profile), and its assembly name (the process name an `attach` target is found by).
+- Seed / test data the triggers need (dev-DB ids, test users, how to mint a fresh one — e.g. an entity id in a state the trigger needs, plus how to mint a fresh one) and any `.http` sample files showing real trigger requests.
 - The build command the repo already uses (scripts, CI workflow, `README`); otherwise `dotnet build <solution>`, one per solution that owns a target, joined by `&&`.
 - `CLAUDE.md` and `AGENTS.md` at the repo root: which exist, and whether either already holds a `Flow testing:` pointer line.
 - An existing agent-docs directory (`docs/agents/` or similar) and a prior `flow-testing.md` from an earlier run of this skill. On a rerun, the prior doc is the starting draft.
@@ -24,7 +24,8 @@ Read the repo before asking anything. Done when every item below has an answer f
 Present the draft of the flow-testing doc, built from [flow-testing.md](./flow-testing.md) and filled from what exploration found, plus the paths below. Lead each open choice with the recommended answer so the developer can accept it in a word:
 
 - **Solutions**: one row per solution that owns a target, named as `list_instances` reports it (the solution file name without extension) with its repo-relative path.
-- **Targets**: one per executable the developer wants under test, named by a short target name that flow plans refer to. Each is either `launch` (executable path, default arguments, working directory falling back to the project directory; for a process the flow starts) or `attach` (process name; for a process already running, e.g. one hosted by IIS or started by an orchestrator).
+- **Targets**: one per executable the developer wants under test, named by a short target name that flow plans refer to. Each is either `launch` (executable path, default arguments, working directory falling back to the project directory; record the effective direct-launch URL separately from the profile URL, with the args that replicate the profile) or `attach` (process name; for a process already running, e.g. one hosted by IIS or started by an orchestrator).
+- **Trigger data**: per `launch` target that needs ids, one known-good set (with the rule for minting a fresh one, since runs consume them) plus one exact sample trigger command run from the repo root (PowerShell note: bare `curl` is the `Invoke-WebRequest` alias — use `curl.exe` with a body file).
 - **Doc path**: `<agent-docs dir>/flow-testing.md` (default `docs/agents/flow-testing.md`).
 - **Flows directory**: default `docs/flows/`, holding the flow index `INDEX.md` and one subdirectory per area.
 - **Report directory**: ask once; default `<flows dir>/runs/`.

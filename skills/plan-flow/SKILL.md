@@ -1,7 +1,6 @@
 ---
 name: plan-flow
 description: "Write or update flow plans for one behaviour or an area of the developer's app: a planner subagent reads the code, every inferred expectation goes to the developer, then each plan is listed in the flow index. Use after setup-flow-testing, before run-flow."
-disable-model-invocation: true
 ---
 
 # Plan flow
@@ -14,13 +13,14 @@ Find the `Flow testing:` pointer line in the repo-root `CLAUDE.md` or `AGENTS.md
 
 ## 2. Dispatch the planner
 
-Start one subagent with the `Agent` tool, `model: "sonnet"`, and this prompt (fill the placeholders; the reference path is `planner.md` in this skill's base directory, given as an absolute path):
+Start one subagent with this prompt (fill the placeholders; the reference path is `planner.md` in this skill's base directory, given as an absolute path):
 
 ```
 You are the flow planner. Read <absolute path to planner.md> and follow it.
 Request: <the developer's words, verbatim>
 Flow-testing doc: <doc path>
 Repo root: <absolute repo root>
+Tactics: <absolute path to debugging-tactics.md in the flow-shared skill folder next to this skill's base directory>
 ```
 
 Keep the subagent's ID for step 4. Done when the planner returns a `Plan:` and `Index line` per plan, and `Questions:`.
@@ -31,7 +31,7 @@ When the planner returned `Questions: none`, go to step 5. Otherwise put every q
 
 ## 4. Resume the planner
 
-Send the answers to the same planner with `SendMessage` (to its ID), one line per question: question number, then the developer's answer verbatim. Done when the planner returns `Index: written`.
+Send the answers to the same planner by continuing its session (not a new subagent), one line per question: question number, then the developer's answer verbatim. Done when the planner returns `Index: written`.
 
 ## 5. Report
 

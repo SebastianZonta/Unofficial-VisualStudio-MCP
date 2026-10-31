@@ -42,8 +42,8 @@ When Claude Code is detected, the installer also copies the flow-testing skills
 (the bundle's `skills\` folder: `setup-flow-testing`, …) into `~\.claude\skills\`,
 replacing only those folders; your other skills are left alone. `-ConfigOnly` copies
 them from the existing install (an older bundle without `skills\` just prints a skip).
-The skills dispatch subagents with Claude Code's `Agent` and `SendMessage` tools and
-are proven only there. Cursor and opencode also load `~\.claude\skills\` and have
+The skills dispatch one subagent per flow through each client's own subagent tool and
+are proven only on Claude Code. Cursor and opencode also load `~\.claude\skills\` and have
 subagent tools of their own, but the skills are untested in them; Codex gets no skills.
 A plain re-run deletes the install folder, reinstalls it, re-merges every detected
 client config, and replaces the shipped skill folders — nothing else is touched.

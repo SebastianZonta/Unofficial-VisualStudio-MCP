@@ -187,6 +187,13 @@ verdict. Distinct from an E2E **Runner**, which runs a slice of this MCP's own
 E2E pass.
 _Avoid_: runner (unqualified, when meaning the flow runner)
 
+**Ad-hoc debugging**:
+One symptom in the developer's app investigated under the debugger without a
+written flow plan (bind one target, stop at one hypothesis at a time, return a
+diagnosis). Distinct from a **flow runner**, which executes a flow plan's
+checkpoints.
+_Avoid_: debugging (unqualified, when meaning either); troubleshooting (when meaning ad-hoc debugging)
+
 **Verdict**:
 The overall PASS or FAIL of an E2E pass or a flow run, backed by a status (PASS, FAIL,
 BLOCKED, OBS) and quoted tool evidence for every case. PASS only when nothing

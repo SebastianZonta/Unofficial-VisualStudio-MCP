@@ -1,6 +1,6 @@
 # Flow testing
 
-How a flow runner reaches this repo's app under the Visual Studio debugger. Written by `setup-flow-testing`; read by `plan-flow` and `run-flow`. Edit freely; rerun `setup-flow-testing` to regenerate.
+How a flow runner reaches this repo's app under the debugger. Edit freely; rerun `setup-flow-testing` to regenerate.
 
 ## Elevation
 
@@ -27,7 +27,11 @@ Each solution must be open in its own VS instance before a run. Bind the VS inst
 | `<orders-api>` | `<App>` | `launch` | exe `<path/to/bin/Debug/net10.0/Orders.Api.exe>`, args `<--urls http://localhost:5000>`, working dir `<path/to/Orders.Api>` |
 | `<worker>` | `<App>` | `attach` | process name `<Orders.Worker>` |
 
-Paths are relative to the repo root. Arguments are defaults; a flow plan's `launch` trigger may name its own.
+Paths are relative to the repo root. Arguments are defaults; a flow plan's `launch` trigger may name its own. A directly launched exe ignores `launchSettings.json:applicationUrl`, so the Details URL is the effective direct-launch URL, with the profile-replicating args (e.g. `--urls`) recorded alongside the profile URL.
+
+## Trigger data
+
+- `<target>`: known-good `<id>` = `<value>` (refresh rule: `<how to mint a fresh one — runs consume them>`). Sample trigger from the repo root: `<exact command>`.
 
 ## Flows
 

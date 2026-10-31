@@ -31,7 +31,7 @@ public sealed class BreakpointTools
         => ToolPipeline.RunSessionAsync(sessionId, () => bridge.ListBreakpointsAsync(sessionId, cancellationToken));
 
     [McpServerTool(Name = "list_modules")]
-    [Description("List the modules of the session's target process with loaded flag and symbol state (loaded/missing/failed/unknown). Read-only; requires break or run mode. First check when a breakpoint stays unbound.")]
+    [Description("List the modules of the session's target process with loaded flag and symbol state (loaded/missing/unknown). Read-only; requires break or run mode. First check when a breakpoint stays unbound.")]
     public static Task<ListModulesResult> ListModulesAsync(
         IDebugBridge bridge,
         [Description("Session id returned by attach.")] string sessionId,
