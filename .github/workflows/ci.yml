@@ -63,6 +63,10 @@ jobs:
       - name: Test
         run: dotnet test VsDebugMcp.slnx --no-build
 
+      - name: Installer seam (both installers against a temp home)
+        shell: pwsh
+        run: pwsh -NoProfile -File scripts/test-installers.ps1
+
       - name: CRAP gate (changed methods only)
         shell: pwsh
         run: |

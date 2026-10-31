@@ -98,15 +98,20 @@ else
 fi
 
 wire_clients() {
-  local exe="$1"
-  if ! command -v python3 >/dev/null; then
+  local exe="$1" py='' c
+  # Run it, not just `command -v`: the Microsoft Store python3 stub is on PATH but fails;
+  # a Windows Python install is often `python` only.
+  for c in python3 python; do
+    if "$c" -c 'import sys; sys.exit(sys.version_info[0] < 3)' >/dev/null 2>&1; then py="$c"; break; fi
+  done
+  if [ -z "$py" ]; then
     echo 'python3 not found: skipping auto-wire. Register manually:'
     echo "  \"vs-debug\": { \"type\": \"local\", \"command\": [\"$exe\"] }"
     return
   fi
   echo 'Detecting agentic tools...'
-  TARGET_EXE="$exe" python3 - <<'EOF'
-import json, os, shutil
+  TARGET_EXE="$exe" "$py" - <<'EOF'
+import json, os, re, shutil
 
 exe = os.environ['TARGET_EXE']
 home = os.path.expanduser('~')
@@ -193,6 +198,46 @@ for label, path, merge, (cli, probe) in targets:
     except (json.JSONDecodeError, OSError, UnicodeDecodeError, TypeError, AttributeError, ValueError) as e:
         print(f'  [skip] {label}: cannot merge {path} ({e})')
 
+def codex(path):
+    # A text edit of our table only: config.toml is hand-written, and a TOML round-trip would drop its comments.
+    # shortcut: an inline-table entry (mcp_servers = { vs-debug = ... }) or a hand-split multi-line args breaks the edit; parse the TOML if users report it.
+    raw = ''
+    if os.path.exists(path):
+        with open(path, encoding='utf-8-sig', newline='') as f:  # -sig: drop a BOM (as install.ps1 does) so line 1 still matches
+            raw = f.read()
+    nl = '\r\n' if '\r\n' in raw else '\n'
+    lines = re.split(r'\r?\n', raw) if raw else []
+    if lines and lines[-1] == '':
+        lines.pop()
+    ours = ['command = "%s"' % exe.replace('\\', '\\\\').replace('"', '\\"'), 'args = []']
+    header = re.compile(r'''^\s*\[\s*mcp_servers\s*\.\s*("vs-debug"|'vs-debug'|vs-debug)\s*\]\s*(#.*)?$''')
+    start = next((i for i, l in enumerate(lines) if header.match(l)), -1)
+    if start < 0:
+        if lines and lines[-1].strip():
+            lines.append('')
+        lines += ['[mcp_servers.vs-debug]'] + ours
+    else:
+        end = start + 1
+        while end < len(lines) and not re.match(r'^\s*\[', lines[end]):
+            end += 1
+        kept = [l for l in lines[start + 1:end] if not re.match(r'^\s*(command|args)\s*=', l)]
+        lines[start + 1:end] = ours + kept
+    if os.path.exists(path) and not os.path.exists(path + '.bak'):
+        shutil.copyfile(path, path + '.bak')
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8', newline='') as f:
+        f.write(nl.join(lines) + nl)
+
+codex_home = os.environ.get('CODEX_HOME') or os.path.join(home, '.codex')
+if shutil.which('codex') or os.path.exists(codex_home):
+    path = os.path.join(codex_home, 'config.toml')
+    try:
+        codex(path)
+        print(f'  [wired] Codex ({path})')
+        wired += 1
+    except (OSError, UnicodeDecodeError) as e:
+        print(f'  [skip] Codex: cannot merge {path} ({e})')
+
 if wired == 0:
     print('No supported client detected. Register manually:')
     print(f'  "vs-debug": {{ "type": "local", "command": ["{exe}"] }}')
@@ -203,6 +248,7 @@ EOF
 
 install_skills() {
   # Flow-testing skills ship in the bundle's skills/ folder; replace only the folders we ship.
+  # Claude Code only: the skills' subagent orchestration is proven there (INSTALL.md covers the other clients).
   local src dst d
   command -v claude >/dev/null || [ -e "$HOME/.claude.json" ] || return 0
   src="$1/skills"

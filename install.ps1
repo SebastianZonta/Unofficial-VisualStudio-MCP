@@ -32,15 +32,24 @@ $Repo = 'SebastianZonta/Unofficial-VisualStudio-MCP'
 $Base = "https://github.com/$Repo/releases/latest/download"
 $ExeName = 'VsDebugMcp.exe'
 
+function ConvertFrom-JsonText([string]$Raw) {
+  # Both keep keys differing only by case (.claude.json: C:/x and c:/x), which plain ConvertFrom-Json rejects.
+  # shortcut: date-shaped strings come back as DateTime (7: ISO, 5.1: \/Date()\/) and are rewritten; use -DateKind String (7.5+) if a client complains.
+  if ($PSVersionTable.PSVersion.Major -ge 7) { return $Raw | ConvertFrom-Json -AsHashtable }
+  Add-Type -AssemblyName System.Web.Extensions
+  $s = New-Object System.Web.Script.Serialization.JavaScriptSerializer
+  $s.MaxJsonLength = [int]::MaxValue
+  return $s.DeserializeObject($Raw)
+}
+
 function To-Hashtable($o) {
-  # Recursive PSCustomObject -> hashtable so this runs on Windows PowerShell 5.1
-  # (ConvertFrom-Json -AsHashtable needs PowerShell 7+).
-  if ($o -is [System.Management.Automation.PSCustomObject]) {
-    $h = @{}
-    foreach ($p in $o.PSObject.Properties) { $h[$p.Name] = To-Hashtable $p.Value }
+  # Case-sensitive Hashtable (@{} would merge C:/x and c:/x); the unary comma keeps [] and ["x"] arrays.
+  if ($o -is [System.Collections.IDictionary]) {
+    $h = New-Object System.Collections.Hashtable
+    foreach ($k in $o.Keys) { $h[$k] = To-Hashtable $o[$k] }
     return $h
   }
-  if ($o -is [System.Collections.IList] -and $o -isnot [string]) { return @($o | ForEach-Object { To-Hashtable $_ }) }
+  if ($o -is [System.Collections.IList] -and $o -isnot [string]) { return , @($o | ForEach-Object { To-Hashtable $_ }) }
   return $o
 }
 
@@ -51,7 +60,7 @@ function Merge-JsonFile([string]$Path, [scriptblock]$Merge) {
   if (Test-Path -LiteralPath $Path) {
     try {
       $raw = [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding $false, $true))  # strict: invalid bytes throw (skip) instead of silently sanitizing, matching install.sh
-      if (-not [string]::IsNullOrWhiteSpace($raw)) { $obj = To-Hashtable ($raw | ConvertFrom-Json) }
+      if (-not [string]::IsNullOrWhiteSpace($raw)) { $obj = To-Hashtable (ConvertFrom-JsonText $raw) }
       if (-not ($obj -is [hashtable])) {
         Write-Warning "Skipping ${Path}: root is not a JSON object; left untouched"
         return $false
@@ -106,6 +115,39 @@ function Add-McpServer([string]$Client, [string]$Path, [string]$Style, [string]$
   return $ok
 }
 
+function Add-CodexServer([string]$Path, [string]$Exe) {
+  # A text edit of our table only: config.toml is hand-written, and a TOML round-trip would drop its comments.
+  # shortcut: an inline-table entry (mcp_servers = { vs-debug = ... }) or a hand-split multi-line args breaks the edit; parse the TOML if users report it.
+  try {
+    $raw = ''
+    if (Test-Path -LiteralPath $Path) { $raw = [System.IO.File]::ReadAllText($Path, (New-Object System.Text.UTF8Encoding $false, $true)) }
+    $nl = if ($raw -match "`r`n") { "`r`n" } else { "`n" }
+    $lines = [System.Collections.Generic.List[string]]::new()
+    if ($raw) { $lines.AddRange([string[]]($raw -split '\r?\n')) }
+    if ($lines.Count -and $lines[$lines.Count - 1] -eq '') { $lines.RemoveAt($lines.Count - 1) }
+    $ours = @("command = `"$($Exe -replace '\\', '\\' -replace '"', '\"')`"", 'args = []')
+    $start = $lines.FindIndex([Predicate[string]] { param($l) $l -match "^\s*\[\s*mcp_servers\s*\.\s*(`"vs-debug`"|'vs-debug'|vs-debug)\s*\]\s*(#.*)?$" })
+    if ($start -lt 0) {
+      if ($lines.Count -and $lines[$lines.Count - 1].Trim()) { $lines.Add('') }
+      $lines.Add('[mcp_servers.vs-debug]'); $lines.AddRange([string[]]$ours)
+    } else {
+      $end = $start + 1
+      while ($end -lt $lines.Count -and $lines[$end] -notmatch '^\s*\[') { $end++ }
+      $kept = [System.Collections.Generic.List[string]]::new()
+      for ($i = $start + 1; $i -lt $end; $i++) { if ($lines[$i] -notmatch '^\s*(command|args)\s*=') { $kept.Add($lines[$i]) } }
+      $lines.RemoveRange($start + 1, $end - $start - 1)
+      $lines.InsertRange($start + 1, [string[]](@($ours) + $kept))
+    }
+    $dir = [System.IO.Path]::GetDirectoryName($Path)
+    if ($dir -and -not (Test-Path -LiteralPath $dir)) { [System.IO.Directory]::CreateDirectory($dir) | Out-Null }
+    if ((Test-Path -LiteralPath $Path) -and -not (Test-Path -LiteralPath "$Path.bak")) { Copy-Item -LiteralPath $Path "$Path.bak" -Force }
+    [System.IO.File]::WriteAllText($Path, (($lines -join $nl) + $nl), (New-Object System.Text.UTF8Encoding $false))
+  }
+  catch { Write-Warning "Skipping ${Path}: $($_.Exception.Message)"; return $false }  # a locked or unreadable file skips Codex, never the whole install
+  Write-Host "  [wired] Codex ($Path)"
+  return $true
+}
+
 function Test-Client([string]$Cmd, [string]$ProbePath) {
   if (Get-Command $Cmd -ErrorAction SilentlyContinue) { return $true }
   if ($ProbePath -and (Test-Path -LiteralPath $ProbePath)) { return $true }
@@ -134,6 +176,10 @@ function Wire-Clients([string]$Exe) {
   $p = Join-Path $homeDir '.cursor\mcp.json'
   if (Test-Client 'cursor' $p) { if (Add-McpServer 'Cursor' $p 'mcpServers' $Exe) { $wired++ } }
 
+  # Codex ($CODEX_HOME\config.toml, CODEX_HOME defaulting to ~\.codex)
+  $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $homeDir '.codex' }
+  if (Test-Client 'codex' $codexHome) { if (Add-CodexServer (Join-Path $codexHome 'config.toml') $Exe) { $wired++ } }
+
   # VS Code (user mcp.json: {"servers": ...})
   $p = Join-Path $appData 'Code\User\mcp.json'
   if (Test-Client 'code' $p) { if (Add-McpServer 'VS Code' $p 'vscode' $Exe) { $wired++ } }
@@ -156,6 +202,7 @@ function Wire-Clients([string]$Exe) {
 
 function Install-Skills([string]$InstallDir) {
   # Flow-testing skills ship in the bundle's skills\ folder; replace only the folders we ship.
+  # Claude Code only: the skills' subagent orchestration is proven there (INSTALL.md covers the other clients).
   if (-not (Test-Client 'claude' (Join-Path $HOME '.claude.json'))) { return }
   $src = Join-Path $InstallDir 'skills'
   if (-not (Test-Path -LiteralPath $src -PathType Container)) {

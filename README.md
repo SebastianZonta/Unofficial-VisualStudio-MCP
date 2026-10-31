@@ -25,7 +25,7 @@ An agent workflow looks like this:
 
 ## Flow testing
 
-Three Claude Code skills (in [skills/](skills/); the installer copies them to `~/.claude/skills/`) turn the tools into repeatable checks of a flow through your app: where the debugger should stop and what the values should be there.
+Three Claude Code skills (in [skills/](skills/); when it detects Claude Code, the installer copies them to `~/.claude/skills/`; other clients untested, see [INSTALL.md](INSTALL.md)) turn the tools into repeatable checks of a flow through your app: where the debugger should stop and what the values should be there.
 
 1. `/setup-flow-testing` first, once per repo: records your solutions, build command, and targets in a flow-testing doc and creates the flow index. Example: `/setup-flow-testing`.
 2. `/plan-flow`: a planner reads the code and writes a flow plan (trigger, checkpoints, expectations); every value it infers comes back to you as a question. Example: `/plan-flow checkout in area orders: posting a cart to /orders applies the discount`.

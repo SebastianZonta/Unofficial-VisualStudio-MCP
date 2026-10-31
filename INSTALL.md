@@ -34,19 +34,17 @@ to `C:\Tools\VsDebugMcp` (`/c/Tools/VsDebugMcp` under Git Bash; `~/.local/share/
 elsewhere), smoke-tests it on Windows (usage printout, exit 2; skipped with a warning
 elsewhere — the server needs Windows + VS 2026), and auto-registers the server in every
 detected client (opencode, Claude Code, Claude Desktop, Cursor, VS Code, Windsurf,
-Gemini CLI) with a `.bak` backup of each touched config (the pre-installer original,
-kept once — a second run never overwrites `.bak`). Codex CLI isn't
-auto-detected (TOML `~/.codex/config.toml`, not JSON) — add it by hand
-(substitute your install folder if it isn't the default):
-```toml
-[mcp_servers.vs-debug]
-command = "C:\\Tools\\VsDebugMcp\\VsDebugMcp.exe"
-```
-then restart the client and verify like the Manual-install step 4 below.
+Gemini CLI, Codex CLI) with a `.bak` backup of each touched config (the pre-installer original,
+kept once — a second run never overwrites `.bak`). For Codex it edits only the
+`[mcp_servers.vs-debug]` table of `$CODEX_HOME\config.toml` (default `~\.codex`), keeping
+the rest of the file and any other keys in that table (`env`, `cwd`, …).
 When Claude Code is detected, the installer also copies the flow-testing skills
 (the bundle's `skills\` folder: `setup-flow-testing`, …) into `~\.claude\skills\`,
 replacing only those folders; your other skills are left alone. `-ConfigOnly` copies
 them from the existing install (an older bundle without `skills\` just prints a skip).
+The skills dispatch subagents with Claude Code's `Agent` and `SendMessage` tools and
+are proven only there. Cursor and opencode also load `~\.claude\skills\` and have
+subagent tools of their own, but the skills are untested in them; Codex gets no skills.
 A plain re-run deletes the install folder, reinstalls it, re-merges every detected
 client config, and replaces the shipped skill folders — nothing else is touched.
 Needs a published release —
@@ -100,7 +98,7 @@ MCP host). No .NET install needed — the runtime is bundled (~85 MB).
    ```
    Live is the default; `--live` is still accepted as a no-op, `--fake` selects the canned demo bridge.
    The installer writes each client's own shape for the same exe (`command`/`args`;
-   opencode uses `type: local` + `command: [...]`).
+   opencode uses `type: local` + `command: [...]`; Codex a `[mcp_servers.vs-debug]` TOML table).
 4. Restart the client, open VS 2026, and verify: `attach` should return a `sessionId`.
 
 ## Option B — build from source
