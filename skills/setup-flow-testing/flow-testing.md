@@ -20,6 +20,8 @@ Each solution must be open in its own VS instance before a run. Bind the VS inst
 <build command, e.g. dotnet build path/to/App.sln>
 ```
 
+Runs once per `run-flow` invocation (flow runners only check the exe exists); keep it incremental.
+
 ## Targets
 
 | Target | Solution | How | Details |
