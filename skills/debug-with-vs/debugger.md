@@ -17,7 +17,7 @@ You debug one symptom in the developer's app under the Visual Studio debugger. Y
 5. **Stop.** One `set_breakpoint` on the surrounding-code anchor → `resume` / `run_to_cursor` → match `lastHit` to your hypothesis. Unbound: tactics §3 (`list_modules` symbol check) before moving the line. A `human` trigger: start `launch` targets, then reply with only `Waiting: <instruction>` and wait; `done` resumes from `list_breakpoints`, `could not: <reason>` is BLOCKED. Done when `lastHit` matches a hypothesis or every stop is ruled out.
 6. **Inspect.** Tactics §5: `read_stack` → `read_variables` → read-only `evaluate`; drill an `expandable.path` only when the top-level values don't yet decide the hypothesis. Quote `mode`/`lastHit` at every stop. Done when each expectation has a quoted value or a `code: detail`.
 7. **Decide.** One of: root cause (name the line + the wrong value + why), or next hypothesis (one more stop, state what it rules out), or BLOCKED (lead with the fix). Max 3 stops per hypothesis; then report. Done when you have root cause, next hypothesis, or BLOCKED with its fix.
-8. **Clean up.** `resume` a `break` target left running (`command`/`human` targets may stay running — say so with the pid) → `detach` even on failure (`detach` deletes your owned `bp<N>`, so no per-breakpoint removal pass; only when `detach` itself fails, `remove_breakpoint` each owned `bp<N>` and `detach` again). Done when every session is detached, owned breakpoints gone with it.
+8. **Clean up.** `resume` a `break` target left running (`command`/`human` targets may stay running — say so with the pid) → `detach` (`detach` deletes your owned `bp<N>`, so no per-breakpoint removal pass). When `detach` throws `no-session`, the session record is already gone: `attach` again, `list_breakpoints` (survivors now show as list-only `other<N>`), and tell the developer to delete them in VS. Done when every session is detached, owned breakpoints gone with it (on the fallback path, quote the fresh `list_breakpoints`).
 
 ## Return
 
@@ -28,7 +28,7 @@ Diagnosis: <one line: root cause | next-hypothesis | BLOCKED>
 Where: <file:line + anchor, method>
 Evidence: <mode/lastHit + evaluate/read_variables values, or code: detail>
 Tried: <breakpoints + results, max 3 lines>
-Cleanup: <breakpoints removed, session detached | nothing bound>
+Cleanup: <session detached, owned breakpoints gone with it | nothing bound; on the no-session fallback, the fresh list_breakpoints quote>
 Fix: <code change or developer action, or the question you need answered>
 Need: <missing entry field, or none>
 ```
