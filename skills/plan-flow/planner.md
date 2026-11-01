@@ -75,7 +75,7 @@ A `command` or `human` line comes last, after one `launch` line per `launch` tar
 Rules for the format:
 
 - Checkpoints are in the order execution reaches them.
-- An anchor is copied character for character from the stop line, short enough to survive edits to the rest of the line. It must be an executable statement: never a registration or object-initializer-continuation line; lambda bodies are fine.
+- An anchor is copied character for character from the stop line, short enough to survive edits to the rest of the line. It must be an executable statement: never a registration or object-initializer-continuation line; lambda bodies are fine. A breakpoint stops before its line runs: never anchor a declaration-with-initializer when reading the declared variable (it still holds default) — anchor the next executable line instead.
 - `Stop when`: tactics §6 shape. Self-check before returning: grep every `Stop when` for `(` and rewrite violations (drop the `Stop when`, note "manual filter via `evaluate`" in the plan).
 - Expressions are read-only and evaluable in the stopped frame (locals, arguments, fields, properties); the flow runner refuses side effects.
 - State the expected outcome as the flow runner can observe it: the target runs to the end (for a `launch` trigger), values at the last checkpoint, a `command` trigger's exit code and output. The debugger does not capture a target's console output or exit code; a `command` trigger's exit code and output are read from the shell.
