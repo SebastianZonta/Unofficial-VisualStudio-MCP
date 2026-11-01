@@ -4,7 +4,7 @@ Read this file first. Terms below are `GLOSSARY.md` terms: use them exactly (`VS
 
 ## 1. No blind breakpoint
 
-Before any `set_breakpoint`/`evaluate`, read the surroundings: the target method, its caller(s), and what computes the values you will read. Anchor by surrounding code, never by a bare line number. A breakpoint stops before its line runs: never read a declaration-with-initializer's variable on its own line (it still holds default) — stop on the next executable line instead. One breakpoint at a time; confirm it binds via `list_breakpoints` before adding the next.
+Before any `set_breakpoint`/`evaluate`, read the surroundings: the target method, its caller(s), and what computes the values you will read. Anchor by surrounding code, never by a bare line number — but uniqueness inside its method wins over shortness. A breakpoint stops before its line runs: never read a value on the statement that computes it (a declaration-with-initializer, a plain assignment, any call producing it — it still holds the old value); stop on the next executable line in scope instead. One breakpoint at a time — flow runs excepted (the runner sets every breakpoint first, then confirms once per session); confirm it binds via `list_breakpoints` before adding the next.
 
 ## 2. Bind order
 

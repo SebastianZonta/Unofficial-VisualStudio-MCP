@@ -17,7 +17,7 @@ Read each plan. A plan with any expectation (or the expected outcome) marked *pr
 
 ## 3. Build once, then dispatch the flow runners
 
-Build once: run the doc's build command in the repo root. When it exits non-zero, stop and tell the developer `build fails: \`<first error line>\`` — no runner is started. Done when the build is green; every runner then assumes current exes and only checks exe existence (runner step 2).
+Build once: run the doc's build command in the repo root. When it exits non-zero, stop and tell the developer `build fails: \`<first error line>\`` — no flow runner is started. Done when the build is green; every flow runner then assumes current exes and only checks exe existence (runner.md step 2).
 
 A flow's solution set is the solutions, in the doc's Targets table, of every target its checkpoints name. Two flows may run at once only when their solution sets share no solution: one VS instance serves one flow runner at a time. Go through the flows in order: start each one whose solution set is disjoint from every running flow's (counting the ones just started), and queue the rest; start those of one pass in a single message, so they run at once. Each time a flow runner returns its `Verdict:` block, start the queued flows that are now disjoint, in order.
 
